@@ -85,6 +85,12 @@
     const deco = (x, z, w, d, h, color, y, glass) => box(x, z, w, d, h, color, { y, solid: false, glass });
 
     const config = build({ box, cyl, table, prop, tree, plant, deco, panels, solids, DECO });
+    // grote vlakke vlakken zijn "vloer": die worden lava in De vloer is lava
+    for (const s of solids) {
+      if (s.r !== undefined) continue;
+      const w = s.maxX - s.minX, d = s.maxZ - s.minZ;
+      if (w >= 3 && d >= 3 && w * d >= 40) s.floor = true;
+    }
     return Object.assign({
       id, name, icon, boxes, cyls, props, plants, trees, panels, solids,
       GROUND: 0, CEILING: null, ceilings: [], lamps: [], LIFTS: [], OUTSIDE_Z: null, VEHICLES: []
@@ -248,8 +254,7 @@
     [[12.3, -6], [-2.7, -9.5], [1.5, 5]].forEach((p) => prop('bin', p[0], p[1], 0));
     [[6.8, 6.7], [-13, 14.5], [5, 21.5], [-4, 35], [11, 5], [-11, 0.2]].forEach((p) => prop('bin', p[0], p[1], LOW));
 
-    // --- Benedenhal: podium, poefs, automaten, posters ---
-    box(-17.5, 17.3, 7, 4.4, 0.4, C.wood, { y: LOW });
+    // --- Benedenhal: poefs, automaten, posters ---
     [[19, 13], [20, 15], [18.5, 16.8], [-19.5, 8], [-20, 10.5]].forEach((p, i) =>
       cyl(p[0], p[1], 0.6, 0.45, i % 2 ? C.white : C.purple, LOW));
     box(-6, 6.45, 1.2, 0.8, 2, C.red, { y: LOW });
@@ -277,11 +282,10 @@
       VEHICLES: [{ x: 0, y: LOW, z: 15.5, kind: 1 }, { x: 3.5, y: 0, z: 0.5, kind: 2 }, { x: -8, y: LOW, z: 27, kind: 1 }],
       // waar je moet staan om iets uit een automaat te halen
       VENDING: [{ x: -5.3, y: LOW, z: 7.6 }, { x: -20.2, y: 0, z: -8.2 }, { x: 10.4, y: LOW, z: 2.5 }],
-      // thuisbasis per team (teams-modus): het podium en de hoek bij de ingang
-      BASES: [{ x: -17.5, y: LOW + 0.4, z: 17.3 }, { x: 15.5, y: LOW, z: 17.5 }],
+      // thuisbasis per team (teams-modus): de twee hoeken van de hal
+      BASES: [{ x: -17.5, y: LOW, z: 17.3 }, { x: 15.5, y: LOW, z: 17.5 }],
       // eindsprint: alleen de kantine boven telt nog
       ZONE: { x: 0, z: -3, r: 11.5, minY: -1 },
-      PODIUM: { x: -17.5, y: LOW + 0.4, z: 17.3, dir: -1 },
       BOUNDS: { minX: -21.3, maxX: 21.3, minZ: -11.3, maxZ: 35.9, minY: LOW, maxY: 4 },
       BROODJE_SPAWN: { x: 0, y: 0, z: -1 },
       SPAWNS: at([
@@ -367,7 +371,6 @@
       VEHICLES: [{ x: -10, y: 0, z: -9.3, kind: 1 }, { x: 7, y: 0, z: 11.5, kind: 2 }],
       BASES: [{ x: -16, y: 0, z: 0.5 }, { x: 8.5, y: 0, z: -7.5 }],
       ZONE: { x: 0, z: 0, r: 8 },
-      PODIUM: { x: 0, y: 0, z: 4.5, dir: -1 },
       BOUNDS: { minX: -19.6, maxX: 19.6, minZ: -12.6, maxZ: 12.6, minY: 0, maxY: 7 },
       BROODJE_SPAWN: { x: 0, y: 0, z: 0 },
       SPAWNS: at([[-17, -7], [17, -9], [-17, 10], [9, 10.5], [-8, -4.5], [8, 5.5], [-9, 9], [0, -9], [-16.5, 1], [9, -8]], 0),
@@ -443,7 +446,6 @@
       VENDING: [{ x: -15.3, y: 0, z: 11 }, { x: 15.3, y: 3, z: 13 }],
       BASES: [{ x: 0, y: 1, z: -12 }, { x: -13, y: 3, z: 12 }],
       ZONE: { x: 0, z: -1, r: 8, maxY: 2 },
-      PODIUM: { x: 0, y: 1, z: -12, dir: 1 },
       BOUNDS: { minX: -16.6, maxX: 16.6, minZ: -14.6, maxZ: 14.6, minY: 0, maxY: 7 },
       BROODJE_SPAWN: { x: 0, y: 0, z: 0 },
       SPAWNS: at([[-14, -6.5], [14, -6.5], [-14, 6.5], [12, 6.5], [0, 6], [-6, 7], [6, 7], [-15, 0], [0, -7], [0, 2.5]], 0),
@@ -532,7 +534,6 @@
       VEHICLES: [{ x: 17, y: 0, z: 4, kind: 1 }, { x: -12, y: 0, z: 4.5, kind: 2 }, { x: 9, y: 0, z: -7, kind: 1 }],
       BASES: [{ x: -21, y: 0, z: 1 }, { x: 19, y: 0, z: -7.5 }],
       ZONE: { x: 0, z: 1, r: 9 },
-      PODIUM: { x: 4, y: 0, z: 1, dir: -1 },
       BOUNDS: { minX: -24.6, maxX: 24.6, minZ: -17.6, maxZ: 17.6, minY: 0, maxY: 10 },
       BROODJE_SPAWN: { x: 0, y: 0, z: 0 },
       SPAWNS: at([[-21, -10], [22, 15], [-10, 15], [13, 14], [0, -15.5], [-22, 4], [23, -9.5], [5, 5], [-4, -3], [14, -8]], 0),
@@ -558,6 +559,26 @@
       }
     }
     return best;
+  }
+
+  // Staat iemand met zijn voeten op hoogte y op de vloer (en dus in de lava)?
+  // Tafels, trappen, banken en podia zijn geen vloer. Waar helemaal niets ligt, is het ook lava.
+  function onFloor(x, z, y) {
+    let best = null, top = -50;
+    for (let l = 0; l < 2; l++) {
+      const list = l ? exports.dynamic : cur.solids;
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        if (c.y1 > y + 0.06 || c.y1 <= top) continue;
+        if (c.r !== undefined) {
+          const dx = x - c.x, dz = z - c.z;
+          if (dx * dx + dz * dz > c.r * c.r) continue;
+        } else if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
+        top = c.y1;
+        best = c;
+      }
+    }
+    return !best || (!!best.floor && y - top < 0.3);
   }
 
   // Duwt een cirkel (p.x, p.z, straal r) met voeten op hoogte y en lengte h uit alle obstakels.
@@ -659,7 +680,6 @@
       VEHICLES: [{ x: -5, y: 0, z: 2, kind: 1 }],
       BASES: [{ x: -14.5, y: 0, z: 9 }, { x: 14.5, y: 0, z: 6 }],
       ZONE: { x: 0, z: 0, r: 8 },
-      PODIUM: { x: 0, y: 0, z: 2.5, dir: -1 },
       BOUNDS: { minX: -17.6, maxX: 17.6, minZ: -13.6, maxZ: 13.6, minY: 0, maxY: 8 },
       BROODJE_SPAWN: { x: 0, y: 0, z: 0 },
       SPAWNS: at([[-15, -5], [14, 0.5], [-14.5, 12], [12.5, 12.5], [2, -12.6], [-5, 6], [6, -3.5], [-15.5, 0.5], [3, 5], [-3, -6.5]], 0),
@@ -693,6 +713,14 @@
   };
   exports.panelSolid = (p) => ({ minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2, y0: p.y, y1: p.y + p.h });
   exports.groundAt = groundAt;
+  exports.onFloor = onFloor;
+  // welke maps geschikt zijn voor een modus: stoelendans en verstoppertje hebben genoeg meubels nodig
+  exports.mapsFor = (mode) => Object.keys(maps).filter((id) => {
+    const props = maps[id].props;
+    if (mode === 'stoelen') return props.filter((p) => p.type === 'chair').length >= 10;
+    if (mode === 'prophunt') return props.length >= 20;
+    return true;
+  });
   exports.resolve = resolve;
   // Kiest de actieve map. Alle velden van die map staan daarna direct op MapData.
   exports.use = (id) => {

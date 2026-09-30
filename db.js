@@ -110,6 +110,24 @@ module.exports = {
     }
   },
 
+  // Records per map staan in dezelfde tabel als de weekranglijst, onder een eigen sleutel ("rec:kantine:hold").
+  // Per speler telt alleen zijn beste waarde.
+  async recordSet(key, name, value) {
+    let row;
+    if (remote) row = (await rest('GET', `leaderboard?week=eq.${enc(key)}&name=eq.${enc(name)}&limit=1`))[0];
+    else row = local.leaderboard.find((r) => r.week === key && r.name === name);
+    if (row && row.points >= value) return;
+    const entry = { week: key, name, points: value, wins: 0, games: 1 };
+    if (remote) return rest('POST', 'leaderboard?on_conflict=week,name', [entry], 'resolution=merge-duplicates,return=minimal');
+    local.leaderboard = local.leaderboard.filter((r) => r.week !== key || r.name !== name).concat(entry);
+    flush();
+  },
+
+  async recordTop(key) {
+    if (remote) return rest('GET', `leaderboard?week=eq.${enc(key)}&order=points.desc&limit=5`);
+    return local.leaderboard.filter((r) => r.week === key).sort((a, b) => b.points - a.points).slice(0, 5);
+  },
+
   async boardTop(week) {
     if (remote) return rest('GET', `leaderboard?week=eq.${enc(week)}&order=points.desc&limit=10`);
     return local.leaderboard.filter((r) => r.week === week).sort((a, b) => b.points - a.points).slice(0, 10);

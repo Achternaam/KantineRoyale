@@ -7,7 +7,7 @@
   <style>
     body { max-width: 760px; margin: 0 auto; padding: 24px 16px; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #26262b; background: #fbf8f2; }
     h1 { font-size: 24px; }
-    input, button { padding: 9px 12px; font: inherit; border: 2px solid #ddd6c8; border-radius: 8px; }
+    input, button, select { padding: 9px 12px; font: inherit; border: 2px solid #ddd6c8; border-radius: 8px; }
     button { font-weight: 800; color: #fff; background: #5b3fa8; border-color: #5b3fa8; cursor: pointer; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
@@ -26,6 +26,17 @@
     <input id="name" type="text" placeholder="Accountnaam">
     <button id="ban">Blokkeren</button>
     <button id="unban">Blokkade opheffen</button>
+  </div>
+  <h2>Iets geven</h2>
+  <p>Geef een ingelogde speler een skin, klasse, emote, stempel, accessoire, spoor of raakgeluid, en/of munten. De speler krijgt er een melding van.</p>
+  <div class="row">
+    <input id="give-name" type="text" placeholder="Accountnaam">
+    <select id="give-item"><option value="">Laad eerst de lijst →</option></select>
+    <button id="give-load">Lijst laden</button>
+  </div>
+  <div class="row">
+    <input id="give-coins" type="number" min="0" max="100000" placeholder="Munten (optioneel)">
+    <button id="give">Geven</button>
   </div>
   <p id="note"></p>
   <table>
@@ -68,6 +79,23 @@
         $('note').textContent = e.message;
       }
     }
+    $('give-load').addEventListener('click', async () => {
+      try {
+        const { items } = await call('/api/admin/items');
+        $('give-item').replaceChildren(new Option('Geen voorwerp, alleen munten', ''), ...items.map((x) => new Option(x.name, x.id)));
+        $('note').textContent = `${items.length} dingen om te geven.`;
+      } catch (e) {
+        $('note').textContent = e.message;
+      }
+    });
+    $('give').addEventListener('click', async () => {
+      try {
+        const out = await call('/api/admin/give', { name: $('give-name').value, id: $('give-item').value, coins: $('give-coins').value });
+        $('note').textContent = `${out.name} kreeg: ${out.given.join(', ')}.`;
+      } catch (e) {
+        $('note').textContent = e.message;
+      }
+    });
     $('load').addEventListener('click', load);
     $('ban').addEventListener('click', () => ban(true));
     $('unban').addEventListener('click', () => ban(false));

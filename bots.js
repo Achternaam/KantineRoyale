@@ -208,8 +208,82 @@ function resetBot(p, level) {
     L,
     vx: 0, vz: 0, vy: 0, ground: true, path: [], planAt: 0, thinkAt: Math.random() * 400,
     goal: null, fleeAt: 0, dashLeft: 0, dashX: 0, dashZ: 1, nextThrow: 0, nextDash: Date.now() + between(L.dash) * 0.6,
-    stuck: 0, lastX: p.x, lastZ: p.z, skill: between(L.skill)
+    stuck: 0, lastX: p.x, lastZ: p.z, skill: between(L.skill), knockUntil: 0, nextSlap: 0, roamAt: 0, spot: null, seen: {}
   };
+}
+
+// ---------- Doelen in de andere modi ----------
+const randomNode = (nav) => nav.open[Math.floor(Math.random() * nav.open.length)];
+
+// De vloer is lava: naar de dichtstbijzijnde tafel (erop springen) of een plek die geen vloer is.
+function lavaGoal(lobby, p, nav) {
+  const M = MapData;
+  if (!M.onFloor(p.x, p.z, p.y) && p.bot.ground) return null; // staat al veilig
+  const d = (o) => Math.hypot(o.x - p.x, o.z - p.z) + Math.abs(o.y - p.y) * 2;
+  let best = null;
+  for (const o of lobby.props) {
+    if (o.type !== 'table' || o.tip) continue;
+    const spot = { x: o.x, y: o.y, z: o.z, top: o.y + M.PROP.table.h, jump: true };
+    if (!best || d(spot) < d(best)) best = spot;
+  }
+  for (const [x, y, z, , h] of lobby.lavaBlocks || []) {
+    const spot = { x, y, z, top: y + h, jump: h > 0.45 };
+    if (!best || d(spot) < d(best)) best = spot;
+  }
+  if (!nav.safe) nav.safe = nav.open.filter((n) => !M.onFloor(n.x, n.z, n.y));
+  for (const n of nav.safe) if (!best || d(n) + 1.5 < d(best)) best = n;
+  return best;
+}
+
+// Verstoppertje: een verstopper zoekt een plekje naast een meubel dat op zijn vermomming lijkt.
+const DISGUISE_PROPS = ['', 'chair', 'bin', 'table', 'plant'];
+function hideGoal(lobby, p, nav, now, enemies) {
+  const b = p.bot;
+  const danger = enemies.find((o) => Math.hypot(o.x - p.x, o.z - p.z) < 4 && o.frozenUntil < now);
+  if (!b.spot || (danger && Math.random() < 0.15 * b.skill)) {
+    const kind = DISGUISE_PROPS[p.disguise] || 'chair';
+    const list = kind === 'plant' ? MapData.plants : lobby.props.filter((o) => o.type === kind);
+    const near = list.length ? list[Math.floor(Math.random() * list.length)] : randomNode(nav);
+    const a = Math.random() * Math.PI * 2;
+    b.spot = nearestNode(nav, near.x + Math.cos(a) * 1.1, near.y, near.z + Math.sin(a) * 1.1) || randomNode(nav);
+  }
+  return Math.hypot(b.spot.x - p.x, b.spot.z - p.z) < 0.4 ? null : b.spot; // op zijn plek: stilstaan
+}
+function seekGoal(lobby, p, nav, now, hiders) {
+  const b = p.bot;
+  if (p.frozenUntil > now) return null;
+  // wie beweegt valt op; heel dichtbij ziet een goede zoeker ook een stilstaande verstopper
+  const suspect = hiders.find((h) => {
+    const d = Math.hypot(h.x - p.x, h.z - p.z);
+    const moving = Math.hypot(h.velX || 0, h.velZ || 0) > 0.8;
+    return (moving && d < 14 && clearShot(p, h)) || (d < 3 && Math.random() < b.skill * 0.35);
+  });
+  if (suspect) return suspect;
+  if (!b.goal || now > b.roamAt || Math.hypot(b.goal.x - p.x, b.goal.z - p.z) < 1) {
+    b.roamAt = now + 4000 + Math.random() * 3000;
+    return randomNode(nav);
+  }
+  return b.goal;
+}
+// Stoelendans: tijdens de muziek rond de stoelen lopen, als hij stopt naar de dichtstbijzijnde vrije stoel.
+function chairGoal(lobby, p, now) {
+  const c = lobby.chairs;
+  if (!c || !c.marked.length) return null;
+  const chairs = c.marked.map((i) => lobby.props[i]);
+  if (c.phase === 'claim') {
+    const others = [...lobby.players.values()].filter((o) => o !== p && !o.out);
+    const free = chairs.filter((o) => !others.some((x) => Math.hypot(x.x - o.x, x.z - o.z) < Math.hypot(p.x - o.x, p.z - o.z) - 0.3));
+    const pool = free.length ? free : chairs;
+    return pool.reduce((a, o) => (!a || Math.hypot(o.x - p.x, o.z - p.z) < Math.hypot(a.x - p.x, a.z - p.z) ? o : a), null);
+  }
+  const b = p.bot;
+  if (!b.goal || now > b.roamAt) {
+    b.roamAt = now + 1500 + Math.random() * 2000;
+    const o = chairs[Math.floor(Math.random() * chairs.length)];
+    const a = Math.random() * Math.PI * 2;
+    return { x: o.x + Math.cos(a) * 2.2, y: o.y, z: o.z + Math.sin(a) * 2.2 };
+  }
+  return b.goal;
 }
 
 // ---------- Beslissen ----------
@@ -221,18 +295,30 @@ function think(lobby, p, now, api) {
   const enemies = others.filter((o) => !api.sameTeam(lobby, p, o));
   const dist = (o) => Math.hypot(o.x - p.x, o.z - p.z) + Math.abs(o.y - p.y) * 2;
   const nearest = (list) => list.reduce((best, o) => (!best || dist(o) < dist(best) ? o : best), null);
-  const holder = lobby.mode !== 'voedsel' && lobby.broodje.holder ? lobby.players.get(lobby.broodje.holder) : null;
-  const freeItems = lobby.items.map((it, i) => (it.availableAt <= now && nav.itemOk[i] ? M.ITEM_SPAWNS[i] : null)).filter(Boolean);
+  const holder = !api.NO_BROODJE.includes(lobby.mode) && lobby.broodje.holder ? lobby.players.get(lobby.broodje.holder) : null;
+  const freeItems = lobby.mode === 'lava' ? []
+    : lobby.items.map((it, i) => (it.availableAt <= now && nav.itemOk[i] ? M.ITEM_SPAWNS[i] : null)).filter(Boolean);
   const nearItem = nearest(freeItems);
   const foe = nearest(enemies.filter((o) => o.stunImmuneUntil < now));
   let goal = null;
 
-  if (lobby.zone && !api.inZone(p)) {
+  const throwMode = lobby.mode === 'voedsel' || lobby.mode === 'trefbal';
+  const decoy = lobby.decoy && holder !== p ? lobby.decoy : null;
+  if (decoy && b.seen[decoy.id] === undefined) b.seen[decoy.id] = Math.random() < 0.8 - b.skill * 0.3; // trapt erin of niet
+  if (lobby.mode === 'lava') {
+    goal = lavaGoal(lobby, p, nav);
+  } else if (lobby.mode === 'prophunt') {
+    goal = p.team === 0 ? hideGoal(lobby, p, nav, now, enemies) : seekGoal(lobby, p, nav, now, enemies.filter((o) => o.team === 0));
+  } else if (lobby.mode === 'stoelen') {
+    goal = chairGoal(lobby, p, now);
+  } else if (decoy && b.seen[decoy.id]) {
+    goal = decoy; // achter het nepbroodje aan
+  } else if (lobby.zone && !api.inZone(p)) {
     const Z = M.ZONE;
     goal = { x: Z.x, y: Z.minY === undefined ? M.GROUND : 0, z: Z.z };
   } else if (lobby.event.type === 'brand' && M.OUTSIDE_Z !== null) {
     goal = { x: 0, y: M.GROUND, z: M.OUTSIDE_Z + 6 };
-  } else if (lobby.mode === 'voedsel') {
+  } else if (throwMode) {
     if (!p.item) goal = nearItem;
     else if (foe) goal = dist(foe) > 8 ? foe : null; // dichtbij genoeg: blijf staan en gooi
   } else if (holder === p) {
@@ -270,8 +356,19 @@ function think(lobby, p, now, api) {
   }
   b.goal = goal;
 
+  // klappen: in de lava en bij de stoelendans iemand wegduwen, bij verstoppertje een verstopper vinden
+  if (['lava', 'stoelen', 'prophunt'].includes(lobby.mode) && now > b.nextSlap && p.frozenUntil < now && !(lobby.mode === 'prophunt' && p.team === 0)) {
+    const near = enemies.find((o) => !o.out && Math.hypot(o.x - p.x, o.z - p.z) < 2 && Math.abs(o.y - p.y) < 1.2 &&
+      (lobby.mode !== 'prophunt' || o.team === 0));
+    if (near && Math.random() < 0.5 + b.skill * 0.4) {
+      p.ry = Math.atan2(near.x - p.x, near.z - p.z);
+      api.slap(lobby, p, near.x - p.x, near.z - p.z);
+      b.nextSlap = now + 900 + Math.random() * 1200;
+    }
+  }
+
   // gooien: op de drager als dat een tegenstander is, anders op wie het dichtst bij staat
-  const target = holder && enemies.includes(holder) && holder.stunImmuneUntil < now ? holder : foe;
+  const target = lobby.mode === 'prophunt' ? null : holder && enemies.includes(holder) && holder.stunImmuneUntil < now ? holder : foe;
   if (p.item && target && now > b.nextThrow) {
     const d = Math.hypot(target.x - p.x, target.z - p.z);
     if (d > 2 && d < 17 && Math.abs(target.y - p.y) < 3.5 && clearShot(p, target)) {
@@ -290,6 +387,13 @@ function think(lobby, p, now, api) {
       api.throwItem(lobby, p, (hx / hd) * cos, sin, (hz / hd) * cos);
       b.nextThrow = now + between(b.L.toss);
     }
+  }
+
+  // met het broodje: een hap nemen als niemand in de buurt is, een schijnbeweging als iemand dichtbij komt
+  if (holder === p && lobby.mode !== 'teams') {
+    const close = foe ? dist(foe) : 99;
+    if (close > 11 && Math.random() < 0.25 * b.skill) api.bite(lobby, p);
+    else if (close < 5 && Math.random() < 0.12 * b.skill && foe) api.feint(lobby, p, p.x - foe.x, p.z - foe.z);
   }
 
   // dash: tackle de drager, of spring weg als iemand je bijna heeft
@@ -316,17 +420,21 @@ function think(lobby, p, now, api) {
 }
 
 // ---------- Bewegen ----------
-function move(lobby, p, now, dt) {
+function move(lobby, p, now, dt, api) {
   const b = p.bot;
   const M = MapData;
-  const stunned = p.stunnedUntil > now;
-  let speed = b.L.speed * (lobby.broodje.holder === p.id ? HOLDER_FACTOR : 1) * (p.boostUntil > now ? 1.35 : 1);
+  const stunned = p.stunnedUntil > now || p.frozenUntil > now;
+  const holding = lobby.broodje && lobby.broodje.holder === p.id;
+  let speed = b.L.speed * (holding ? HOLDER_FACTOR : 1) * (p.boostUntil > now ? 1.35 : 1) * (p.stickyUntil > now ? 0.25 : 1) *
+    api.speedOf(lobby);
   let wx = 0, wz = 0;
 
   if (!stunned && b.goal) {
     const goal = b.goal;
     const direct = Math.hypot(goal.x - p.x, goal.z - p.z);
     // dichtbij en op dezelfde hoogte: recht eropaf. Anders de route over het net volgen.
+    // op een tafel springen (lava): dichtbij genoeg en op de grond, dan afzetten
+    if (goal.jump && direct < 1.7 && b.ground && p.y < goal.top - 0.3) b.vy = 8.5;
     if (direct < 2.5 && Math.abs(goal.y - p.y) < 0.8) {
       b.path = [];
       if (direct > 0.25) { wx = (goal.x - p.x) / direct; wz = (goal.z - p.z) / direct; }
@@ -351,9 +459,10 @@ function move(lobby, p, now, dt) {
     b.vx = b.dashX * DASH_SPEED;
     b.vz = b.dashZ * DASH_SPEED;
   } else {
-    const k = 1 - Math.exp(-12 * dt);
-    b.vx += (wx * speed - b.vx) * k;
-    b.vz += (wz * speed - b.vz) * k;
+    // na een duw of val vlieg je even door; anders snel optrekken en afremmen
+    const k = 1 - Math.exp(-(now < b.knockUntil || !b.ground ? 2 : 12) * dt);
+    b.vx += ((stunned ? 0 : wx * speed) - b.vx) * k;
+    b.vz += ((stunned ? 0 : wz * speed) - b.vz) * k;
   }
 
   const sub = Math.max(1, Math.ceil((Math.hypot(b.vx, b.vz) * dt) / 0.2));
@@ -365,7 +474,7 @@ function move(lobby, p, now, dt) {
   p.x = Math.max(M.BOUNDS.minX, Math.min(M.BOUNDS.maxX, p.x));
   p.z = Math.max(M.BOUNDS.minZ, Math.min(M.BOUNDS.maxZ, p.z));
   const prevY = p.y;
-  b.vy -= 24 * dt;
+  b.vy -= 24 * api.gravOf(lobby) * dt;
   p.y += b.vy * dt;
   const ground = M.groundAt(p.x, p.z, prevY + M.STEP);
   if (p.y <= ground) {
@@ -384,7 +493,7 @@ function move(lobby, p, now, dt) {
   const moved = Math.hypot(p.x - b.lastX, p.z - b.lastZ);
   b.lastX = p.x;
   b.lastZ = p.z;
-  if ((wx || wz) && !stunned && moved < speed * dt * 0.25) b.stuck += dt;
+  if ((wx || wz) && !stunned && b.ground && moved < speed * dt * 0.25) b.stuck += dt;
   else b.stuck = Math.max(0, b.stuck - dt * 2);
   if (b.stuck > 0.5) {
     b.vx += -wz * speed * 0.9 * (b.skill > 0.75 ? 1 : -1);
@@ -400,13 +509,13 @@ function move(lobby, p, now, dt) {
 
 function tickBots(lobby, now, dt, api) {
   for (const p of lobby.players.values()) {
-    if (!p.isBot) continue;
+    if (!p.isBot || p.out) continue;
     if (!p.bot) resetBot(p, lobby.opts.botLevel);
     if (p.stunnedUntil <= now && now > p.bot.thinkAt) {
       p.bot.thinkAt = now + 180 + Math.random() * 120;
       think(lobby, p, now, api);
     }
-    move(lobby, p, now, dt);
+    move(lobby, p, now, dt, api);
   }
 }
 
