@@ -27,7 +27,7 @@ const enc = encodeURIComponent;
 
 // ---------- lokaal bestand ----------
 const FILE = path.join(__dirname, 'data', 'store.json');
-let local = { accounts: [], leaderboard: [] };
+let local = { accounts: [], leaderboard: [], reports: [] };
 if (!remote) {
   try {
     local = JSON.parse(fs.readFileSync(FILE, 'utf8'));
@@ -54,7 +54,7 @@ module.exports = {
     if (remote) return (await rest('POST', 'accounts', row))[0];
     const account = Object.assign({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      tokens: [], progress: {}, stats: {}, daily: {}, rank_points: 0
+      tokens: [], progress: {}, stats: {}, daily: {}, rank_points: 0, friends: [], banned: false, recovery_hash: null
     }, row);
     local.accounts.push(account);
     flush();
@@ -67,6 +67,18 @@ module.exports = {
     if (account) Object.assign(account, patch);
     flush();
     return account;
+  },
+
+  // meldingen van spelers, voor de beheerder
+  async addReport(report) {
+    if (remote) return rest('POST', 'reports', report, 'return=minimal');
+    local.reports = (local.reports || []).concat(Object.assign({ created_at: new Date().toISOString() }, report)).slice(-500);
+    flush();
+  },
+
+  async listReports() {
+    if (remote) return rest('GET', 'reports?order=created_at.desc&limit=100');
+    return (local.reports || []).slice().reverse().slice(0, 100);
   },
 
   // beste tien op rangpunten

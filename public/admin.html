@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kantine Royale · beheer</title>
+  <style>
+    body { max-width: 760px; margin: 0 auto; padding: 24px 16px; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #26262b; background: #fbf8f2; }
+    h1 { font-size: 24px; }
+    input, button { padding: 9px 12px; font: inherit; border: 2px solid #ddd6c8; border-radius: 8px; }
+    button { font-weight: 800; color: #fff; background: #5b3fa8; border-color: #5b3fa8; cursor: pointer; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+    td, th { padding: 7px 8px; text-align: left; border-bottom: 1px solid #e4ddcf; }
+    #note { font-weight: 700; color: #d9540f; }
+  </style>
+</head>
+<body>
+  <h1>Kantine Royale · beheer</h1>
+  <p>Vul de beheersleutel in (de waarde van ADMIN_KEY op de server).</p>
+  <div class="row">
+    <input id="key" type="password" placeholder="Beheersleutel" autocomplete="off">
+    <button id="load">Meldingen laden</button>
+  </div>
+  <div class="row">
+    <input id="name" type="text" placeholder="Accountnaam">
+    <button id="ban">Blokkeren</button>
+    <button id="unban">Blokkade opheffen</button>
+  </div>
+  <p id="note"></p>
+  <table>
+    <thead><tr><th>Wanneer</th><th>Gemeld</th><th>Reden</th><th>Door</th></tr></thead>
+    <tbody id="reports"></tbody>
+  </table>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    async function call(path, body) {
+      const res = await fetch(path, {
+        method: body ? 'POST' : 'GET',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': $('key').value },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Er ging iets mis.');
+      return data;
+    }
+    async function load() {
+      try {
+        const { reports } = await call('/api/admin/reports');
+        $('note').textContent = reports.length ? '' : 'Er zijn geen meldingen.';
+        $('reports').replaceChildren(...reports.map((r) => {
+          const tr = document.createElement('tr');
+          [new Date(r.created_at).toLocaleString('nl-NL'), r.target, r.reason, r.reporter].forEach((text) => {
+            tr.insertCell().textContent = text;
+          });
+          tr.addEventListener('click', () => { $('name').value = r.target.replace(' (gast)', ''); });
+          return tr;
+        }));
+      } catch (e) {
+        $('note').textContent = e.message;
+      }
+    }
+    async function ban(banned) {
+      try {
+        const out = await call('/api/admin/ban', { name: $('name').value, banned });
+        $('note').textContent = `${out.name} is ${banned ? 'geblokkeerd' : 'weer toegelaten'}.`;
+      } catch (e) {
+        $('note').textContent = e.message;
+      }
+    }
+    $('load').addEventListener('click', load);
+    $('ban').addEventListener('click', () => ban(true));
+    $('unban').addEventListener('click', () => ban(false));
+  </script>
+</body>
+</html>

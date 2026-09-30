@@ -1175,3 +1175,56 @@ body.touch #buffs { bottom: 170px; }
 #replay small { font-size: 11px; font-weight: 700; opacity: 0.7; }
 
 #ranking { display: table; max-height: none; overflow: visible; }
+
+/* skins groter in beeld, winkel per soort */
+#skin-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+#skin-grid .art { height: 190px; }
+#shop-grid .shop-title { grid-column: 1 / -1; margin-top: 10px; }
+.k-acc .art { background: linear-gradient(160deg, #5aa2e8, #2356a8); }
+
+/* ======================================================================
+   Stemmen, host-instellingen, toetsen, vrienden, herstelcode
+   ====================================================================== */
+#vote {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #fff;
+  background: radial-gradient(circle at 50% 50%, rgba(91, 63, 168, 0.92), rgba(38, 38, 43, 0.97));
+}
+#vote-cards { display: flex; gap: 24px; }
+#vote-cards .map-card { font: inherit; border: 0; border-bottom: 8px solid rgba(0, 0, 0, 0.3); cursor: pointer; }
+#vote-cards .map-card small { font-size: 13px; font-weight: 800; }
+#vote-sub, .vote-left { margin: 0; font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; }
+.vote-left { color: #ffd34d; }
+.map-card.m-dak { background: linear-gradient(160deg, #8d9299, #3b3d44); }
+
+.opt-row { display: flex; align-items: center; gap: 6px; }
+.opt-row span { width: 62px; flex: none; font-size: 12px; font-weight: 800; color: var(--grey); }
+.opt-row .btn { flex: 1; padding: 7px 2px; font-size: 10px; }
+
+.keycap {
+  min-width: 96px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--ink);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.keycap.waiting { background: var(--orange); }
+
+.list li small { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--grey); }
+.list li .btn { min-width: 0; }
+.report { padding: 6px; font: inherit; font-size: 12px; font-weight: 800; border: 2px solid #ddd6c8; border-radius: 8px; background: #fff; }
+#recovery-box { padding: 12px 14px; text-align: center; background: #fff7d6; border: 3px dashed #e0a417; border-radius: 12px; }
+#recovery-box b { display: block; margin: 4px 0; font-size: 26px; font-weight: 900; letter-spacing: 3px; user-select: text; }
+.lobby-cols { max-height: 78vh; overflow-y: auto; }

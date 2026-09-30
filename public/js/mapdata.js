@@ -605,12 +605,77 @@
     return hit;
   }
 
+  // ======================= Dak =======================
+  // Het platte dak van de school, 36 x 28 m, met een hek eromheen. De stad ligt twaalf meter lager.
+  function dak({ box, cyl, table, prop, deco }) {
+    const GRAVEL = 0x7d8087, SOLAR = 0x1d2f6b;
+    box(0, 0, 36, 28, 0.5, GRAVEL, { y: -0.5 });
+    deco(0, 0, 36.6, 28.6, 11.4, C.orange, -12);           // het gebouw onder het dak
+    [-9.5, -6, -2.5].forEach((y) => {
+      deco(0, 14.33, 32, 0.1, 1.7, C.glass, y, true);
+      deco(0, -14.33, 32, 0.1, 1.7, C.glass, y, true);
+      deco(18.33, 0, 0.1, 24, 1.7, C.glass, y, true);
+      deco(-18.33, 0, 0.1, 24, 1.7, C.glass, y, true);
+    });
+    box(-18.2, 0, 0.4, 29, 2.6, C.fence);
+    box(18.2, 0, 0.4, 29, 2.6, C.fence);
+    box(0, -14.2, 36.8, 0.4, 2.6, C.fence);
+    box(0, 14.2, 36.8, 0.4, 2.6, C.fence);
+    // helikopterplek in het midden
+    [[0, -4, 8, 0.2], [0, 4, 8, 0.2], [-4, 0, 0.2, 8], [4, 0, 0.2, 8]].forEach((l) => deco(l[0], l[1], l[2], l[3], 0.02, C.yellow, 0));
+    [[-1.2, 0, 0.4, 3], [1.2, 0, 0.4, 3], [0, 0, 2.4, 0.4]].forEach((l) => deco(l[0], l[1], l[2], l[3], 0.02, C.white, 0));
+    // trappenhuis met automaat
+    box(-13, -10, 5, 4, 3, C.wall);
+    deco(-13, -7.96, 1.4, 0.1, 2.2, C.counter, 0);
+    box(-10.05, -10, 0.8, 1.2, 2, C.red);
+    deco(-9.63, -10, 0.05, 0.8, 0.9, C.counterTop, 0.9);
+    box(17.4, 3, 0.8, 1.2, 2, C.blue);
+    deco(16.98, 3, 0.05, 0.8, 0.9, C.counterTop, 0.9);
+    // airco's waar je op kunt springen
+    [[-4, -10], [-1, -10], [4.5, 11.5]].forEach((p) => {
+      box(p[0], p[1], 2.4, 1.6, 1.1, C.steel);
+      deco(p[0], p[1], 1.4, 1.4, 0.06, C.counterTop, 1.1);
+    });
+    [[4, -11.5, 1.6], [6, -11.5, 2.2]].forEach((p) => cyl(p[0], p[1], 0.4, p[2], C.steel));
+    // technisch plateau met trap en watertank
+    box(13, -6, 6, 8, 1.2, C.metal);
+    box(9.6, -6, 0.8, 4, 0.8, C.metal);
+    box(8.8, -6, 0.8, 4, 0.4, C.metal);
+    cyl(14.5, -8.2, 1.2, 2.2, C.white, 1.2);
+    // lichtkoepels en zonnepanelen
+    [[-9, 3], [-9, 8.5]].forEach((p) => box(p[0], p[1], 3, 3, 0.6, C.glass, { glass: true }));
+    [6, 8.6].forEach((z) => box(10, z, 5, 1.3, 0.5, SOLAR));
+    cyl(15.8, 12, 0.25, 8, C.metal);
+    deco(15.8, 12, 1.6, 0.1, 0.1, C.red, 7);
+    table(-1.5, 10.5);
+    [[-15.5, 12], [7, -3], [-6, -5.5], [15, -0.5]].forEach((p) => prop('bin', p[0], p[1], 0));
+
+    return {
+      GROUND: -12,
+      FOOTPRINT: { minX: -23, maxX: 23, minZ: -19, maxZ: 19 },
+      CENTER: { x: 0, z: 0 },
+      VIEW: 34,
+      VENDING: [{ x: -8.9, y: 0, z: -10 }, { x: 16.3, y: 0, z: 3 }],
+      VEHICLES: [{ x: -5, y: 0, z: 2, kind: 1 }],
+      BASES: [{ x: -14.5, y: 0, z: 9 }, { x: 14.5, y: 0, z: 6 }],
+      ZONE: { x: 0, z: 0, r: 8 },
+      PODIUM: { x: 0, y: 0, z: 2.5, dir: -1 },
+      BOUNDS: { minX: -17.6, maxX: 17.6, minZ: -13.6, maxZ: 13.6, minY: 0, maxY: 8 },
+      BROODJE_SPAWN: { x: 0, y: 0, z: 0 },
+      SPAWNS: at([[-15, -5], [14, 0.5], [-14.5, 12], [12.5, 12.5], [2, -12.6], [-5, 6], [6, -3.5], [-15.5, 0.5], [3, 5], [-3, -6.5]], 0),
+      ITEM_SPAWNS: at([
+        [0, 6], [-6, -2], [5, 1.5], [13, -4.5, 1.2], [-13, 5.5], [15.5, 9], [-4.5, 12.5], [7, -8], [-16.5, -3], [11, 2], [-9, 3, 0.6], [1, -12.5]
+      ], 0)
+    };
+  }
+
   const maps = {};
   [
     makeMap('kantine', 'Kantine', 'pizza', kantine),
     makeMap('gym', 'Gymzaal', 'trophy', gym),
     makeMap('aula', 'Aula', 'note', aula),
-    makeMap('plein', 'Schoolplein', 'flag', plein)
+    makeMap('plein', 'Schoolplein', 'flag', plein),
+    makeMap('dak', 'Het dak', 'up', dak)
   ].forEach((m) => { maps[m.id] = m; });
   let cur = maps.kantine;
 

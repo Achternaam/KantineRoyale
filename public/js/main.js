@@ -22,6 +22,7 @@ const ICONS = {
   play: 'M7 4l13 8-13 8z',
   plus: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z',
   help: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1 14h2v2h-2zm1-10a4 4 0 0 1 4 4c0 2.500-3 2.500-3 5h-2c0-3.500 3-3.500 3-5a2 2 0 0 0-4 0H8a4 4 0 0 1 4-4z',
+  friends: 'M8 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M17 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M1 20a7 7 0 0 1 14 0z M16 20a8.500 8.500 0 0 0-2-5.500A6 6 0 0 1 23 20z',
   close: 'M6 4l6 6 6-6 2 2-6 6 6 6-2 2-6-6-6 6-2-2 6-6-6-6z',
   chevron: 'M9 4l8 8-8 8-2.500-2.500 5.500-5.500L6.500 6.500z',
   check: 'M9.500 16.200L5 11.700l-2 2 6.500 6.500L21 8.700l-2-2z',
@@ -75,15 +76,11 @@ const EMOTE_MS = 3500;
 const ITEM_NAMES = ['', 'de pizza', 'het bord', 'de plant', 'het pak melk', 'de friet', 'het blikje'];
 const ITEM_WHAT = ['', 'een pizza', 'een bord', 'een plant', 'een pak melk', 'een bak friet', 'een blikje'];
 const ITEM_COLORS = [0, 0xf4c430, 0xf2f0ea, 0x4caf50, 0xffffff, 0xf4c430, 0xe23b2e];
-// Klassen: allrounder is gratis, de rest speel je vrij in de battlepass.
-const CLASSES = [
-  { id: 'allrounder', name: 'Allrounder', icon: 'star', desc: 'Geen extra\'s en geen nadelen.' },
-  { id: 'sprinter', name: 'Sprinter', icon: 'bolt', desc: 'Je dash is na 1,3 seconde weer klaar in plaats van 2.' },
-  { id: 'werper', name: 'Werper', icon: 'rocket', desc: 'Gooit 35% harder en raakt makkelijker.' },
-  { id: 'tank', name: 'Tank', icon: 'shield', desc: 'De eerste tackle kost je het broodje niet. Je rent wel 8% trager.' },
-  { id: 'springer', name: 'Springer', icon: 'up', desc: 'Springt hoger en kan in de lucht nog een keer springen.' },
-  { id: 'magneet', name: 'Magneet', icon: 'magnet', desc: 'Pakt het broodje en spullen van verder af.' }
-];
+const {
+  CLASSES, SKINS, THEMES, SEASON, THEME, seasonDaysLeft, ACCESSORIES, SLOT_NAMES, TITLES, RANK_NAMES, rankOf,
+  EMOTE_NAMES, EMOTE_SOURCE, STAMP_ICON, XP_PER_TIER, BATTLEPASS, SHOP, DAILY_REWARD, DAILY_XP, CHALLENGES
+} = window.Catalog;
+const { today, defs: dailyDefs } = window.Catalog.dailyFor();
 const TEAM_COLORS = [0xf26a1b, 0x7a3fb8];
 const TEAM_NAMES = ['Oranje', 'Paars'];
 const MODE_INFO = {
@@ -118,72 +115,11 @@ const save = (key, value) => {
 let account = null; // { name, rp } als je bent ingelogd
 let syncTimer = 0;
 
-const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, sharp: false, bob: true, names: true });
+const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, sharp: false, bob: true, names: true, stamps: true, keys: {} });
+if (!settings.keys) settings.keys = {};
 const stats = load('kr-stats', { pickups: 0, tackles: 0, hits: 0, holdSeconds: 0, wins: 0, games: 0, jumps: 0 });
 const progress = load('kr-progress', { unlocked: [], skin: 'leerling', coins: 0, owned: [], stamp: 'naam', custom: null, xp: 0, bpTier: 0, loadout: [1, 2, 3], cls: 'allrounder', season: 0, title: '', acc: { hat: 'skin', face: 'geen', back: 'rugzak' } });
 
-const SKINS = [
-  { id: 'leerling', name: 'Leerling', shirt: 0x2f6fde, pants: 0x3b3d44, tone: 0xf0c39a, hair: 0x5a3a22 },
-  { id: 'sporter', name: 'Sporter', shirt: 0xe23b2e, pants: 0x1f2024, tone: 0xc98d5e, hair: 0x222222, hat: 'band', hatColor: 0xffffff },
-  { id: 'hoodie', name: 'Hoodie', shirt: 0x6b6f78, pants: 0x2d3a5a, tone: 0xf0c39a, hair: 0xd9b35c, hat: 'beanie', hatColor: 0x6b6f78 },
-  { id: 'brugklasser', name: 'Brugklasser', shirt: 0xf4c430, pants: 0x3d8bd9, tone: 0x8a5a3c, hair: 0x1a1a1a, hat: 'cap', hatColor: 0xe23b2e },
-  { id: 'frikandel', name: 'Frikandel', shirt: 0x8a4b26, pants: 0x6e3a1c, tone: 0xa85d33, hair: 0x8a4b26, locked: true },
-  { id: 'conc', name: 'Conciërge', shirt: 0x3a4f6b, pants: 0x2a2f38, tone: 0xe8b88f, hair: 0x777777, hat: 'cap', hatColor: 0x3a4f6b, locked: true },
-  { id: 'kok', name: 'Kantinekok', shirt: 0xffffff, pants: 0x3b3d44, tone: 0xf0c39a, hair: 0x5a3a22, hat: 'chef', hatColor: 0xffffff, locked: true },
-  { id: 'atleet', name: 'Atleet', shirt: 0x19b5b0, pants: 0x19b5b0, tone: 0x8a5a3c, hair: 0x1a1a1a, hat: 'band', hatColor: 0xf4c430, locked: true },
-  { id: 'robot', name: 'Robot', shirt: 0x9aa3ad, pants: 0x6d7680, tone: 0xc5ccd3, hair: 0x9aa3ad, hat: 'antenna', hatColor: 0xe23b2e, locked: true },
-  { id: 'koning', name: 'Koning', shirt: 0x7a3fb8, pants: 0x4a2670, tone: 0xf0c39a, hair: 0x5a3a22, hat: 'crown', hatColor: 0xf5c542, locked: true },
-  { id: 'goud', name: 'Goud', shirt: 0xf5c542, pants: 0xd9a520, tone: 0xffdf70, hair: 0xd9a520, hat: 'crown', hatColor: 0xffffff, locked: true },
-  // te koop in de winkel
-  { id: 'ninja', name: 'Ninja', shirt: 0x1f2024, pants: 0x1f2024, tone: 0xe8b88f, hair: 0x1f2024, hat: 'band', hatColor: 0xe23b2e, price: 150 },
-  { id: 'clown', name: 'Clown', shirt: 0xf4c430, pants: 0x3aa655, tone: 0xffffff, hair: 0xe23b2e, hat: 'cap', hatColor: 0x3d8bd9, price: 150 },
-  { id: 'astronaut', name: 'Astronaut', shirt: 0xf2f0ea, pants: 0xd9d5cb, tone: 0xf0c39a, hair: 0xd9d5cb, hat: 'beanie', hatColor: 0xf2f0ea, price: 200 }
-];
-// vrij te spelen in de battlepass
-SKINS.push(
-  { id: 'piraat', name: 'Piraat', shirt: 0x7a2a1d, pants: 0x26262b, tone: 0xe8b88f, hair: 0x1a1a1a, hat: 'band', hatColor: 0xe23b2e },
-  { id: 'zombie', name: 'Zombie', shirt: 0x5a6b4a, pants: 0x3b3d44, tone: 0x9ccf8a, hair: 0x2d3a2a },
-  { id: 'gamer', name: 'Gamer', shirt: 0x19b5b0, pants: 0x26262b, tone: 0xf0c39a, hair: 0x9b6bd1, hat: 'band', hatColor: 0x26262b },
-  { id: 'dokter', name: 'Dokter', shirt: 0xffffff, pants: 0x9fd4f5, tone: 0xc98d5e, hair: 0x222222 },
-  { id: 'voetballer', name: 'Voetballer', shirt: 0xf26a1b, pants: 0xffffff, tone: 0xf0c39a, hair: 0xd9b35c },
-  { id: 'agent', name: 'Agent', shirt: 0x1d2f6b, pants: 0x1d2f6b, tone: 0xe8b88f, hair: 0x5a3a22, hat: 'cap', hatColor: 0x1d2f6b },
-  { id: 'bakker', name: 'Bakker', shirt: 0xf3c877, pants: 0xffffff, tone: 0xf0c39a, hair: 0x8a5a3c, hat: 'chef', hatColor: 0xf2f0ea },
-  { id: 'neon', name: 'Neon', shirt: 0x39ff14, pants: 0xff2bd6, tone: 0x8a5a3c, hair: 0x00e5ff, hat: 'band', hatColor: 0xfff200 },
-  { id: 'ijsbeer', name: 'IJsbeer', shirt: 0xf2f0ea, pants: 0xf2f0ea, tone: 0xf2f0ea, hair: 0xf2f0ea, hat: 'beanie', hatColor: 0x9fd4f5 },
-  { id: 'lava', name: 'Lava', shirt: 0xe23b2e, pants: 0x26262b, tone: 0xf26a1b, hair: 0xf4c430, hat: 'crown', hatColor: 0xf26a1b },
-  { id: 'schaduw', name: 'Schaduw', shirt: 0x16161a, pants: 0x16161a, tone: 0x2a2a30, hair: 0x16161a, hat: 'beanie', hatColor: 0x16161a },
-  { id: 'diamant', name: 'Diamant', shirt: 0x7fe3ff, pants: 0x4fb8e8, tone: 0xcff6ff, hair: 0xffffff, hat: 'crown', hatColor: 0xffffff }
-);
-SKINS.slice(-12).forEach((k) => { k.pass = true; k.season = 0; });
-// de skins van de andere thema's: [id, naam, jas, broek, huid, haar, hoed, hoedkleur]
-[
-  [['pompoen', 'Pompoen', 0xf26a1b, 0x3c8f40, 0xf5a54a, 0x3c8f40], ['spook', 'Spook', 0xf2f0ea, 0xf2f0ea, 0xffffff, 0xf2f0ea],
-    ['vampier', 'Vampier', 0x1a1a1a, 0x1a1a1a, 0xe8e0e0, 0x1a1a1a, 'band', 0xa3201c], ['heks', 'Heks', 0x4a3a78, 0x1f2024, 0x9ccf8a, 0x3aa655, 'beanie', 0x1f2024],
-    ['skelet', 'Skelet', 0x26262b, 0x26262b, 0xf2f0ea, 0x26262b], ['mummie', 'Mummie', 0xe2d6b8, 0xe2d6b8, 0xcfc29e, 0xe2d6b8, 'band', 0xe2d6b8],
-    ['weerwolf', 'Weerwolf', 0x6e4a2e, 0x3b3d44, 0x8a5a3c, 0x4a2f1a], ['vleermuis', 'Vleermuis', 0x2a2038, 0x2a2038, 0x6b5a8a, 0x2a2038],
-    ['kat', 'Zwarte kat', 0x1f2024, 0x1f2024, 0x1f2024, 0x1f2024, 'band', 0xf4c430], ['slijm', 'Slijm', 0x62c25c, 0x3c8f40, 0x9be38f, 0x3c8f40],
-    ['spin', 'Spin', 0x3b1f4a, 0x1f2024, 0x8a5a3c, 0x1f2024, 'antenna', 0xa3201c], ['geest', 'Pompoenkoning', 0xf26a1b, 0x1f2024, 0xf5a54a, 0xf26a1b, 'crown', 0x3c8f40]],
-  [['sneeuwpop', 'Sneeuwpop', 0xffffff, 0xffffff, 0xffffff, 0xffffff, 'beanie', 0x1f2024], ['rendier', 'Rendier', 0x8a5a3c, 0x6e3a1c, 0xa5703f, 0x6e3a1c, 'antenna', 0xe23b2e],
-    ['elf', 'Elf', 0x3aa655, 0xe23b2e, 0xf0c39a, 0xd9b35c, 'beanie', 0x3aa655], ['kerstman', 'Kerstman', 0xe23b2e, 0xe23b2e, 0xf0c39a, 0xffffff, 'beanie', 0xe23b2e],
-    ['pinguin', 'Pinguïn', 0x1f2024, 0xf4c430, 0xffffff, 0x1f2024], ['ijs', 'IJskoningin', 0xbfe6ff, 0x7fc4ee, 0xe8f6ff, 0xffffff, 'crown', 0xbfe6ff],
-    ['skier', 'Skiër', 0x3d8bd9, 0x1f2024, 0xf0c39a, 0x5a3a22, 'beanie', 0xf4c430], ['peperkoek', 'Peperkoek', 0xa5703f, 0xa5703f, 0xc98d5e, 0xa5703f, 'band', 0xffffff],
-    ['kerstboom', 'Kerstboom', 0x2c7a3a, 0x6e3a1c, 0x3aa655, 0x2c7a3a, 'antenna', 0xf4c430], ['yeti', 'Yeti', 0xe8f6ff, 0xe8f6ff, 0x9fd4f5, 0xffffff],
-    ['cadeau', 'Cadeau', 0xe23b2e, 0xf4c430, 0xf0c39a, 0x5a3a22, 'band', 0xf4c430], ['noorderlicht', 'Noorderlicht', 0x19b5b0, 0x5b3fa8, 0x8a5a3c, 0x62c25c, 'crown', 0x19b5b0]],
-  [['blokker', 'Blokker', 0xf2f0ea, 0x3b3d44, 0xf0c39a, 0x5a3a22, 'band', 0xe23b2e], ['markeerstift', 'Markeerstift', 0xfff200, 0xfff200, 0xf0c39a, 0x1f2024, 'cap', 0xfff200],
-    ['slaper', 'Slaapkop', 0x9fd4f5, 0x9fd4f5, 0xf0c39a, 0x8a5a3c, 'beanie', 0x9fd4f5], ['docent', 'Docent', 0x6b4a2e, 0x3b3d44, 0xe8b88f, 0x777777],
-    ['spieker', 'Spieker', 0x3b3d44, 0x1f2024, 0xc98d5e, 0x1f2024, 'cap', 0x3b3d44], ['koffie', 'Koffie', 0x6e3a1c, 0x3b2214, 0xf0c39a, 0x3b2214],
-    ['rekenmachine', 'Rekenmachine', 0x55565c, 0x3b3d44, 0xc5ccd3, 0x55565c, 'antenna', 0x3aa655], ['tien', 'Tien met een griffel', 0xf5c542, 0x3aa655, 0xf0c39a, 0xd9b35c, 'crown', 0xf5c542],
-    ['herkanser', 'Herkanser', 0xe23b2e, 0x3b3d44, 0x8a5a3c, 0x1a1a1a, 'band', 0xffffff], ['inkt', 'Inktvlek', 0x1d2f6b, 0x1d2f6b, 0xf0c39a, 0x1d2f6b],
-    ['geslaagd', 'Geslaagd', 0x1f2024, 0x1f2024, 0xf0c39a, 0x5a3a22, 'cap', 0x1f2024], ['vlag', 'Vlag en tas', 0xe23b2e, 0x2f6fde, 0xf0c39a, 0xd9b35c, 'band', 0xffffff]]
-].forEach((set, i) => set.forEach(([id, name, shirt, pants, tone, hair, hat, hatColor]) =>
-  SKINS.push({ id, name, shirt, pants, tone, hair, hat, hatColor, pass: true, season: i + 1 })));
-const THEMES = ['Schoolstart', 'Halloween', 'Winter', 'Examenweek'];
-const SEASON_MS = 14 * 86400000;
-const SEASON_EPOCH = Date.UTC(2026, 8, 28); // maandag 28 september 2026
-const SEASON = Math.max(1, Math.floor((Date.now() - SEASON_EPOCH) / SEASON_MS) + 1);
-const THEME = (SEASON - 1) % THEMES.length;
-const seasonDaysLeft = () => Math.ceil((SEASON_EPOCH + SEASON * SEASON_MS - Date.now()) / 86400000);
-const PASS_SKINS = SKINS.filter((k) => k.pass && k.season === THEME);
 // nieuw seizoen: de battlepass begint opnieuw, alles wat je al had blijf je houden
 function checkSeason() {
   if (progress.season === SEASON) return false;
@@ -197,139 +133,27 @@ function checkSeason() {
 }
 checkSeason();
 
-// ---------- Accessoires: los van je skin ----------
-const ACCESSORIES = {
-  hat: [
-    { id: 'skin', name: 'Van je skin' }, { id: 'geen', name: 'Niets' }, { id: 'pet', name: 'Pet' }, { id: 'muts', name: 'Muts' },
-    { id: 'koptelefoon', name: 'Koptelefoon', price: 80 }, { id: 'hoed', name: 'Hoge hoed', price: 100 }, { id: 'kroon', name: 'Kroon', price: 150 }
-  ],
-  face: [
-    { id: 'geen', name: 'Niets' }, { id: 'bril', name: 'Bril' }, { id: 'snor', name: 'Snor', price: 40 },
-    { id: 'zonnebril', name: 'Zonnebril', price: 60 }, { id: 'masker', name: 'Mondkapje', price: 80 }
-  ],
-  back: [
-    { id: 'rugzak', name: 'Rugzak' }, { id: 'geen', name: 'Niets' }, { id: 'cape', name: 'Cape', price: 100 },
-    { id: 'gitaar', name: 'Gitaar', price: 120 }, { id: 'vleugels', name: 'Vleugels', price: 150 }
-  ]
-};
-const SLOT_NAMES = { hat: 'Hoofd', face: 'Gezicht', back: 'Rug' };
 if (!progress.acc || !progress.acc.hat) progress.acc = { hat: 'skin', face: 'geen', back: 'rugzak' };
 const accString = (acc = progress.acc) => `${acc.hat}.${acc.face}.${acc.back}`;
 
-// ---------- Titels: verdien je met je statistieken ----------
-const TITLES = [
-  { id: '', name: 'Geen titel', stat: 'games', goal: 0 },
-  { id: 'nieuwkomer', name: 'Nieuwkomer', stat: 'games', goal: 1, how: 'Speel een potje' },
-  { id: 'vasteklant', name: 'Vaste klant', stat: 'games', goal: 50, how: 'Speel 50 potjes' },
-  { id: 'scherpschutter', name: 'Scherpschutter', stat: 'hits', goal: 50, how: 'Raak 50 keer iemand' },
-  { id: 'broodjesdief', name: 'Broodjesdief', stat: 'tackles', goal: 50, how: 'Tackel 50 keer de drager' },
-  { id: 'veelvraat', name: 'Veelvraat', stat: 'holdSeconds', goal: 600, how: 'Houd het broodje 600 seconden vast' },
-  { id: 'sloper', name: 'Sloper', stat: 'tables', goal: 100, how: 'Gooi 100 tafels om' },
-  { id: 'kangoeroe', name: 'Kangoeroe', stat: 'jumps', goal: 1000, how: 'Spring 1000 keer' },
-  { id: 'kampioen', name: 'Kampioen', stat: 'wins', goal: 25, how: 'Win 25 potjes' },
-  { id: 'kunstenaar', name: 'Kunstenaar', stat: 'sprays', goal: 50, how: 'Zet 50 stempels' }
-];
 const titleOpen = (t) => (stats[t.stat] || 0) >= t.goal;
 const titleName = (id) => (TITLES.find((t) => t.id === id) || TITLES[0]).name;
 
-// ---------- Ranked: achttien rangen, zelfde grenzen als op de server ----------
-const RANK_STEPS = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2200];
-const RANK_NAMES = ['Brons I', 'Brons II', 'Brons III', 'Zilver I', 'Zilver II', 'Zilver III', 'Goud I', 'Goud II', 'Goud III',
-  'Platina I', 'Platina II', 'Platina III', 'Diamant I', 'Diamant II', 'Diamant III', 'Elite', 'Kampioen', 'Legende'];
-const RANK_COLORS = [0xc98d5e, 0xbfc5cc, 0xf5c542, 0x7fe3d0, 0x7fc4ee, 0xe23b2e, 0xf26a1b, 0x9b6bd1];
-function rankOf(rp) {
-  const index = RANK_STEPS.reduce((best, need, i) => (rp >= need ? i : best), 0);
-  const next = RANK_STEPS[index + 1];
-  return {
-    index, name: RANK_NAMES[index], color: RANK_COLORS[index < 15 ? Math.floor(index / 3) : index - 10],
-    share: next ? (rp - RANK_STEPS[index]) / (next - RANK_STEPS[index]) : 1,
-    toGo: next ? next - rp : 0
-  };
-}
 if (!Array.isArray(progress.loadout)) progress.loadout = [1, 2, 3];
-const EMOTE_NAMES = ['', 'Take the L', 'Dab', 'Zwaai', 'Dans', 'Floss', 'Facepalm', 'Jumping jacks', 'Buiging', 'Helikopter', 'Saluut'];
-const EMOTE_SOURCE = (n) => (n <= 4 ? '' : n <= 6 ? 'Winkel' : 'Battlepass');
-const STAMP_ICONS = ['star', 'fire', 'skull', 'pizza', 'gamepad', 'eye', 'rocket', 'ghost', 'smiley', 'diamond', 'moon', 'trophy', 'note', 'bomb'];
-const STAMP_NAMES = ['Ster', 'Vuur', 'Schedel', 'Pizza', 'Controller', 'Oog', 'Raket', 'Spook', 'Smiley', 'Diamant', 'Maan', 'Beker', 'Muziek', 'Bom'];
-// welk icoon hoort bij welke stempel (e0..e13 uit de battlepass, de rest uit de winkel)
-const STAMP_ICON = { kroon: 'crown', broodje: 'broodje', hart: 'heart', bliksem: 'bolt' };
-STAMP_ICONS.forEach((name, i) => { STAMP_ICON['e' + i] = name; });
-const XP_PER_TIER = 100;
-// 50 treden: 12 skins, 5 klassen, 4 emotes, 14 stempels en 15 keer munten
-const BATTLEPASS = [];
-{
-  const skinTiers = [5, 10, 15, 20, 23, 25, 30, 35, 37, 40, 45, 50];
-  const emoteTiers = [8, 18, 28, 38];
-  const stampTiers = [2, 4, 7, 12, 14, 17, 22, 24, 27, 32, 34, 42, 44, 47];
-  const classTiers = { 3: 'sprinter', 9: 'werper', 16: 'tank', 26: 'springer', 33: 'magneet' };
-  for (let t = 1; t <= 50; t++) {
-    if (classTiers[t]) {
-      const c = CLASSES.find((k) => k.id === classTiers[t]);
-      BATTLEPASS.push({ type: 'class', id: 'class:' + c.id, name: c.name, label: 'Klasse ' + c.name });
-    } else if (skinTiers.includes(t)) {
-      const k = PASS_SKINS[skinTiers.indexOf(t)];
-      BATTLEPASS.push({ type: 'skin', id: 'skin:' + k.id, name: k.name, label: 'Skin ' + k.name });
-    } else if (emoteTiers.includes(t)) {
-      const n = 7 + emoteTiers.indexOf(t);
-      BATTLEPASS.push({ type: 'emote', id: 'emote:' + n, name: EMOTE_NAMES[n], label: 'Emote ' + EMOTE_NAMES[n] });
-    } else if (stampTiers.includes(t)) {
-      const i = stampTiers.indexOf(t);
-      BATTLEPASS.push({ type: 'stamp', id: 'stamp:e' + i, name: STAMP_NAMES[i], label: 'Stempel ' + STAMP_NAMES[i] });
-    } else {
-      const coins = 30 + 10 * Math.floor(t / 10);
-      BATTLEPASS.push({ type: 'coins', coins, name: `${coins} munten`, label: `${coins} munten` });
-    }
-  }
-}
-const SHOP = SKINS.filter((k) => k.price).map((k) => ({ id: 'skin:' + k.id, kind: 'Skin', name: k.name, price: k.price })).concat([
-  { id: 'emote:5', kind: 'Emote', name: 'Floss', price: 100 },
-  { id: 'emote:6', kind: 'Emote', name: 'Facepalm', price: 80 },
-  { id: 'stamp:kroon', kind: 'Stempel', name: 'Kroon', price: 60 },
-  { id: 'stamp:broodje', kind: 'Stempel', name: 'Frikandelbroodje', price: 60 },
-  { id: 'stamp:hart', kind: 'Stempel', name: 'Hartje', price: 40 },
-  { id: 'stamp:bliksem', kind: 'Stempel', name: 'Bliksem', price: 40 }
-]);
 const owns = (id) => progress.owned.includes(id);
-const DAILIES = [
-  { desc: 'Raak 5 keer iemand met een voorwerp.', stat: 'hits', goal: 5 },
-  { desc: 'Pak 3 keer het broodje.', stat: 'pickups', goal: 3 },
-  { desc: 'Tackel 3 keer de broodjesdrager.', stat: 'tackles', goal: 3 },
-  { desc: 'Spring 50 keer.', stat: 'jumps', goal: 50 },
-  { desc: 'Speel 2 potjes uit.', stat: 'games', goal: 2 },
-  { desc: 'Houd 40 seconden het broodje vast.', stat: 'holdSeconds', goal: 40 },
-  { desc: 'Gooi 15 keer iets.', stat: 'throws', goal: 15 },
-  { desc: 'Haal 3 power-ups uit een automaat.', stat: 'powerups', goal: 3 },
-  { desc: 'Doe 5 emotes.', stat: 'emotes', goal: 5 },
-  { desc: 'Neem 3 keer de lift.', stat: 'lifts', goal: 3 },
-  { desc: 'Zet 3 keer je stempel op een muur.', stat: 'sprays', goal: 3 },
-  { desc: 'Win een potje.', stat: 'wins', goal: 1 },
-  { desc: 'Pak 6 keer het broodje.', stat: 'pickups', goal: 6 },
-  { desc: 'Raak 10 keer iemand met een voorwerp.', stat: 'hits', goal: 10 }
-];
-const DAILY_REWARD = 50;
-const DAILY_XP = 60;
-const now0 = new Date();
-const today = `${now0.getFullYear()}-${now0.getMonth() + 1}-${now0.getDate()}`;
-const dayNumber = Math.floor(now0.getTime() / 86400000);
-const dailyDefs = [0, 5, 9].map((o) => DAILIES[(dayNumber + o) % DAILIES.length]);
 const daily = load('kr-daily', { date: today, values: [0, 0, 0], done: [false, false, false] });
 if (daily.date !== today || !Array.isArray(daily.values)) {
   Object.assign(daily, { date: today, values: [0, 0, 0], done: [false, false, false] });
 }
-const CHALLENGES = [
-  { id: 'hap', title: 'Eerste hap', desc: 'Pak het frikandelbroodje op.', stat: 'pickups', goal: 1, skin: 'frikandel' },
-  { id: 'tackle', title: 'Tackelkoning', desc: 'Tackel de broodjesdrager 10 keer.', stat: 'tackles', goal: 10, skin: 'conc' },
-  { id: 'gooi', title: 'Pizzabakker', desc: 'Raak 15 keer iemand met een voorwerp.', stat: 'hits', goal: 15, skin: 'kok' },
-  { id: 'spring', title: 'Springveer', desc: 'Spring 200 keer.', stat: 'jumps', goal: 200, skin: 'atleet' },
-  { id: 'vaak', title: 'Vaste klant', desc: 'Speel 5 potjes uit.', stat: 'games', goal: 5, skin: 'robot' },
-  { id: 'win', title: 'Kantinekoning', desc: 'Win een potje met minstens 2 spelers.', stat: 'wins', goal: 1, skin: 'koning' },
-  { id: 'baas', title: 'Broodjesbaas', desc: 'Houd het broodje in totaal 120 seconden vast.', stat: 'holdSeconds', goal: 120, skin: 'goud' }
-];
 const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
 const isUnlocked = (skin) => (skin.price || skin.pass ? owns('skin:' + skin.id) : !skin.locked || progress.unlocked.includes(skin.id));
 if (!isUnlocked(skinById(progress.skin))) progress.skin = 'leerling';
 
 function addStat(stat, amount) {
+  if (account) { // ingelogd: de server telt zelf
+    if (stat in pendingStats) pendingStats[stat] += amount;
+    return;
+  }
   stats[stat] = (stats[stat] || 0) + amount;
   save('kr-stats', stats);
   dailyDefs.forEach((def, i) => {
@@ -354,13 +178,14 @@ function addStat(stat, amount) {
 }
 
 function addCoins(n) {
-  progress.coins += n;
+  if (!account) progress.coins += n;
   save('kr-progress', progress);
   document.querySelectorAll('.coins').forEach((el) => { el.textContent = progress.coins; });
 }
 
 // battlepass: elke 100 XP een trede, de beloning krijg je meteen
 function addXp(n) {
+  if (account) return addCoins(0); // ingelogd: de server kent XP en beloningen toe
   progress.xp += n;
   const tier = Math.min(BATTLEPASS.length, Math.floor(progress.xp / XP_PER_TIER));
   const got = [];
@@ -400,20 +225,27 @@ function scheduleSync() {
   syncTimer = setTimeout(() => api('/api/save', { progress, stats, daily }).catch(() => {}), 2500);
 }
 // Na het inloggen: wat op het account staat is leidend. Een nieuw account krijgt wat je hier al had gespeeld.
+// Na het inloggen is wat de server zegt leidend: munten, XP, skins en statistieken rekent de server uit.
 function adopt(data) {
   account = { name: data.name, rp: data.rp };
-  if (data.progress && Object.keys(data.progress).length) {
-    Object.assign(progress, data.progress);
-    Object.assign(stats, data.stats || {});
-    if (data.daily && data.daily.date === today) Object.assign(daily, data.daily);
-    localStorage.setItem('kr-progress', JSON.stringify(progress));
-    localStorage.setItem('kr-stats', JSON.stringify(stats));
-    localStorage.setItem('kr-daily', JSON.stringify(daily));
-  }
-  checkSeason();
-  scheduleSync();
+  Object.assign(progress, data.progress);
+  for (const key of Object.keys(stats)) delete stats[key];
+  Object.assign(stats, data.stats || {});
+  Object.assign(daily, { date: today, values: [0, 0, 0], done: [false, false, false] },
+    data.daily && data.daily.date === today ? data.daily : {});
+  localStorage.setItem('kr-progress', JSON.stringify(progress));
+  localStorage.setItem('kr-stats', JSON.stringify(stats));
+  localStorage.setItem('kr-daily', JSON.stringify(daily));
+  socket.emit('hello', getToken()); // vrienden zien dat je online bent
   refreshAccountUi();
 }
+// sprongen en liftritten kan alleen de client tellen: die gaan af en toe naar de server
+const pendingStats = { jumps: 0, lifts: 0 };
+setInterval(() => {
+  if (!account || !playing || !(pendingStats.jumps || pendingStats.lifts)) return;
+  socket.emit('clientStats', pendingStats);
+  pendingStats.jumps = pendingStats.lifts = 0;
+}, 5000);
 
 // ---------- Geluid (klein synthesizertje, geen bestanden nodig) ----------
 let audio = null;
@@ -1098,6 +930,8 @@ function stampTexture(design, color) {
   return new THREE.CanvasTexture(c);
 }
 function placeSpray(e) {
+  if (muted.has(e.id)) return;
+  if (!settings.stamps) e = Object.assign({}, e, { img: null, design: e.img ? 'naam' : e.design }); // tekeningen van anderen uitgezet
   const old = sprays.get(e.id);
   if (old) scene.remove(old);
   const info = roster.get(e.id) || { name: '?' };
@@ -1474,7 +1308,26 @@ const controls = new PointerLockControls(camera, document.body);
 controls.minPolarAngle = 0.15;
 controls.maxPolarAngle = Math.PI - 0.15;
 
-const keys = {};
+// Toetsen zijn instelbaar. Elke actie heeft een standaardtoets; settings.keys bevat wat de speler heeft gewijzigd.
+const ACTIONS = [
+  ['forward', 'Vooruit', 'KeyW'], ['back', 'Achteruit', 'KeyS'], ['left', 'Links', 'KeyA'], ['right', 'Rechts', 'KeyD'],
+  ['jump', 'Springen', 'Space'], ['dash', 'Dash', 'ShiftLeft'], ['throw', 'Gooien', 'KeyE'], ['banana', 'Bananenschil', 'KeyQ'],
+  ['dismount', 'Afstappen', 'KeyR'], ['spray', 'Spuitbus', 'KeyT'],
+  ['emote1', 'Emote 1', 'Digit1'], ['emote2', 'Emote 2', 'Digit2'], ['emote3', 'Emote 3', 'Digit3'],
+  ['say1', 'Bericht: Hier!', 'KeyZ'], ['say2', 'Bericht: Pak hem!', 'KeyX'], ['say3', 'Bericht: Help!', 'KeyC'], ['say4', 'Bericht: GG', 'KeyV']
+];
+// vaste extra toetsen, zolang ze niet aan iets anders zijn toegewezen
+const FIXED = { ArrowUp: 'forward', ArrowDown: 'back', ArrowLeft: 'left', ArrowRight: 'right', ShiftRight: 'dash', KeyF: 'throw' };
+const keyOf = (action) => settings.keys[action] || ACTIONS.find((a) => a[0] === action)[2];
+function actionOf(code) {
+  const hit = ACTIONS.find((a) => keyOf(a[0]) === code);
+  return hit ? hit[0] : FIXED[code];
+}
+const keyLabel = (code) => ({ Space: 'Spatie', ShiftLeft: 'Shift', ShiftRight: 'Shift rechts', ControlLeft: 'Ctrl', AltLeft: 'Alt' }[code] ||
+  code.replace(/^Key|^Digit/, '').replace('Arrow', 'Pijl '));
+const held = {};       // welke acties zijn nu ingedrukt
+let rebinding = null;  // de actie die op een nieuwe toets wacht
+let padMode = false;   // er wordt met een controller gespeeld
 let playing = false;
 const me = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true };
 let camY = EYE_HEIGHT;
@@ -1508,15 +1361,15 @@ let crashSent = false;
 let airJumps = 0;
 const dashCooldown = () => (myClass === 'sprinter' ? 1.3 : DASH_COOLDOWN);
 // op een telefoon is er geen muisvergrendeling: daar speel je zolang het pauzemenu dicht is
-const isActive = () => (touchMode ? !paused : controls.isLocked);
+const isActive = () => (touchMode || padMode ? !paused : controls.isLocked);
 const broodjeSize = () => (lastState && lastState.b ? 0.45 + 0.55 * lastState.b.s : 1);
 
 function wishDir() {
   camera.getWorldDirection(fwd);
   fwd.y = 0;
   fwd.normalize();
-  const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - joy.y;
-  const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joy.x;
+  const f = (held.forward ? 1 : 0) - (held.back ? 1 : 0) - joy.y;
+  const s = (held.right ? 1 : 0) - (held.left ? 1 : 0) + joy.x;
   // rechts = vooruit x omhoog = (-fz, 0, fx)
   const x = fwd.x * f - fwd.z * s, z = fwd.z * f + fwd.x * s;
   const len = Math.hypot(x, z);
@@ -1562,32 +1415,106 @@ function tryThrow() {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (rebinding) {
+    // de volgende toets wordt de nieuwe toets voor deze actie; zat hij al ergens op, dan wisselen ze
+    e.preventDefault();
+    if (e.code !== 'Escape') {
+      const other = ACTIONS.find((a) => keyOf(a[0]) === e.code);
+      if (other) settings.keys[other[0]] = keyOf(rebinding);
+      settings.keys[rebinding] = e.code;
+      save('kr-settings', settings);
+    }
+    rebinding = null;
+    return renderKeys();
+  }
   if (e.target.tagName === 'INPUT') return;
-  keys[e.code] = true;
+  const action = actionOf(e.code);
+  if (action) held[action] = true;
   if (!playing) return;
-  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-  if (e.repeat) return;
+  if (action || e.code === 'Space') e.preventDefault();
+  if (e.repeat || !action) return;
   // de springer mag in de lucht nog één keer afzetten
-  if (e.code === 'Space' && myClass === 'springer' && !me.onGround && airJumps < 1 && canAct()) {
+  if (action === 'jump' && myClass === 'springer' && !me.onGround && airJumps < 1 && canAct()) {
     airJumps++;
     me.vy = JUMP_SPEED;
     sfx('jump');
   }
-  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tryDash();
-  if (e.code === 'KeyE' || e.code === 'KeyF') tryThrow();
-  if (e.code === 'KeyQ' && canAct() && myGadget) socket.emit('gadget');
-  if (e.code === 'KeyT') trySpray();
-  if (e.code === 'KeyR' && myVehicle && canAct()) socket.emit('dismount', false);
-  if (/^Digit[123]$/.test(e.code) && canAct() && me.onGround) {
-    const n = progress.loadout[Number(e.code[5]) - 1];
-    if (n) setEmote(n);
-    else toast('Dit vak is leeg. Kies een emote in het menu');
-  }
-  const line = ['KeyZ', 'KeyX', 'KeyC', 'KeyV'].indexOf(e.code);
-  if (line >= 0 && !spectating) socket.emit('say', line);
+  if (action === 'dash') tryDash();
+  if (action === 'throw') tryThrow();
+  if (action === 'banana' && canAct() && myGadget) socket.emit('gadget');
+  if (action === 'spray') trySpray();
+  if (action === 'dismount' && myVehicle && canAct()) socket.emit('dismount', false);
+  if (action.startsWith('emote')) playSlot(Number(action[5]) - 1);
+  if (action.startsWith('say') && !spectating) socket.emit('say', Number(action[3]) - 1);
 });
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+function playSlot(i) {
+  if (!canAct() || !me.onGround) return;
+  if (progress.loadout[i]) setEmote(progress.loadout[i]);
+  else toast('Dit vak is leeg. Kies een emote in het menu');
+}
+window.addEventListener('keyup', (e) => {
+  const action = actionOf(e.code);
+  if (action) held[action] = false;
+});
+window.addEventListener('blur', () => { for (const k in held) held[k] = false; });
+
+// Controller: linkerstick lopen, rechterstick kijken, A springen, B of LB dash, X of RT gooien,
+// Y bananenschil, RB afstappen, pijltjes emotes, Start pauze.
+let padPrev = [];
+function pollPad(dt) {
+  const pad = navigator.getGamepads ? [...navigator.getGamepads()].find(Boolean) : null;
+  if (!pad) return;
+  const dead = (v) => (Math.abs(v || 0) < 0.18 ? 0 : v);
+  const lx = dead(pad.axes[0]), ly = dead(pad.axes[1]), rx = dead(pad.axes[2]), ry = dead(pad.axes[3]);
+  const pressed = pad.buttons.map((b) => b.pressed);
+  if (!padMode && (lx || ly || rx || ry || pressed.some(Boolean))) {
+    padMode = true;
+    $('clickstart').classList.add('hidden');
+  }
+  if (!padMode) return;
+  joy.x = lx;
+  joy.y = ly;
+  if (canAct()) {
+    camera.rotation.y -= rx * dt * 3.2 * settings.sens;
+    camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x - ry * dt * 2.4 * settings.sens, -1.35, 1.35);
+  }
+  const edge = (i) => pressed[i] && !padPrev[i];
+  held.jump = !!pressed[0];
+  if (edge(1) || edge(4)) tryDash();
+  if (edge(2) || edge(7)) tryThrow();
+  if (edge(3) && canAct() && myGadget) socket.emit('gadget');
+  if (edge(5) && myVehicle && canAct()) socket.emit('dismount', false);
+  [12, 15, 13].forEach((b, i) => { if (edge(b)) playSlot(i); });
+  if (edge(9)) {
+    paused = !paused;
+    $('pause').classList.toggle('hidden', !paused);
+  }
+  padPrev = pressed;
+}
+
+// lijst met toetsen in het instellingenscherm
+function renderKeys() {
+  $('key-list').replaceChildren(...ACTIONS.map(([action, label]) => {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = label;
+    const btn = document.createElement('button');
+    btn.className = 'keycap' + (rebinding === action ? ' waiting' : '');
+    btn.textContent = rebinding === action ? 'Druk een toets…' : keyLabel(keyOf(action));
+    btn.addEventListener('click', () => {
+      rebinding = action;
+      renderKeys();
+    });
+    li.append(name, btn);
+    return li;
+  }));
+}
+$('btn-keys-reset').addEventListener('click', () => {
+  settings.keys = {};
+  save('kr-settings', settings);
+  renderKeys();
+});
+
 window.addEventListener('mousedown', (e) => {
   if (spectating) specIndex++; // volgende speler volgen
   else if (e.button === 0 && controls.isLocked) tryThrow(); // de klik die de muis vastzet telt niet
@@ -1599,10 +1526,13 @@ controls.addEventListener('lock', () => {
 });
 $('clickstart').addEventListener('click', () => controls.lock());
 controls.addEventListener('unlock', () => {
-  if (playing && !spectating && $('clickstart').classList.contains('hidden')) $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
+  if (playing && !spectating && $('clickstart').classList.contains('hidden')) {
+    $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
+    if (padMode) paused = true;
+  }
 });
 function resume() {
-  if (!touchMode) return controls.lock();
+  if (!touchMode && !padMode) return controls.lock();
   paused = false;
   $('pause').classList.add('hidden');
 }
@@ -1618,7 +1548,7 @@ function updateLocal(dt) {
   const wish = wishDir();
   const boosted = myFlags & 4;
   const max = RUN_SPEED * (holderId === socket.id ? HOLDER_SLOWDOWN : 1) * (boosted ? BOOST_SPEED : 1) * (myClass === 'tank' ? 0.92 : 1) * (myVehicle ? 1.45 : 1);
-  if (myEmote && (stunned || now - myEmoteStart > EMOTE_MS || (active && (wish || keys.Space)))) setEmote(0);
+  if (myEmote && (stunned || now - myEmoteStart > EMOTE_MS || (active && (wish || held.jump)))) setEmote(0);
 
   if (dashLeft > 0 && !stunned) {
     dashLeft -= dt;
@@ -1631,7 +1561,7 @@ function updateLocal(dt) {
     me.vx += ((active && wish ? wish.x * max : 0) - me.vx) * k;
     me.vz += ((active && wish ? wish.z * max : 0) - me.vz) * k;
   }
-  if (keys.Space && me.onGround && active) {
+  if (held.jump && me.onGround && active) {
     me.vy = JUMP_SPEED * (myClass === 'springer' ? 1.18 : 1);
     airJumps = 0;
     me.onGround = false;
@@ -1858,17 +1788,23 @@ function bigIcon(name) {
 }
 // het plaatje dat bij een beloning of winkelartikel hoort
 function visualFor(id) {
-  if (id.startsWith('skin:')) return picture(thumb(id.slice(5)));
+  if (id.startsWith('skin:')) return picture(thumb(id.slice(5), 0, 'skin.geen.rugzak', false, true));
   if (id.startsWith('emote:')) return picture(thumb(progress.skin, Number(id.slice(6))));
   if (id.startsWith('stamp:')) return bigIcon(STAMP_ICON[id.slice(6)]);
+  if (id.startsWith('acc:')) {
+    // je eigen poppetje met dit accessoire op (rugspullen van achteren)
+    const item = SHOP.find((x) => x.id === id);
+    const look = accString(Object.assign({}, progress.acc, { [item.slot]: id.slice(4) }));
+    return picture(thumb(progress.skin, 0, look, item.slot === 'back', true));
+  }
   if (id.startsWith('class:')) return bigIcon(CLASSES.find((c) => c.id === id.slice(6)).icon);
   return bigIcon('coin');
 }
 const kindOf = (id) => id.split(':')[0];
 
 function renderSkins() {
-  $('skin-grid').replaceChildren(...SKINS.map((skin) => {
-    const open = isUnlocked(skin);
+  $('skin-grid').replaceChildren(...SKINS.filter(isUnlocked).map((skin) => {
+    const open = true;
     let footer = skin.id === progress.skin ? 'Gekozen' : 'Kies';
     if (!open) {
       const tier = BATTLEPASS.findIndex((r) => r.id === 'skin:' + skin.id) + 1;
@@ -1876,7 +1812,7 @@ function renderSkins() {
         : skin.price ? `${skin.price} in de winkel`
         : CHALLENGES.find((c) => c.skin === skin.id).title);
     }
-    const card = tile('skin', picture(thumb(skin.id)), skin.name, footer);
+    const card = tile('skin', picture(thumb(skin.id, 0, accString(), false, true)), skin.name, footer);
     if (skin.id === progress.skin) card.classList.add('selected');
     if (!open) card.classList.add('locked');
     card.addEventListener('click', () => {
@@ -1891,6 +1827,91 @@ function renderSkins() {
     return card;
   }));
 }
+
+// ---------- Spelers: dempen en melden ----------
+function renderPlayers() {
+  const others = lobby ? lobby.players.filter((p) => p.id !== socket.id && !p.bot) : [];
+  $('players-empty').classList.toggle('hidden', others.length > 0);
+  $('players-list').replaceChildren(...others.map((p) => {
+    const li = row(colorOf(p.id), p.name);
+    const mute = document.createElement('button');
+    mute.className = 'btn small';
+    mute.textContent = muted.has(p.id) ? 'Dempen uit' : 'Dempen';
+    mute.addEventListener('click', () => {
+      if (muted.has(p.id)) muted.delete(p.id);
+      else muted.add(p.id);
+      const tag = sprays.get(p.id);
+      if (tag && muted.has(p.id)) {
+        scene.remove(tag);
+        sprays.delete(p.id);
+      }
+      renderPlayers();
+    });
+    const report = document.createElement('select');
+    report.className = 'report';
+    report.innerHTML = '<option value="">Melden…</option><option>Naam</option><option>Tekening</option><option>Gedrag</option>';
+    report.addEventListener('change', () => {
+      if (!report.value) return;
+      socket.emit('report', { id: p.id, reason: report.value });
+      report.replaceWith(Object.assign(document.createElement('small'), { textContent: 'Gemeld' }));
+    });
+    li.append(mute, report);
+    return li;
+  }));
+}
+
+// ---------- Vrienden ----------
+let friendsTimer = 0;
+async function renderFriends() {
+  clearInterval(friendsTimer);
+  $('friends-login').classList.toggle('hidden', !!account);
+  $('friends-body').classList.toggle('hidden', !account);
+  if (!account) return;
+  const refresh = async () => {
+    if ($('friends').classList.contains('hidden')) return clearInterval(friendsTimer);
+    try {
+      const { friends } = await api('/api/friends');
+      $('friends-empty').classList.toggle('hidden', friends.length > 0);
+      $('friends-list').replaceChildren(...friends.map((f) => {
+        const li = row(f.online ? 0x3aa655 : 0xb3ac9e, f.name);
+        const state = document.createElement('small');
+        state.textContent = !f.mutual ? 'heeft jou nog niet toegevoegd' : f.online ? 'online' : 'offline';
+        li.append(state);
+        if (f.code) {
+          const go = document.createElement('button');
+          go.className = 'btn small primary';
+          go.textContent = 'Meedoen';
+          go.addEventListener('click', () => {
+            $('friends').classList.add('hidden');
+            $('code').value = f.code;
+            join();
+          });
+          li.append(go);
+        }
+        const del = document.createElement('button');
+        del.className = 'btn small ghost';
+        del.textContent = 'Weg';
+        del.addEventListener('click', () => api('/api/friends', { name: f.name, remove: true }).then(refresh));
+        li.append(del);
+        return li;
+      }));
+    } catch (e) {
+      $('friends-error').textContent = e.message;
+    }
+  };
+  refresh();
+  friendsTimer = setInterval(refresh, 8000);
+}
+$('btn-friend-add').addEventListener('click', async () => {
+  $('friends-error').textContent = '';
+  try {
+    await api('/api/friends', { name: $('friend-name').value });
+    $('friend-name').value = '';
+    renderFriends();
+  } catch (e) {
+    $('friends-error').textContent = e.message;
+  }
+});
 
 // ---------- Klasse kiezen ----------
 function renderClasses() {
@@ -1915,33 +1936,16 @@ function renderClasses() {
 }
 
 // ---------- Accessoires ----------
-let confirmAcc = null;
 function renderAccessories() {
   $('acc-rows').replaceChildren(...Object.keys(ACCESSORIES).map((slot) => {
     const wrap = document.createElement('div');
     wrap.innerHTML = `<p class="shop-title">${SLOT_NAMES[slot]}</p><div class="tiles"></div>`;
-    wrap.querySelector('.tiles').append(...ACCESSORIES[slot].map((a) => {
-      const id = `acc:${a.id}`;
-      const open = !a.price || owns(id);
+    wrap.querySelector('.tiles').append(...ACCESSORIES[slot].filter((a) => !a.price || owns('acc:' + a.id)).map((a) => {
       const chosen = progress.acc[slot] === a.id;
       const look = accString(Object.assign({}, progress.acc, { [slot]: a.id }));
-      let footer = chosen ? 'Gekozen' : open ? 'Kies' : icon('coin') + a.price;
-      if (confirmAcc === id) footer = 'Nog een keer klikken om te kopen';
-      const card = tile('skin', picture(thumb(progress.skin, 0, look, slot === 'back')), a.name, footer);
+      const card = tile('skin', picture(thumb(progress.skin, 0, look, slot === 'back', true)), a.name, chosen ? 'Gekozen' : 'Kies');
       if (chosen) card.classList.add('selected');
-      if (!open && progress.coins < a.price) card.classList.add('poor');
       card.addEventListener('click', () => {
-        if (!open) {
-          if (progress.coins < a.price) return;
-          if (confirmAcc !== id) {
-            confirmAcc = id;
-            return renderAccessories();
-          }
-          confirmAcc = null;
-          progress.owned.push(id);
-          addCoins(-a.price);
-          sfx('coin');
-        }
         progress.acc[slot] = a.id;
         save('kr-progress', progress);
         buildPreview();
@@ -2016,6 +2020,7 @@ async function signIn(path) {
     $('acct-pass').value = '';
     adopt(data.account);
     renderProfile();
+    showRecovery(data.recovery);
   } catch (e) {
     $('acct-error').textContent = e.message;
   }
@@ -2026,10 +2031,29 @@ $('btn-logout').addEventListener('click', async () => {
   clearTimeout(syncTimer);
   await api('/api/save', { progress, stats, daily }).catch(() => {});
   await api('/api/logout', {}).catch(() => {});
-  localStorage.removeItem('kr-token');
-  account = null;
-  refreshAccountUi();
-  renderProfile();
+  // na het uitloggen begin je als gast met een schone lei
+  ['kr-token', 'kr-progress', 'kr-stats', 'kr-daily'].forEach((key) => localStorage.removeItem(key));
+  location.reload();
+});
+
+// herstelcode: alleen te zien direct na het aanmaken of herstellen
+function showRecovery(code) {
+  $('recovery-box').classList.toggle('hidden', !code);
+  $('recovery-code').textContent = code || '';
+}
+$('btn-forgot').addEventListener('click', () => $('recover-form').classList.toggle('hidden'));
+$('btn-recover').addEventListener('click', async () => {
+  $('acct-error').textContent = '';
+  try {
+    const data = await api('/api/recover', { name: $('acct-name').value, code: $('rec-code').value, password: $('acct-pass').value });
+    localStorage.setItem('kr-token', data.token);
+    $('acct-pass').value = $('rec-code').value = '';
+    adopt(data.account);
+    renderProfile();
+    showRecovery(data.recovery);
+  } catch (e) {
+    $('acct-error').textContent = e.message;
+  }
 });
 
 // ---------- Emotes kiezen: drie vakken voor de toetsen 1, 2 en 3 ----------
@@ -2170,7 +2194,7 @@ function applySettings() {
   $('out-mus').textContent = Math.round(settings.mus * 100) + '%';
   resize();
 }
-[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['sharp', 'check'], ['bob', 'check'], ['names', 'check']]
+[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['sharp', 'check'], ['stamps', 'check'], ['bob', 'check'], ['names', 'check']]
   .forEach(([key, kind]) => {
     const el = $('set-' + key);
     if (kind === 'range') el.value = settings[key];
@@ -2193,6 +2217,9 @@ document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('
   if (btn.dataset.open === 'emotes') renderEmotes();
   if (btn.dataset.open === 'classes') renderClasses();
   if (btn.dataset.open === 'accessories') renderAccessories();
+  if (btn.dataset.open === 'players') renderPlayers();
+  if (btn.dataset.open === 'friends') renderFriends();
+  if (btn.dataset.open === 'settings') renderKeys();
   if (btn.dataset.open === 'account') renderProfile();
   $(btn.dataset.open).classList.remove('hidden');
 }));
@@ -2238,6 +2265,14 @@ $('btn-ranked').addEventListener('click', () => {
   }
   socket.emit('quickJoin', Object.assign(joinData(), { ranked: true }), onJoined);
 });
+document.querySelectorAll('[data-level]').forEach((btn) => btn.addEventListener('click', () => {
+  if (!playerName()) return ($('menu-error').textContent = 'Vul eerst je naam in.');
+  $('practice').classList.add('hidden');
+  socket.emit('practice', Object.assign(joinData(), { level: Number(btn.dataset.level) }), onJoined);
+}));
+document.querySelectorAll('[data-opt]').forEach((btn) => btn.addEventListener('click', () => {
+  socket.emit('setOpts', { [btn.dataset.opt]: JSON.parse(btn.dataset.val) });
+}));
 document.querySelectorAll('[data-bots]').forEach((btn) => btn.addEventListener('click', () => {
   socket.emit('bots', Number(btn.dataset.bots));
 }));
@@ -2350,6 +2385,10 @@ socket.on('lobby', (info) => {
   $('lobby-code').textContent = info.code;
   $('lobby-kind').textContent = info.ranked ? 'Ranked' : info.public ? 'Openbare lobby' : 'Privélobby';
   $('lobby-setup').classList.toggle('hidden', info.ranked);
+  document.querySelectorAll('[data-opt]').forEach((btn) => {
+    btn.classList.toggle('active', info.opts[btn.dataset.opt] === JSON.parse(btn.dataset.val));
+    btn.disabled = info.hostId !== socket.id;
+  });
   $('bot-row').classList.toggle('hidden', info.hostId !== socket.id || info.public);
   $('lobby-auto').classList.toggle('hidden', !info.public);
   if (info.startIn !== null) lobbyStartAt = performance.now() + info.startIn * 1000;
@@ -2392,20 +2431,53 @@ socket.on('lobby', (info) => {
 
 // Map-roulette: de kaarten schuiven voorbij en remmen af op de gekozen map.
 let overTimer = 0;
-socket.on('mapPick', (data) => {
+let voteTimer = 0;
+socket.on('mapVote', (data) => {
   clearInterval(overTimer);
   stopReplay();
   clearPodium();
   document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
-  const ids = M.MAP_IDS;
+  $('vote-sub').textContent = (data.rounds > 1 ? `Ronde ${data.round} van ${data.rounds} · ` : '') + MODE_INFO[data.mode].name;
+  $('vote-cards').replaceChildren(...data.options.map((id, i) => {
+    const card = document.createElement('button');
+    card.className = `map-card m-${id}`;
+    card.innerHTML = `${icon(M.maps[id].icon)}<b>${M.maps[id].name}</b><small>0 stemmen</small>`;
+    card.addEventListener('click', () => {
+      socket.emit('vote', i);
+      [...$('vote-cards').children].forEach((c, k) => c.classList.toggle('win', k === i));
+    });
+    return card;
+  }));
+  let left = data.seconds;
+  const showLeft = () => { $('vote-left').textContent = `Nog ${Math.max(0, left--)} s`; };
+  showLeft();
+  clearInterval(voteTimer);
+  voteTimer = setInterval(showLeft, 1000);
+  $('vote').classList.remove('hidden');
+});
+socket.on('voteCount', (counts) => {
+  [...$('vote-cards').children].forEach((c, i) => { c.querySelector('small').textContent = `${counts[i]} ${counts[i] === 1 ? 'stem' : 'stemmen'}`; });
+});
+
+socket.on('mapPick', (data) => {
+  clearInterval(overTimer);
+  clearInterval(voteTimer);
+  $('vote').classList.add('hidden');
+  stopReplay();
+  clearPodium();
+  document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
+  const ids = data.options || M.MAP_IDS;
   const cards = [];
   const target = 25;
-  for (let i = 0; i < 30; i++) {
+  // twee kandidaten: om en om, zo dat de gekozen map op het eindpunt staat
+  const other = ids.find((id) => id !== data.map);
+  for (let i = 0; i < 30 && ids.length === 2; i++) cards.push((i - target) % 2 === 0 ? data.map : other);
+  for (let i = 0; i < 30 && ids.length !== 2; i++) {
     // nooit twee keer dezelfde kaart naast elkaar
     const options = ids.filter((id) => id !== cards[i - 1] && (i !== target - 1 || id !== data.map));
     cards.push(i === target ? data.map : options[Math.floor(Math.random() * options.length)]);
   }
-  if (cards[target + 1] === data.map) cards[target + 1] = ids.find((id) => id !== data.map && id !== cards[target + 2]);
+  if (ids.length !== 2 && cards[target + 1] === data.map) cards[target + 1] = ids.find((id) => id !== data.map && id !== cards[target + 2]);
   const strip = $('roulette-strip');
   strip.innerHTML = cards.map((id) => `<div class="map-card m-${id}">${icon(M.maps[id].icon)}<b>${M.maps[id].name}</b></div>`).join('');
   $('roulette-sub').textContent = (data.rounds > 1 ? `Ronde ${data.round} van ${data.rounds} · ` : '') + MODE_INFO[data.mode].name;
@@ -2464,7 +2536,7 @@ socket.on('gameStart', (data) => {
   broodje.position.set(M.BROODJE_SPAWN.x, M.BROODJE_SPAWN.y + 0.8, M.BROODJE_SPAWN.z);
   show('hud');
   $('pause').classList.add('hidden');
-  $('clickstart').classList.toggle('hidden', touchMode);
+  $('clickstart').classList.toggle('hidden', touchMode || padMode);
   $('holding').classList.add('hidden');
   $('item-hint').classList.add('hidden');
   banner(`${M.name} · ` + (mode === 'teams' ? `jij speelt voor team ${TEAM_NAMES[teams[socket.id]]}` : MODE_INFO[mode].name), 3500);
@@ -2741,9 +2813,19 @@ function updateReplay(dt, time) {
   dx /= d;
   dz /= d;
   const want = new THREE.Vector3(a.x + dx * 3.2 - dz * 1.6, Math.max(a.y, b.y) + 2.3, a.z + dz * 3.2 + dx * 1.6);
-  // niet door een muur heen filmen: dichterbij komen als er iets tussen zit
-  const probe = { x: want.x, z: want.z };
-  if (M.resolve(probe, 0.3, want.y - 0.5, 0.6, 0)) want.set(a.x + dx * 1.2, want.y + 0.6, a.z + dz * 1.2);
+  // Niet door een muur of van buiten de map filmen: vanaf de dader stapje voor stapje naar de
+  // gewenste plek lopen en stoppen zodra er iets in de weg staat.
+  let cx = a.x, cz = a.z;
+  for (let t = 0.15; t <= 1.001; t += 0.1) {
+    const px = a.x + (want.x - a.x) * t, pz = a.z + (want.z - a.z) * t;
+    const outside = px < M.BOUNDS.minX || px > M.BOUNDS.maxX || pz < M.BOUNDS.minZ || pz > M.BOUNDS.maxZ;
+    if (outside || M.resolve({ x: px, z: pz }, 0.35, want.y - 0.5, 0.6, 0)) break;
+    cx = px;
+    cz = pz;
+  }
+  want.x = cx;
+  want.z = cz;
+  if (M.CEILING !== null) want.y = Math.min(want.y, M.CEILING - 0.4);
   if (replay.first) replay.cam.copy(want);
   replay.first = false;
   replay.cam.lerp(want, Math.min(1, dt * 3));
@@ -2924,7 +3006,19 @@ socket.on('gameOver', (data) => {
   addCoins(earned);
   const xp = 25 + Math.min(120, Math.floor((mine ? mine.score : 0) / 2)) + (won && data.ranking.length > 1 ? 40 : 0);
   addXp(xp);
-  $('earned').textContent = `+${earned} munten · +${xp} XP`;
+  if (!account) $('earned').textContent = `+${earned} munten · +${xp} XP`;
+});
+// beloning van de server na een potje
+socket.on('wallet', ({ account: data, gained }) => {
+  adopt(data);
+  const parts = [`+${gained.coins} munten`, `+${gained.xp} XP`];
+  if (gained.daily) parts.push(`${gained.daily} dagelijkse challenge${gained.daily > 1 ? 's' : ''} gehaald`);
+  $('earned').textContent = parts.join(' · ');
+  const news = gained.rewards.map((r) => `Battlepass: ${r}`).concat(gained.unlocked.map((n) => `Skin ${n} vrijgespeeld`));
+  if (news.length) {
+    banner(news.join(' · '), 6000);
+    sfx('unlock');
+  }
 });
 // "Nog een keer": je staat meteen ready; de host start direct opnieuw als genoeg spelers ready zijn
 $('btn-again').addEventListener('click', () => {
@@ -2982,7 +3076,9 @@ function big(text, kind) {
   bigTimer = setTimeout(() => { el.className = kind; }, 1700);
   if (kind === 'bad') sfx('bad');
 }
+const muted = new Set(); // spelers die je deze sessie hebt gedempt
 function say(id, text) {
+  if (muted.has(id)) return;
   const li = row(colorOf(id), `${nameOf(id)}: ${text}`);
   $('feed').append(li);
   setTimeout(() => li.remove(), 5000);
@@ -2996,8 +3092,8 @@ function say(id, text) {
 }
 
 // ---------- Winkel ----------
-const dealItem = SHOP[dayNumber % SHOP.length];
-const priceOf = (item) => (item === dealItem ? Math.round((item.price * 0.7) / 5) * 5 : item.price);
+const dealItem = window.Catalog.dealFor();
+const priceOf = (item) => window.Catalog.priceOf(item);
 let confirmId = null; // eerste klik vraagt om bevestiging, tweede klik koopt
 function shopTile(item) {
   const price = priceOf(item);
@@ -3017,6 +3113,14 @@ function shopTile(item) {
       return renderShop();
     }
     confirmId = null;
+    if (account) {
+      // ingelogd: de server controleert je munten en boekt de aankoop
+      return api('/api/buy', { id: item.id }).then((data) => {
+        adopt(data.account);
+        sfx('coin');
+        renderShop();
+      }).catch((e) => banner(e.message));
+    }
     progress.owned.push(item.id);
     addCoins(-price);
     sfx('coin');
@@ -3026,7 +3130,13 @@ function shopTile(item) {
 }
 function renderShop() {
   $('shop-featured').replaceChildren(shopTile(dealItem));
-  $('shop-grid').replaceChildren(...SHOP.filter((item) => item !== dealItem).map(shopTile));
+  const groups = [['Skin', 'Skins'], ['Accessoire', 'Accessoires'], ['Emote', 'Emotes'], ['Stempel', 'Stempels']];
+  $('shop-grid').replaceChildren(...groups.flatMap(([kind, title]) => {
+    const head = document.createElement('p');
+    head.className = 'shop-title';
+    head.textContent = title;
+    return [head].concat(SHOP.filter((item) => item.kind === kind && item !== dealItem).map(shopTile));
+  }));
   // alle stempels die je hebt, uit de winkel en de battlepass
   const stamps = ['naam'].concat(progress.custom ? ['custom'] : [],
     progress.owned.filter((id) => id.startsWith('stamp:')).map((id) => id.slice(6)));
@@ -3146,8 +3256,11 @@ function updatePreview(time) {
 }
 // Rendert een poppetje (eventueel in een emote-houding) naar een plaatje voor de tegels.
 const thumbCache = new Map();
-function thumb(skinId, emote = 0, acc = 'skin.geen.rugzak', fromBehind = false) {
-  const key = `${skinId}:${emote}:${acc}:${fromBehind}`;
+const zoomCamera = new THREE.PerspectiveCamera(32, 220 / 250, 0.1, 20);
+zoomCamera.position.set(0, 1.12, 4.15);
+zoomCamera.lookAt(0, 1.06, 0);
+function thumb(skinId, emote = 0, acc = 'skin.geen.rugzak', fromBehind = false, zoom = false) {
+  const key = `${skinId}:${emote}:${acc}:${fromBehind}:${zoom}`;
   if (!thumbCache.has(key)) {
     const m = makePlayerModel({ name: '', skin: skinId, acc, color: 0x3aa655 });
     m.label.visible = false;
@@ -3156,7 +3269,7 @@ function thumb(skinId, emote = 0, acc = 'skin.geen.rugzak', fromBehind = false) 
     m.group.rotation.set(pose.lean || 0, fromBehind ? 2.6 : 0.45, pose.roll);
     if (preview.model) preview.model.group.visible = false;
     preview.scene.add(m.group);
-    preview.renderer.render(preview.scene, preview.camera);
+    preview.renderer.render(preview.scene, zoom ? zoomCamera : preview.camera);
     thumbCache.set(key, preview.renderer.domElement.toDataURL());
     preview.scene.remove(m.group);
     if (preview.model) preview.model.group.visible = true;
@@ -3182,6 +3295,7 @@ if (!localStorage.getItem('kr-seen')) {
   $('howto').classList.remove('hidden');
 }
 refreshAccountUi(); // haalt ook beloningen op die nog niet waren uitgekeerd
+socket.on('connect', () => { if (getToken()) socket.emit('hello', getToken()); });
 if (getToken()) {
   api('/api/me').then((data) => adopt(data.account)).catch(() => localStorage.removeItem('kr-token'));
 }
@@ -3227,11 +3341,11 @@ if (touchMode) {
   }, { passive: true });
 
   const actions = {
-    jump: (down) => { keys.Space = down; },
+    jump: (down) => { held.jump = down; },
     dash: (down) => down && tryDash(),
     throw: (down) => down && tryThrow(),
     banana: (down) => down && canAct() && myGadget && socket.emit('gadget'),
-    emote: (down) => down && canAct() && me.onGround && setEmote(progress.loadout.find((n) => n) || 1),
+    emote: (down) => down && playSlot(Math.max(0, progress.loadout.findIndex((n) => n))),
     menu: (down) => {
       if (!down || !playing || spectating) return;
       paused = true;
@@ -3268,6 +3382,7 @@ function frame() {
   updateParticles(dt);
   updateDarkness(dt);
   if (playing) {
+    if (!spectating) pollPad(dt);
     if (!spectating) updateLocal(dt);
     updateRemotes(dt);
     if (spectating) updateSpectate(time);

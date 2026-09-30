@@ -6,7 +6,13 @@ const MapData = require('./public/js/mapdata.js');
 const GRID = 1;            // afstand tussen looppunten in meters
 const RADIUS = 0.4;
 const HEIGHT = 1.8;
-const BOT_SPEED = 9.7;     // iets trager dan een mens (10,5), zodat je ze kunt inhalen
+// Drie niveaus: makkelijk, normaal, moeilijk. Een mens rent 10,5 m/s.
+const LEVELS = [
+  { speed: 8.2, skill: [0.3, 0.5], dash: [6000, 9000], toss: [3200, 5200] },
+  { speed: 9.7, skill: [0.6, 0.9], dash: [3200, 5800], toss: [1700, 3600] },
+  { speed: 10.4, skill: [0.85, 0.97], dash: [2100, 3300], toss: [1000, 1900] }
+];
+const between = (range) => range[0] + Math.random() * (range[1] - range[0]);
 const HOLDER_FACTOR = 0.77;
 const DASH_SPEED = 26;
 const DASH_TIME = 0.18;
@@ -196,11 +202,13 @@ function makeBot(lobby, base) {
     cls: ['allrounder', 'sprinter', 'werper', 'magneet'][Math.floor(Math.random() * 4)]
   });
 }
-function resetBot(p) {
+function resetBot(p, level) {
+  const L = LEVELS[level] || LEVELS[1];
   p.bot = {
+    L,
     vx: 0, vz: 0, vy: 0, ground: true, path: [], planAt: 0, thinkAt: Math.random() * 400,
-    goal: null, fleeAt: 0, dashLeft: 0, dashX: 0, dashZ: 1, nextThrow: 0, nextDash: 1500 + Math.random() * 2000 + Date.now(),
-    stuck: 0, lastX: p.x, lastZ: p.z, skill: 0.6 + Math.random() * 0.3
+    goal: null, fleeAt: 0, dashLeft: 0, dashX: 0, dashZ: 1, nextThrow: 0, nextDash: Date.now() + between(L.dash) * 0.6,
+    stuck: 0, lastX: p.x, lastZ: p.z, skill: between(L.skill)
   };
 }
 
@@ -280,7 +288,7 @@ function think(lobby, p, now, api) {
       const cos = Math.sqrt(1 - sin * sin);
       p.ry = Math.atan2(hx, hz);
       api.throwItem(lobby, p, (hx / hd) * cos, sin, (hz / hd) * cos);
-      b.nextThrow = now + 1700 + Math.random() * 1900;
+      b.nextThrow = now + between(b.L.toss);
     }
   }
 
@@ -302,7 +310,7 @@ function think(lobby, p, now, api) {
       p.dashX = b.dashX = dir.x / len;
       p.dashZ = b.dashZ = dir.z / len;
       b.dashLeft = DASH_TIME;
-      b.nextDash = now + 3200 + Math.random() * 2600;
+      b.nextDash = now + between(b.L.dash);
     }
   }
 }
@@ -312,7 +320,7 @@ function move(lobby, p, now, dt) {
   const b = p.bot;
   const M = MapData;
   const stunned = p.stunnedUntil > now;
-  let speed = BOT_SPEED * (lobby.broodje.holder === p.id ? HOLDER_FACTOR : 1) * (p.boostUntil > now ? 1.35 : 1);
+  let speed = b.L.speed * (lobby.broodje.holder === p.id ? HOLDER_FACTOR : 1) * (p.boostUntil > now ? 1.35 : 1);
   let wx = 0, wz = 0;
 
   if (!stunned && b.goal) {
@@ -393,7 +401,7 @@ function move(lobby, p, now, dt) {
 function tickBots(lobby, now, dt, api) {
   for (const p of lobby.players.values()) {
     if (!p.isBot) continue;
-    if (!p.bot) resetBot(p);
+    if (!p.bot) resetBot(p, lobby.opts.botLevel);
     if (p.stunnedUntil <= now && now > p.bot.thinkAt) {
       p.bot.thinkAt = now + 180 + Math.random() * 120;
       think(lobby, p, now, api);
