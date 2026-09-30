@@ -197,7 +197,16 @@
   deco(-20.93, -8.2, 0.05, 0.8, 0.9, C.counterTop, 0.9);
 
   // --- Lift ---
-  box(11.5, 5, 1.6, 1.6, 2.6, C.steel);
+  // twee liftcabines: loop erin en je gaat naar de andere verdieping
+  box(11.5, 5.75, 1.7, 0.12, 2.5, C.steel);
+  box(10.7, 5, 0.12, 1.6, 2.5, C.steel);
+  box(12.3, 5, 0.12, 1.6, 2.5, C.steel);
+  deco(11.5, 5, 1.7, 1.6, 0.12, C.steel, 2.5);
+  deco(11.5, 5, 1.4, 1.4, 0.03, C.yellow, 0);
+  box(10.7, 6.9, 0.12, 1.8, 2.5, C.steel, { y: LOW });
+  box(12.3, 6.9, 0.12, 1.8, 2.5, C.steel, { y: LOW });
+  deco(11.5, 6.9, 1.7, 1.8, 0.12, C.steel, LOW + 2.5);
+  deco(11.5, 6.9, 1.4, 1.4, 0.03, C.yellow, LOW);
 
   // --- Houten tribune (west): drie treden waar je op kunt lopen ---
   box(-18, -3, 5, 6, 0.4, C.wood);
@@ -312,6 +321,8 @@
     bin: { r: 0.3, h: 0.8 },
     tray: { r: 0.3, h: 0.06 }
   };
+  exports.LIFTS = [{ x: 11.5, y: 0, z: 5 }, { x: 11.5, y: LOW, z: 6.9 }];
+  exports.OUTSIDE_Z = 20.25; // alles voorbij deze lijn is buiten
   exports.trees = trees;
   exports.panels = panels;
   exports.panelSolid = (p) => ({ minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2, y0: p.y, y1: p.y + p.h });

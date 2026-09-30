@@ -34,10 +34,16 @@
         <button id="btn-join" class="btn">Join Lobby</button>
       </div>
       <p id="menu-error" class="error"></p>
+      <button class="btn help" data-open="howto">Hoe werkt het?</button>
       <div class="tab-row">
         <button class="btn small" data-open="skins">Skins</button>
+        <button class="btn small" data-open="shop">Winkel</button>
         <button class="btn small" data-open="challenges">Challenges</button>
+      </div>
+      <div class="tab-row">
+        <button class="btn small" data-open="board">Ranglijst</button>
         <button class="btn small" data-open="settings">Settings</button>
+        <span class="coin-chip">🪙 <b class="coins">0</b></span>
       </div>
     </div>
   </section>
@@ -60,8 +66,8 @@
       <p id="lobby-wait" class="hint">Wachten tot de host de game start…</p>
       <div class="tab-row">
         <button class="btn small" data-open="skins">Skins</button>
-        <button class="btn small" data-open="challenges">Challenges</button>
-        <button class="btn small" data-open="settings">Settings</button>
+        <button class="btn small" data-open="shop">Winkel</button>
+        <button class="btn small" data-open="howto">Uitleg</button>
       </div>
       <button id="btn-leave" class="btn ghost">Lobby verlaten</button>
     </div>
@@ -79,7 +85,19 @@
       <span id="buff-shield" class="hidden">🛡 Dienblad</span>
       <span id="buff-banana" class="hidden">🍌 Q: neerleggen</span>
     </div>
-    <div id="emote-hint">1 Take the L · 2 Dab · 3 Zwaai · 4 Dans · T Spuitbus</div>
+    <div id="emote-hint">1-4 Emotes · T Spuitbus · Z X C V Berichten</div>
+    <ul id="feed"></ul>
+    <div id="alarm" class="hidden"><span id="alarm-text"></span></div>
+    <div id="spec-hint">Je kijkt mee · klik of tik voor een andere speler</div>
+    <div id="touch">
+      <div id="stick"><div id="knob"></div></div>
+      <button data-act="menu" class="tc t-menu">☰</button>
+      <button data-act="emote" class="tc t-emote">L</button>
+      <button data-act="banana" class="tc t-banana">🍌</button>
+      <button data-act="throw" class="tc t-throw">Gooi</button>
+      <button data-act="dash" class="tc t-dash">Dash</button>
+      <button data-act="jump" class="tc t-jump">Spring</button>
+    </div>
     <div id="item-hint" class="hidden"></div>
     <div id="dash">
       <div id="dash-fill"></div>
@@ -89,6 +107,7 @@
   </section>
 
   <div id="banner"></div>
+  <div id="big"></div>
 
   <!-- Escape-menu -->
   <section id="pause" class="screen hidden">
@@ -109,6 +128,7 @@
       <p class="label">Tijd is om!</p>
       <h2 id="winner"></h2>
       <ol id="ranking"></ol>
+      <p id="earned" class="hint"></p>
       <button id="btn-back" class="btn primary">Terug naar lobby</button>
     </div>
   </section>
@@ -145,6 +165,10 @@
         <span>Volume</span><output id="out-vol"></output>
         <input id="set-vol" type="range" min="0" max="1" step="0.05">
       </div>
+      <div class="setting">
+        <span>Muziek</span><output id="out-mus"></output>
+        <input id="set-mus" type="range" min="0" max="1" step="0.05">
+      </div>
       <label class="check"><input id="set-shadows" type="checkbox"> Schaduwen</label>
       <label class="check"><input id="set-hires" type="checkbox"> Hoge resolutie</label>
       <label class="check"><input id="set-bob" type="checkbox"> Camera beweegt mee bij rennen</label>
@@ -163,12 +187,68 @@
         <li><b>Shift</b><span>Dash / tackle</span></li>
         <li><b>Klik of E</b><span>Gooien</span></li>
         <li><b>Q</b><span>Bananenschil neerleggen</span></li>
-        <li><b>1 2 3 4</b><span>Emotes (1 = Take the L)</span></li>
+        <li><b>1 2 3 4</b><span>Emotes (1 = Take the L), 5 en 6 uit de winkel</span></li>
+        <li><b>Z X C V</b><span>Hier! · Pak hem! · Help! · GG</span></li>
         <li><b>T</b><span>Spuitbus op de muur</span></li>
         <li><b>Esc</b><span>Menu</span></li>
       </ul>
       <p class="hint">Dash tegen de drager om het broodje los te slaan of tegen een tafel om hem om te gooien. Loop langs een automaat voor een power-up.</p>
       <button class="btn primary" data-close>Terug</button>
+    </div>
+  </section>
+
+  <section id="shop" class="screen modal hidden">
+    <div class="card wide">
+      <p class="label">Winkel · 🪙 <span class="coins">0</span> munten</p>
+      <p class="hint">Je verdient munten door potjes te spelen, te winnen en de dagelijkse challenge te halen.</p>
+      <ul id="shop-list" class="list"></ul>
+      <p class="hint">Spuitbus-stempel nu: <b id="stamp-now"></b></p>
+      <div class="tab-row">
+        <button id="btn-stamp-name" class="btn small">Stempel met naam</button>
+        <button class="btn small" data-open="draw">Zelf tekenen</button>
+      </div>
+      <button class="btn primary" data-close>Terug</button>
+    </div>
+  </section>
+
+  <section id="draw" class="screen modal hidden">
+    <div class="card">
+      <p class="label">Teken je eigen stempel</p>
+      <canvas id="draw-canvas" width="128" height="128"></canvas>
+      <div id="draw-colors" class="tab-row">
+        <button data-color="#5b3fa8"></button><button data-color="#f26a1b"></button><button data-color="#e23b2e"></button>
+        <button data-color="#3aa655"></button><button data-color="#2f6fde"></button><button data-color="#26262b"></button>
+        <button data-color="#ffffff"></button>
+      </div>
+      <div class="tab-row">
+        <button id="btn-draw-clear" class="btn small">Wissen</button>
+        <button id="btn-draw-save" class="btn small primary">Opslaan</button>
+      </div>
+      <button class="btn ghost" data-close>Annuleren</button>
+    </div>
+  </section>
+
+  <section id="board" class="screen modal hidden">
+    <div class="card wide">
+      <p class="label">Ranglijst van de week</p>
+      <p id="board-week" class="hint"></p>
+      <ol id="board-list" class="list"></ol>
+      <button class="btn primary" data-close>Terug</button>
+    </div>
+  </section>
+
+  <section id="howto" class="screen modal hidden">
+    <div class="card wide">
+      <p class="label">Hoe werkt Kantine Royale?</p>
+      <ol class="steps">
+        <li><b>Pak het frikandelbroodje.</b> Het gloeit in het midden van de kantine, onder een gele lichtzuil. Loop eroverheen om het te pakken.</li>
+        <li><b>Houd het vast.</b> Elke seconde met het broodje is 1 punt. Je bent er wel trager mee, en na 30 seconden is het op.</li>
+        <li><b>Steel het terug.</b> Dash (Shift) tegen de drager om het broodje los te slaan, of gooi een pizza, bord of plant (klik) om iemand knock-out te gooien.</li>
+        <li><b>Gebruik de school.</b> Haal power-ups uit de automaten, neem de trap of de lift naar de hal, en ren naar buiten als het brandalarm gaat.</li>
+        <li><b>Meeste punten na 3 minuten wint.</b> Daarmee verdien je munten voor de winkel.</li>
+      </ol>
+      <p class="hint">Bewegen: W A S D · Rondkijken: muis · Springen: spatie · Menu: Esc. Op een telefoon staan er knoppen op het scherm.</p>
+      <button class="btn primary" data-close>Snap ik, spelen!</button>
     </div>
   </section>
 

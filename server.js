@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { Server } = require('socket.io');
@@ -11,9 +12,13 @@ const GAME_SECONDS = Number(process.env.GAME_SECONDS) || 180;
 const MAX_PLAYERS = 8;
 const MODES = ['klassiek', 'teams', 'voedsel'];
 const DASH_COOLDOWN_MS = 2000;
-const DASH_ACTIVE_MS = 350;   // zolang telt een dash als tackle
+const DASH_ACTIVE_MS = 450;   // zolang telt een dash als tackle
 const PICKUP_RADIUS = 1.1;
-const TACKLE_RADIUS = 1.5;
+const TACKLE_RADIUS = 1.9;
+const BROODJE_LIFE = 30;      // seconden vasthouden tot het broodje op is
+const STREAK_HITS = 3;        // rake worpen op rij voor een pizzadoos
+const STREAK_AMMO = 10;
+const CHAT_LINES = 4;
 const PLAYER_RADIUS = 0.4;
 const BROODJE_RADIUS = 0.3;
 const BROODJE_REST = 0.4;     // hoogte boven de grond als het broodje stil ligt
@@ -27,7 +32,8 @@ const VENDING_COOLDOWN_MS = 12000;
 const BOOST_MS = 10000;       // energiedrank
 const CAPTURE_POINTS = 15;    // teams: broodje naar je basis brengen
 const CAPTURE_RADIUS = 2.2;
-const EVENT_MS = { donker: 15000, goud: 20000, regen: 4000 };
+const EVENT_MS = { donker: 15000, goud: 20000, regen: 4000, brand: 20000 };
+const BRAND_GRACE_MS = 10000; // tijd om naar buiten te rennen
 const PLAYER_COLORS = [0x2f6fde, 0xe23b2e, 0x3aa655, 0xf4c430, 0x9b6bd1, 0x19b5b0, 0xf08cc0, 0x8a5a3c];
 
 const app = express();
@@ -38,6 +44,45 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three')));
 
 const lobbies = new Map(); // code -> lobby
+
+// ---------- Ranglijst van de week (bestand op de server) ----------
+const BOARD_FILE = path.join(__dirname, 'data', 'leaderboard.json');
+function weekKey() {
+  const d = new Date();
+  const day = (d.getUTCDay() + 6) % 7; // maandag = 0
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+let board = { week: weekKey(), players: {} };
+try {
+  board = JSON.parse(fs.readFileSync(BOARD_FILE, 'utf8'));
+} catch (e) { /* nog geen ranglijst */ }
+function currentBoard() {
+  if (board.week !== weekKey()) board = { week: weekKey(), players: {} };
+  return board;
+}
+function saveBoard(ranking, winners) {
+  const b = currentBoard();
+  for (const p of ranking) {
+    const row = b.players[p.name] || (b.players[p.name] = { points: 0, wins: 0, games: 0 });
+    row.points += p.score;
+    row.games += 1;
+    if (winners.has(p.id)) row.wins += 1;
+  }
+  fs.mkdir(path.dirname(BOARD_FILE), { recursive: true }, () => {
+    fs.writeFile(BOARD_FILE, JSON.stringify(b), () => {});
+  });
+}
+app.get('/api/leaderboard', (req, res) => {
+  const b = currentBoard();
+  const top = Object.entries(b.players)
+    .map(([name, r]) => ({ name, points: r.points, wins: r.wins, games: r.games }))
+    .sort((x, y) => y.points - x.points)
+    .slice(0, 10);
+  res.json({ week: b.week, top });
+});
 
 function makeCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -66,7 +111,7 @@ function newPlayer(socket, data, lobby) {
   return {
     id: socket.id, name: cleanName(data && data.name), skin: cleanSkin(data && data.skin), color: freeColor(lobby),
     team: 0, x: 0, y: 0, z: 0, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
-    lastDash: 0, dashUntil: 0, dashX: 0, dashZ: 1, lastSpray: 0,
+    lastDash: 0, dashUntil: 0, dashX: 0, dashZ: 1, lastSpray: 0, lastSay: 0, streak: 0, ammo: 0,
     noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0
   };
 }
@@ -78,6 +123,7 @@ function lobbyInfo(lobby) {
     playing: lobby.playing,
     mode: lobby.mode,
     players: [...lobby.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin }))
+      .concat([...lobby.waiting.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, waiting: true })))
   };
 }
 
@@ -94,7 +140,7 @@ const multiplier = (lobby) => (lobby.double ? 2 : 1) * (lobby.event.type === 'go
 // ---------- Broodje ----------
 function resetBroodje(lobby) {
   const s = MapData.BROODJE_SPAWN;
-  lobby.broodje = { x: s.x, y: s.y + BROODJE_REST, z: s.z, vx: 0, vy: 0, vz: 0, holder: null, moving: false, noPickupUntil: 0 };
+  lobby.broodje = { x: s.x, y: s.y + BROODJE_REST, z: s.z, vx: 0, vy: 0, vz: 0, holder: null, moving: false, noPickupUntil: 0, eaten: 0 };
 }
 
 function dropBroodje(lobby, dirX, dirZ) {
@@ -123,6 +169,14 @@ function tickBroodje(lobby, now, dt) {
     const holder = lobby.players.get(b.holder);
     holder.score += dt * multiplier(lobby);
     b.x = holder.x; b.y = holder.y; b.z = holder.z;
+    // het broodje wordt opgegeten: na 30 seconden vasthouden ligt er een nieuw in het midden
+    b.eaten += dt;
+    if (b.eaten >= BROODJE_LIFE) {
+      resetBroodje(lobby);
+      lobby.broodje.noPickupUntil = now + 1000;
+      emit(lobby, { type: 'eaten', id: holder.id });
+      return;
+    }
     if (lobby.mode === 'teams') {
       const base = MapData.BASES[holder.team];
       if (Math.hypot(holder.x - base.x, holder.z - base.z) < CAPTURE_RADIUS && Math.abs(holder.y - base.y) < 1) {
@@ -235,6 +289,8 @@ function stun(lobby, victim, dirX, dirZ, now, ms) {
   victim.stunnedUntil = now + ms;
   victim.stunImmuneUntil = now + ms + STUN_IMMUNE_MS - STUN_MS;
   victim.dashUntil = 0;
+  victim.streak = 0;
+  victim.ammo = 0;
   if (lobby.broodje.holder === victim.id) dropBroodje(lobby, dirX, dirZ);
 }
 
@@ -268,6 +324,12 @@ function tickProjectiles(lobby, now, dt) {
         stun(lobby, p, pr.vx, pr.vz, now, STUN_MS);
         if (owner && lobby.mode === 'voedsel') owner.score += multiplier(lobby);
         emit(lobby, { type: 'hit', by: pr.owner, victim: p.id, kind: pr.kind });
+        // killstreak: drie rake worpen op rij geeft een pizzadoos met tien pizza's
+        if (owner && ++owner.streak % STREAK_HITS === 0) {
+          owner.ammo = STREAK_AMMO;
+          owner.item = 1;
+          emit(lobby, { type: 'streak', id: owner.id });
+        }
         return false;
       }
       // stoelen, prullenbakken en dienbladen vliegen om als je ze raakt
@@ -412,6 +474,14 @@ function tickEvents(lobby, now, remaining) {
   }
 }
 
+// brandalarm: na tien seconden verliest iedereen die nog binnen is 2 punten per seconde
+function tickBrand(lobby, now, dt) {
+  if (lobby.event.type !== 'brand' || lobby.event.until - now > EVENT_MS.brand - BRAND_GRACE_MS) return;
+  for (const p of lobby.players.values()) {
+    if (p.z < MapData.OUTSIDE_Z) p.score = Math.max(0, p.score - 2 * dt);
+  }
+}
+
 // ---------- Game ----------
 function startGame(lobby) {
   const spawns = MapData.SPAWNS.slice().sort(() => Math.random() - 0.5);
@@ -419,7 +489,7 @@ function startGame(lobby) {
   order.forEach((p, i) => {
     const s = spawns[i % spawns.length];
     Object.assign(p, {
-      team: i % 2, x: s.x, y: s.y, z: s.z, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
+      team: i % 2, x: s.x, y: s.y, z: s.z, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0, streak: 0, ammo: 0,
       lastDash: 0, dashUntil: 0, noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0
     });
   });
@@ -431,7 +501,7 @@ function startGame(lobby) {
   lobby.bananas = [];
   lobby.event = { type: '', until: 0 };
   lobby.double = false;
-  const pool = lobby.mode === 'voedsel' ? ['donker', 'regen'] : ['donker', 'goud', 'regen'];
+  const pool = lobby.mode === 'voedsel' ? ['donker', 'regen', 'brand'] : ['donker', 'goud', 'regen', 'brand'];
   const pick = () => pool[Math.floor(Math.random() * pool.length)];
   lobby.schedule = [{ at: 140, type: pick() }, { at: 100, type: pick() }, { at: 60, type: 'dubbel' }, { at: 30, type: pick() }];
   lobby.playing = true;
@@ -456,7 +526,20 @@ function endGame(lobby) {
   const ranking = [...lobby.players.values()]
     .map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, team: p.team, score: Math.floor(p.score) }))
     .sort((a, b) => b.score - a.score);
-  io.to(lobby.code).emit('gameOver', { ranking, mode: lobby.mode, teamScores: teamScores(lobby) });
+  const totals = teamScores(lobby);
+  const winners = new Set();
+  if (ranking.length > 1) {
+    if (lobby.mode === 'teams') {
+      if (totals[0] !== totals[1]) ranking.filter((p) => p.team === (totals[0] > totals[1] ? 0 : 1)).forEach((p) => winners.add(p.id));
+    } else if (ranking[0].score > ranking[1].score) {
+      winners.add(ranking[0].id);
+    }
+  }
+  saveBoard(ranking, winners);
+  io.to(lobby.code).emit('gameOver', { ranking, mode: lobby.mode, teamScores: totals });
+  // wie meekeek doet het volgende potje mee
+  for (const [id, p] of lobby.waiting) lobby.players.set(id, p);
+  lobby.waiting.clear();
   sendLobby(lobby);
 }
 
@@ -473,6 +556,7 @@ function tick(lobby, now) {
   tickItems(lobby, now);
   tickProjectiles(lobby, now, dt);
   tickProps(lobby, now, dt);
+  tickBrand(lobby, now, dt);
 
   const b = lobby.broodje;
   const changed = [];
@@ -483,14 +567,14 @@ function tick(lobby, now) {
   });
   io.to(lobby.code).emit('state', {
     t: remaining,
-    // [id, x, y, z, kijkrichting, punten, vlaggen, voorwerp in de hand, bananenschil op zak]
+    // [id, x, y, z, kijkrichting, punten, vlaggen, voorwerp in de hand, bananenschil op zak, pizza's in de doos]
     // vlaggen: 1 = dash, 2 = knock-out, 4 = energiedrank, 8 = schild
     p: [...lobby.players.values()].map((p) => [
       p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.ry), Math.floor(p.score),
       (p.dashUntil > now ? 1 : 0) | (p.stunnedUntil > now ? 2 : 0) | (p.boostUntil > now ? 4 : 0) | (p.shield ? 8 : 0),
-      p.item, p.gadget
+      p.item, p.gadget, p.ammo
     ]),
-    b: lobby.mode === 'voedsel' ? null : { x: r2(b.x), y: r2(b.y), z: r2(b.z), h: b.holder },
+    b: lobby.mode === 'voedsel' ? null : { x: r2(b.x), y: r2(b.y), z: r2(b.z), h: b.holder, s: r2(1 - b.eaten / BROODJE_LIFE) },
     i: lobby.items.map((it) => (it.availableAt <= now ? it.kind : 0)),
     j: lobby.projectiles.map((pr) => [pr.id, pr.kind, r2(pr.x), r2(pr.y), r2(pr.z)]),
     n: lobby.bananas.map((bn) => [bn.id, r2(bn.x), r2(bn.y), r2(bn.z)]),
@@ -515,10 +599,17 @@ function leaveLobby(socket) {
   if (!lobby) return;
   if (lobby.playing && lobby.broodje.holder === socket.id) dropBroodje(lobby, Math.random() - 0.5, Math.random() - 0.5);
   lobby.players.delete(socket.id);
+  lobby.waiting.delete(socket.id);
   socket.leave(lobby.code);
   if (lobby.players.size === 0) {
-    lobbies.delete(lobby.code);
-    return;
+    // niemand speelt meer: meekijkers nemen de lobby over, anders verdwijnt hij
+    if (lobby.waiting.size === 0) {
+      lobbies.delete(lobby.code);
+      return;
+    }
+    for (const [id, p] of lobby.waiting) lobby.players.set(id, p);
+    lobby.waiting.clear();
+    lobby.playing = false;
   }
   if (lobby.hostId === socket.id) lobby.hostId = lobby.players.keys().next().value;
   sendLobby(lobby);
@@ -540,7 +631,7 @@ io.on('connection', (socket) => {
     leaveLobby(socket);
     const code = makeCode();
     const lobby = {
-      code, hostId: socket.id, players: new Map(), playing: false, mode: 'klassiek', endsAt: 0, lastTick: 0,
+      code, hostId: socket.id, players: new Map(), waiting: new Map(), playing: false, mode: 'klassiek', endsAt: 0, lastTick: 0,
       broodje: null, items: [], vending: [], projectiles: [], bananas: [], props: [], panels: [], dynamic: [],
       event: { type: '', until: 0 }, double: false, schedule: []
     };
@@ -556,13 +647,27 @@ io.on('connection', (socket) => {
     const code = String((data && data.code) || '').toUpperCase().trim();
     const lobby = lobbies.get(code);
     if (!lobby) return reply(cb, { ok: false, error: 'Lobby niet gevonden.' });
-    if (lobby.playing) return reply(cb, { ok: false, error: 'Deze game is al bezig.' });
-    if (lobby.players.size >= MAX_PLAYERS) return reply(cb, { ok: false, error: 'Lobby zit vol.' });
+    if (lobby.players.size + lobby.waiting.size >= MAX_PLAYERS) return reply(cb, { ok: false, error: 'Lobby zit vol.' });
     leaveLobby(socket);
-    lobby.players.set(socket.id, newPlayer(socket, data, lobby));
+    if (!lobbies.has(code)) return reply(cb, { ok: false, error: 'Lobby niet gevonden.' });
+    const player = newPlayer(socket, data, lobby);
     socket.data.code = code;
     socket.join(code);
     reply(cb, { ok: true });
+    if (lobby.playing) {
+      // potje is bezig: meekijken tot het volgende begint
+      lobby.waiting.set(socket.id, player);
+      sendLobby(lobby);
+      const teams = {};
+      for (const p of lobby.players.values()) teams[p.id] = p.team;
+      socket.emit('spectate', {
+        mode: lobby.mode, teams,
+        props: lobby.props.map((o, i) => [i, r2(o.x), r2(o.y), r2(o.z), o.tip, r2(o.dir)]),
+        panels: lobby.panels
+      });
+      return;
+    }
+    lobby.players.set(socket.id, player);
     sendLobby(lobby);
   });
 
@@ -570,8 +675,8 @@ io.on('connection', (socket) => {
 
   socket.on('setSkin', (skin) => {
     const lobby = lobbies.get(socket.data.code);
-    const p = lobby && lobby.players.get(socket.id);
-    if (!p || lobby.playing) return;
+    const p = lobby && (lobby.players.get(socket.id) || lobby.waiting.get(socket.id));
+    if (!p || (lobby.playing && !lobby.waiting.has(socket.id))) return;
     p.skin = cleanSkin(skin);
     sendLobby(lobby);
   });
@@ -620,7 +725,8 @@ io.on('connection', (socket) => {
       x: p.x + dx * 0.5, y: p.y + 1.45 + dy * 0.5, z: p.z + dz * 0.5,
       vx: dx * THROW_SPEED, vy: dy * THROW_SPEED + 2, vz: dz * THROW_SPEED
     });
-    p.item = 0;
+    if (p.ammo > 0) p.ammo--;
+    p.item = p.ammo > 0 ? 1 : 0;
   });
 
   // bananenschil neerleggen
@@ -634,7 +740,7 @@ io.on('connection', (socket) => {
 
   socket.on('emote', (e) => {
     const a = activePlayer();
-    if (a && Number.isInteger(e) && e >= 0 && e <= 4) emit(a.lobby, { type: 'emote', id: socket.id, e });
+    if (a && Number.isInteger(e) && e >= 0 && e <= 6) emit(a.lobby, { type: 'emote', id: socket.id, e });
   });
 
   socket.on('spray', (s) => {
@@ -643,7 +749,19 @@ io.on('connection', (socket) => {
     if (!a || !s || ![s.x, s.y, s.z, s.nx, s.ny, s.nz].every(Number.isFinite) || now - a.p.lastSpray < 2500) return;
     if (Math.hypot(s.x - a.p.x, s.y - a.p.y, s.z - a.p.z) > 8) return;
     a.p.lastSpray = now;
-    emit(a.lobby, { type: 'spray', id: socket.id, x: s.x, y: s.y, z: s.z, nx: s.nx, ny: s.ny, nz: s.nz });
+    // design is een vaste stempel, of een zelfgetekende afbeelding (kleine PNG)
+    const design = /^[a-z]{1,12}$/.test(String(s.design)) ? s.design : 'naam';
+    const img = typeof s.img === 'string' && s.img.length < 40000 && s.img.startsWith('data:image/png;base64,') ? s.img : null;
+    emit(a.lobby, { type: 'spray', id: socket.id, x: s.x, y: s.y, z: s.z, nx: s.nx, ny: s.ny, nz: s.nz, design, img });
+  });
+
+  // snelle berichten
+  socket.on('say', (i) => {
+    const a = activePlayer(true);
+    const now = Date.now();
+    if (!a || !Number.isInteger(i) || i < 0 || i >= CHAT_LINES || now - a.p.lastSay < 1000) return;
+    a.p.lastSay = now;
+    emit(a.lobby, { type: 'say', id: socket.id, i });
   });
 
   socket.on('disconnect', () => leaveLobby(socket));

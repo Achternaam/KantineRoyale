@@ -11,6 +11,7 @@
 
 html, body {
   margin: 0;
+  touch-action: none;
   height: 100%;
   overflow: hidden;
   background: #c99a2e;
@@ -497,3 +498,193 @@ li.done .bar i { background: #3aa655; }
   border-radius: 8px;
 }
 #scoreboard li.team { font-size: 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.15); border-radius: 0; }
+
+/* ---------- Grote melding, alarm, berichten ---------- */
+#big {
+  position: fixed;
+  top: 36%;
+  left: 50%;
+  z-index: 6;
+  max-width: 92vw;
+  padding: 14px 34px;
+  font-size: clamp(30px, 6vw, 64px);
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+  color: #fff;
+  border-radius: 18px;
+  border-bottom: 8px solid rgba(0, 0, 0, 0.3);
+  transform: translateX(-50%) scale(0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.2s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+#big.show { opacity: 1; transform: translateX(-50%) scale(1); }
+#big.good { background: #3aa655; }
+#big.bad { background: #d12f2f; }
+
+#alarm {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 130px;
+  box-shadow: inset 0 0 140px 40px rgba(226, 59, 46, 0.75);
+  animation: alarm 0.6s ease-in-out infinite alternate;
+}
+#alarm.safe { box-shadow: inset 0 0 100px 20px rgba(58, 166, 85, 0.6); animation: none; }
+#alarm span { padding: 8px 18px; font-size: 18px; font-weight: 900; background: rgba(38, 38, 43, 0.85); border-radius: 10px; }
+@keyframes alarm { from { opacity: 0.45; } to { opacity: 1; } }
+
+#feed {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#feed li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(38, 38, 43, 0.75);
+  border-radius: 8px;
+}
+
+#spec-hint {
+  display: none;
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 800;
+  background: rgba(38, 38, 43, 0.85);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+body.spectating #spec-hint { display: block; }
+body.spectating #dash, body.spectating #crosshair, body.spectating #emote-hint, body.spectating #buffs, body.spectating #touch { display: none; }
+
+/* ---------- Winkel, ranglijst, tekenen, uitleg ---------- */
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn.help { background: #3aa655; }
+.coin-chip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-weight: 900;
+  background: #fff;
+  border: 2px solid #ebe5d8;
+  border-radius: 10px;
+}
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  font-weight: 800;
+  background: #fff;
+  border: 2px solid #ebe5d8;
+  border-radius: 10px;
+}
+.list li .btn { flex: none; min-width: 96px; }
+.list small { display: block; font-size: 11px; font-weight: 700; color: var(--grey); }
+.list .pts { margin-left: auto; color: var(--orange); font-size: 13px; }
+#challenge-list li.daily { border-color: var(--purple); background: #f3eefc; }
+
+#draw-canvas {
+  width: 256px;
+  height: 256px;
+  align-self: center;
+  background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 32px 32px;
+  border: 3px solid #ddd6c8;
+  border-radius: 12px;
+  cursor: crosshair;
+  touch-action: none;
+}
+#draw-colors { justify-content: center; }
+#draw-colors button { width: 30px; height: 30px; border: 3px solid #ddd6c8; border-radius: 50%; cursor: pointer; }
+
+.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.steps b { color: var(--purple); }
+
+/* ---------- Telefoon ---------- */
+#touch { display: none; }
+body.touch #touch { display: block; }
+body.touch #emote-hint, body.touch #dash span { display: none; }
+#stick {
+  position: absolute;
+  left: 28px;
+  bottom: 28px;
+  width: 120px;
+  height: 120px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 3px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  pointer-events: auto;
+}
+#knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+}
+.tc {
+  position: absolute;
+  width: 68px;
+  height: 68px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  color: #fff;
+  background: rgba(38, 38, 43, 0.7);
+  border: 3px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  pointer-events: auto;
+}
+.t-jump { right: 24px; bottom: 24px; background: rgba(58, 166, 85, 0.8); }
+.t-dash { right: 104px; bottom: 24px; background: rgba(242, 106, 27, 0.85); }
+.t-throw { right: 24px; bottom: 104px; background: rgba(91, 63, 168, 0.85); }
+.t-banana { right: 104px; bottom: 104px; width: 52px; height: 52px; }
+.t-emote { right: 24px; bottom: 184px; width: 52px; height: 52px; }
+.t-menu { left: 16px; top: 16px; width: 46px; height: 46px; border-radius: 12px; }
+body.touch #feed { top: 72px; }
+body.touch #dash { bottom: auto; top: 70px; width: 140px; height: 16px; }
+body.touch #buffs { bottom: 170px; }
+
+@media (max-width: 900px) {
+  #timer { font-size: 22px; padding: 4px 14px; }
+  #scoreboard { min-width: 130px; padding: 5px; }
+  #scoreboard li { font-size: 11px; padding: 2px 6px; }
+  #banner { font-size: 18px; }
+  .card { padding: 18px; gap: 9px; max-height: 96vh; overflow-y: auto; }
+  .stamp h1 { font-size: 30px; }
+  .stamp { margin: 0 0 6px; padding: 8px 20px; }
+}

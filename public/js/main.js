@@ -7,8 +7,8 @@ const socket = io();
 const $ = (id) => document.getElementById(id);
 
 // ---------- Instellingen van de gameplay ----------
-const RUN_SPEED = 9.5;
-const HOLDER_SLOWDOWN = 0.85;   // 15% langzamer met het broodje
+const RUN_SPEED = 10.5;
+const HOLDER_SLOWDOWN = 0.77;   // met het broodje ren je even snel als voorheen, zonder ben je sneller
 const BOOST_SPEED = 1.35;       // energiedrank
 const GROUND_ACCEL = 12;
 const AIR_ACCEL = 3;
@@ -35,8 +35,11 @@ const EVENT_TEXT = {
   donker: 'Stroomstoring! Het licht is uit',
   goud: 'Gouden broodje! Punten ×3',
   regen: 'Pizzaregen! Alles ligt weer klaar',
-  dubbel: 'De bel gaat! Laatste minuut telt dubbel'
+  dubbel: 'De bel gaat! Laatste minuut telt dubbel',
+  brand: 'Brandalarm! Binnen 10 seconden naar buiten'
 };
+const CHAT = ['Hier!', 'Pak hem!', 'Help!', 'GG'];
+const touchMode = window.matchMedia('(pointer: coarse)').matches;
 const POWER_TEXT = ['', 'een energiedrankje (10 s sneller)', 'een dienblad-schild', 'een bananenschil (Q om neer te leggen)'];
 
 // ---------- Opgeslagen voorkeuren en voortgang ----------
@@ -49,9 +52,9 @@ function load(key, fallback) {
 }
 const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, shadows: true, hires: true, bob: true, names: true });
+const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, hires: true, bob: true, names: true });
 const stats = load('kr-stats', { pickups: 0, tackles: 0, hits: 0, holdSeconds: 0, wins: 0, games: 0, jumps: 0 });
-const progress = load('kr-progress', { unlocked: [], skin: 'leerling' });
+const progress = load('kr-progress', { unlocked: [], skin: 'leerling', coins: 0, owned: [], stamp: 'naam', custom: null });
 
 const SKINS = [
   { id: 'leerling', name: 'Leerling', shirt: 0x2f6fde, pants: 0x3b3d44, tone: 0xf0c39a, hair: 0x5a3a22 },
@@ -64,8 +67,35 @@ const SKINS = [
   { id: 'atleet', name: 'Atleet', shirt: 0x19b5b0, pants: 0x19b5b0, tone: 0x8a5a3c, hair: 0x1a1a1a, hat: 'band', hatColor: 0xf4c430, locked: true },
   { id: 'robot', name: 'Robot', shirt: 0x9aa3ad, pants: 0x6d7680, tone: 0xc5ccd3, hair: 0x9aa3ad, hat: 'antenna', hatColor: 0xe23b2e, locked: true },
   { id: 'koning', name: 'Koning', shirt: 0x7a3fb8, pants: 0x4a2670, tone: 0xf0c39a, hair: 0x5a3a22, hat: 'crown', hatColor: 0xf5c542, locked: true },
-  { id: 'goud', name: 'Goud', shirt: 0xf5c542, pants: 0xd9a520, tone: 0xffdf70, hair: 0xd9a520, hat: 'crown', hatColor: 0xffffff, locked: true }
+  { id: 'goud', name: 'Goud', shirt: 0xf5c542, pants: 0xd9a520, tone: 0xffdf70, hair: 0xd9a520, hat: 'crown', hatColor: 0xffffff, locked: true },
+  // te koop in de winkel
+  { id: 'ninja', name: 'Ninja', shirt: 0x1f2024, pants: 0x1f2024, tone: 0xe8b88f, hair: 0x1f2024, hat: 'band', hatColor: 0xe23b2e, price: 150 },
+  { id: 'clown', name: 'Clown', shirt: 0xf4c430, pants: 0x3aa655, tone: 0xffffff, hair: 0xe23b2e, hat: 'cap', hatColor: 0x3d8bd9, price: 150 },
+  { id: 'astronaut', name: 'Astronaut', shirt: 0xf2f0ea, pants: 0xd9d5cb, tone: 0xf0c39a, hair: 0xd9d5cb, hat: 'beanie', hatColor: 0xf2f0ea, price: 200 }
 ];
+const SHOP = SKINS.filter((k) => k.price).map((k) => ({ id: 'skin:' + k.id, kind: 'Skin', name: k.name, price: k.price })).concat([
+  { id: 'emote:5', kind: 'Emote (toets 5)', name: 'Floss', price: 100 },
+  { id: 'emote:6', kind: 'Emote (toets 6)', name: 'Facepalm', price: 80 },
+  { id: 'stamp:kroon', kind: 'Stempel', name: 'Kroon', price: 60 },
+  { id: 'stamp:broodje', kind: 'Stempel', name: 'Frikandelbroodje', price: 60 },
+  { id: 'stamp:hart', kind: 'Stempel', name: 'Hartje', price: 40 },
+  { id: 'stamp:bliksem', kind: 'Stempel', name: 'Bliksem', price: 40 }
+]);
+const owns = (id) => progress.owned.includes(id);
+const DAILIES = [
+  { desc: 'Raak vandaag 5 keer iemand met een voorwerp.', stat: 'hits', goal: 5 },
+  { desc: 'Pak vandaag 3 keer het broodje.', stat: 'pickups', goal: 3 },
+  { desc: 'Tackel vandaag 3 keer de broodjesdrager.', stat: 'tackles', goal: 3 },
+  { desc: 'Spring vandaag 50 keer.', stat: 'jumps', goal: 50 },
+  { desc: 'Speel vandaag 2 potjes uit.', stat: 'games', goal: 2 },
+  { desc: 'Houd vandaag 40 seconden het broodje vast.', stat: 'holdSeconds', goal: 40 }
+];
+const DAILY_REWARD = 50;
+const now0 = new Date();
+const today = `${now0.getFullYear()}-${now0.getMonth() + 1}-${now0.getDate()}`;
+const dailyDef = DAILIES[Math.floor(now0.getTime() / 86400000) % DAILIES.length];
+const daily = load('kr-daily', { date: today, value: 0, done: false });
+if (daily.date !== today) Object.assign(daily, { date: today, value: 0, done: false });
 const CHALLENGES = [
   { id: 'hap', title: 'Eerste hap', desc: 'Pak het frikandelbroodje op.', stat: 'pickups', goal: 1, skin: 'frikandel' },
   { id: 'tackle', title: 'Tackelkoning', desc: 'Tackel de broodjesdrager 10 keer.', stat: 'tackles', goal: 10, skin: 'conc' },
@@ -76,12 +106,22 @@ const CHALLENGES = [
   { id: 'baas', title: 'Broodjesbaas', desc: 'Houd het broodje in totaal 120 seconden vast.', stat: 'holdSeconds', goal: 120, skin: 'goud' }
 ];
 const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
-const isUnlocked = (skin) => !skin.locked || progress.unlocked.includes(skin.id);
+const isUnlocked = (skin) => (skin.price ? owns('skin:' + skin.id) : !skin.locked || progress.unlocked.includes(skin.id));
 if (!isUnlocked(skinById(progress.skin))) progress.skin = 'leerling';
 
 function addStat(stat, amount) {
   stats[stat] += amount;
   save('kr-stats', stats);
+  if (dailyDef.stat === stat && !daily.done) {
+    daily.value += amount;
+    if (daily.value >= dailyDef.goal) {
+      daily.done = true;
+      addCoins(DAILY_REWARD);
+      toast(`Dagelijkse challenge gehaald! +${DAILY_REWARD} munten`, 4000);
+      sfx('unlock');
+    }
+    save('kr-daily', daily);
+  }
   for (const c of CHALLENGES) {
     if (c.stat !== stat || stats[stat] < c.goal || progress.unlocked.includes(c.skin)) continue;
     progress.unlocked.push(c.skin);
@@ -91,22 +131,28 @@ function addStat(stat, amount) {
   }
 }
 
+function addCoins(n) {
+  progress.coins += n;
+  save('kr-progress', progress);
+  document.querySelectorAll('.coins').forEach((el) => { el.textContent = progress.coins; });
+}
+
 // ---------- Geluid (klein synthesizertje, geen bestanden nodig) ----------
 let audio = null;
-function tone(f0, f1, dur, type, vol, delay = 0) {
+function tone(f0, f1, dur, type, vol, delay = 0, master = settings.vol) {
   const t = audio.currentTime + delay;
   const osc = audio.createOscillator();
   const gain = audio.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(f0, t);
   osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
-  gain.gain.setValueAtTime(vol * settings.vol, t);
+  gain.gain.setValueAtTime(vol * master, t);
   gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
   osc.connect(gain).connect(audio.destination);
   osc.start(t);
   osc.stop(t + dur);
 }
-function noise(dur, vol, freq) {
+function noise(dur, vol, freq, delay = 0, master = settings.vol) {
   const buffer = audio.createBuffer(1, audio.sampleRate * dur, audio.sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
@@ -116,9 +162,9 @@ function noise(dur, vol, freq) {
   src.buffer = buffer;
   filter.type = 'bandpass';
   filter.frequency.value = freq;
-  gain.gain.value = vol * settings.vol;
+  gain.gain.value = vol * master;
   src.connect(filter).connect(gain).connect(audio.destination);
-  src.start();
+  src.start(audio.currentTime + delay);
 }
 function sfx(name) {
   if (!audio || settings.vol <= 0) return;
@@ -134,12 +180,48 @@ function sfx(name) {
   else if (name === 'pickup') { tone(520, 520, 0.09, 'square', 0.15); tone(780, 780, 0.14, 'square', 0.15, 0.09); }
   else if (name === 'power') [440, 660, 880].forEach((f, i) => tone(f, f * 1.2, 0.1, 'square', 0.14, i * 0.07));
   else if (name === 'bell') [0, 0.35, 0.7].forEach((d) => tone(1180, 1160, 0.3, 'triangle', 0.35, d));
+  else if (name === 'lift') { tone(880, 880, 0.18, 'sine', 0.3); tone(660, 660, 0.3, 'sine', 0.3, 0.18); }
+  else if (name === 'coin') { tone(988, 988, 0.07, 'square', 0.12); tone(1319, 1319, 0.2, 'square', 0.12, 0.07); }
+  else if (name === 'siren') tone(650, 1000, 0.45, 'sawtooth', 0.12);
+  else if (name === 'good') [523, 784, 1047].forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.3, i * 0.06));
+  else if (name === 'bad') tone(330, 110, 0.4, 'sawtooth', 0.25);
   else if (name === 'unlock') [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.25, i * 0.1));
 }
 window.addEventListener('pointerdown', () => {
   if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
   if (audio.state === 'suspended') audio.resume();
 });
+
+// Achtergrondmuziek: een stappen-sequencer met kick, hi-hat, bas en melodie.
+// Speelt alleen tijdens een potje en gaat sneller in de laatste minuut.
+const BASS = [110, 110, 131, 98];
+const LEAD = [440, 523, 659, 523, 587, 523, 440, 392, 440, 659, 784, 659, 587, 494, 440, 392];
+let musicStep = 0;
+let musicNext = 0;
+setInterval(() => {
+  if (!audio || !playing || settings.mus <= 0) return;
+  const stepDur = 60 / (lastState && lastState.d ? 140 : 120) / 4;
+  if (musicNext < audio.currentTime) musicNext = audio.currentTime + 0.05;
+  while (musicNext < audio.currentTime + 0.2) {
+    const d = musicNext - audio.currentTime;
+    const step = musicStep % 16;
+    const bar = Math.floor(musicStep / 16);
+    const m = settings.mus;
+    if (step % 4 === 0) tone(130, 45, 0.13, 'sine', 0.5, d, m);
+    if (step % 4 === 2) noise(0.05, 0.18, 7000, d, m);
+    if (step === 4 || step === 12) noise(0.12, 0.3, 1800, d, m);
+    if ([0, 3, 6, 8, 11, 14].includes(step)) {
+      const f = BASS[bar % 4];
+      tone(f, f, stepDur * 1.6, 'square', 0.1, d, m);
+    }
+    if (step % 2 === 0 && bar % 4 !== 3) {
+      const f = LEAD[(step / 2 + bar * 3) % LEAD.length];
+      tone(f, f, stepDur * 1.4, 'triangle', 0.09, d, m);
+    }
+    musicNext += stepDur;
+    musicStep++;
+  }
+}, 60);
 
 // ---------- Renderer, scene, licht ----------
 const canvas = $('scene');
@@ -617,17 +699,54 @@ function sprayTexture(name, color) {
   ctx.fillText('WAS HIER', 0, 32);
   return new THREE.CanvasTexture(c);
 }
-function placeSpray(e) {
-  let m = sprays.get(e.id);
-  if (!m) {
-    const info = roster.get(e.id) || { name: '?' };
-    m = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.5, 1.5),
-      new THREE.MeshBasicMaterial({ map: sprayTexture(info.name, hex(colorOf(e.id))), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
-    );
-    scene.add(m);
-    sprays.set(e.id, m);
+// vaste stempels uit de winkel, getekend in de kleur van de speler
+function stampTexture(design, color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = ctx.strokeStyle = color;
+  ctx.lineWidth = 14;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (design === 'kroon') {
+    [[40, 200], [40, 80], [90, 140], [128, 60], [166, 140], [216, 80], [216, 200]].forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+    ctx.fill();
+  } else if (design === 'hart') {
+    ctx.moveTo(128, 220);
+    ctx.bezierCurveTo(10, 130, 50, 30, 128, 95);
+    ctx.bezierCurveTo(206, 30, 246, 130, 128, 220);
+    ctx.fill();
+  } else if (design === 'bliksem') {
+    [[150, 20], [60, 140], [120, 140], [96, 236], [196, 104], [134, 104]].forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+    ctx.fill();
+  } else { // frikandelbroodje
+    ctx.roundRect(30, 96, 196, 72, 30);
+    ctx.stroke();
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(14, 132);
+    ctx.lineTo(242, 132);
+    ctx.stroke();
   }
+  return new THREE.CanvasTexture(c);
+}
+function placeSpray(e) {
+  const old = sprays.get(e.id);
+  if (old) scene.remove(old);
+  const info = roster.get(e.id) || { name: '?' };
+  const color = hex(colorOf(e.id));
+  let map;
+  if (e.img) map = new THREE.TextureLoader().load(e.img);
+  else if (e.design === 'naam') map = sprayTexture(info.name, color);
+  else map = stampTexture(e.design, color);
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 1.5),
+    new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
+  );
+  scene.add(m);
+  sprays.set(e.id, m);
   m.position.set(e.x, e.y, e.z);
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(e.nx, e.ny, e.nz).normalize());
   if (Math.hypot(e.x - me.x, e.z - me.z) < 15) sfx('spray');
@@ -639,7 +758,8 @@ function trySpray() {
   if (!hit) return toast('Ga dichter bij een muur staan om te spuiten');
   const n = hit.face.normal;
   socket.emit('spray', {
-    x: hit.point.x + n.x * 0.02, y: hit.point.y + n.y * 0.02, z: hit.point.z + n.z * 0.02, nx: n.x, ny: n.y, nz: n.z
+    x: hit.point.x + n.x * 0.02, y: hit.point.y + n.y * 0.02, z: hit.point.z + n.z * 0.02, nx: n.x, ny: n.y, nz: n.z,
+    design: progress.stamp, img: progress.stamp === 'custom' ? progress.custom : null
   });
 }
 
@@ -788,6 +908,16 @@ function poseModel(m, swing, holding, emote, t) {
     m.legR.rotation.set(-Math.sin(t * 8) * 0.4, 0, 0);
     return { hop: Math.abs(Math.sin(t * 8)) * 0.12, roll: 0, spin: t * 5 };
   }
+  if (emote === 5) { // floss: armen en heupen tegen elkaar in
+    const k = Math.sin(t * 11);
+    m.armL.rotation.set(k > 0 ? 0.5 : -0.5, 0, k * 0.8);
+    m.armR.rotation.set(k > 0 ? 0.5 : -0.5, 0, k * 0.8);
+    return { hop: 0, roll: -k * 0.2, spin: 0 };
+  }
+  if (emote === 6) { // facepalm
+    m.armR.rotation.set(-2.35, 0, -0.55);
+    return { hop: 0, roll: Math.sin(t * 3) * 0.06, spin: 0 };
+  }
   return { hop: 0, roll: 0, spin: 0 };
 }
 const activeEmote = (m, now) => (m.emote && now - m.emoteStart < EMOTE_MS ? m.emote : 0);
@@ -884,6 +1014,7 @@ function updateArms(dt, speed) {
   arms.left.rotation.set(0.04 + holdL - swing * 0.3 - dash * 0.35, -0.1, -0.05);
   arms.item.userData.setKind(throwAnim > 0.55 ? lastThrown : myItem);
   arms.broodje.visible = holderId === socket.id;
+  arms.broodje.scale.setScalar(0.36 * broodjeSize());
   return swing;
 }
 
@@ -912,17 +1043,30 @@ let lastState = null;
 let selfModel = null; // je eigen model, alleen zichtbaar tijdens een emote (camera van achteren)
 let myEmote = 0;
 let myEmoteStart = 0;
+let myAmmo = 0;
+let spectating = false; // meekijken met een potje dat al bezig was
+let specIndex = 0;
+let paused = false;     // pauzemenu op een telefoon
+const joy = { x: 0, y: 0 };
+let liftTimer = 0;
+let liftArmed = true;
+let lossNote = null;    // reden waarom je het broodje kwijt bent, voor de grote melding
+// op een telefoon is er geen muisvergrendeling: daar speel je zolang het pauzemenu dicht is
+const isActive = () => (touchMode ? !paused : controls.isLocked);
+const broodjeSize = () => (lastState && lastState.b ? 0.45 + 0.55 * lastState.b.s : 1);
 
 function wishDir() {
   camera.getWorldDirection(fwd);
   fwd.y = 0;
   fwd.normalize();
-  const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
-  const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - joy.y;
+  const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joy.x;
   // rechts = vooruit x omhoog = (-fz, 0, fx)
   const x = fwd.x * f - fwd.z * s, z = fwd.z * f + fwd.x * s;
   const len = Math.hypot(x, z);
-  return len > 0 ? { x: x / len, z: z / len } : null;
+  if (len < 0.15) return null;
+  const m = Math.min(1, len); // de joystick kan ook half ingedrukt zijn
+  return { x: (x / len) * m, z: (z / len) * m };
 }
 
 function setEmote(e) {
@@ -932,7 +1076,7 @@ function setEmote(e) {
   socket.emit('emote', e);
 }
 function canAct() {
-  return playing && controls.isLocked && !stunned;
+  return playing && !spectating && isActive() && !stunned;
 }
 
 function tryDash() {
@@ -968,24 +1112,36 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' || e.code === 'KeyF') tryThrow();
   if (e.code === 'KeyQ' && canAct() && myGadget) socket.emit('gadget');
   if (e.code === 'KeyT') trySpray();
-  if (/^Digit[1-4]$/.test(e.code) && canAct() && me.onGround) setEmote(Number(e.code[5]));
+  if (/^Digit[1-6]$/.test(e.code) && canAct() && me.onGround) {
+    const n = Number(e.code[5]);
+    if (n <= 4 || owns('emote:' + n)) setEmote(n);
+    else toast('Deze emote koop je in de winkel');
+  }
+  const line = ['KeyZ', 'KeyX', 'KeyC', 'KeyV'].indexOf(e.code);
+  if (line >= 0 && !spectating) socket.emit('say', line);
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 window.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && controls.isLocked) tryThrow(); // de klik die de muis vastzet telt niet
+  if (spectating) specIndex++; // volgende speler volgen
+  else if (e.button === 0 && controls.isLocked) tryThrow(); // de klik die de muis vastzet telt niet
 });
 
 controls.addEventListener('lock', () => $('pause').classList.add('hidden'));
 controls.addEventListener('unlock', () => {
-  if (playing) $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
+  if (playing && !spectating) $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
 });
-$('btn-resume').addEventListener('click', () => controls.lock());
-$('pause').addEventListener('click', (e) => { if (e.target === $('pause')) controls.lock(); });
+function resume() {
+  if (!touchMode) return controls.lock();
+  paused = false;
+  $('pause').classList.add('hidden');
+}
+$('btn-resume').addEventListener('click', resume);
+$('pause').addEventListener('click', (e) => { if (e.target === $('pause')) resume(); });
 
 function updateLocal(dt) {
   const now = performance.now();
-  const active = controls.isLocked && !stunned;
+  const active = isActive() && !stunned;
   const wish = wishDir();
   const boosted = myFlags & 4;
   const max = RUN_SPEED * (holderId === socket.id ? HOLDER_SLOWDOWN : 1) * (boosted ? BOOST_SPEED : 1);
@@ -1036,6 +1192,21 @@ function updateLocal(dt) {
     me.vy = 0;
   } else {
     me.onGround = false;
+  }
+
+  // lift: blijf even in de cabine staan en je gaat naar de andere verdieping
+  const li = M.LIFTS.findIndex((l) => Math.abs(me.y - l.y) < 0.3 && Math.hypot(me.x - l.x, me.z - l.z) < 0.6);
+  if (li < 0) {
+    liftTimer = 0;
+    liftArmed = true;
+  } else if (liftArmed && (liftTimer += dt) > 0.9) {
+    const to = M.LIFTS[1 - li];
+    Object.assign(me, { x: to.x, y: to.y, z: to.z, vx: 0, vz: 0 });
+    camY = me.y + EYE_HEIGHT;
+    liftArmed = false;
+    liftTimer = 0;
+    sfx('lift');
+    toast(li === 0 ? 'Lift naar beneden' : 'Lift naar boven');
   }
 
   const swing = updateArms(dt, speed);
@@ -1089,7 +1260,7 @@ function updateBroodje(dt, time) {
     broodje.position.z += (b.z - broodje.position.z) * k;
   }
   broodje.rotation.y += dt * (gold ? 6 : 2);
-  broodje.scale.setScalar(gold ? 1.5 : 1);
+  broodje.scale.setScalar((gold ? 1.5 : 1) * broodjeSize());
   broodjeLight.color.set(gold ? 0xfff2a0 : 0xffa53a);
   broodjeLight.intensity = (gold ? 30 : 10) + Math.sin(time * 5) * 4;
   // de lichtzuil stopt onder het plafond (buiten gaat hij gewoon omhoog)
@@ -1189,7 +1360,7 @@ function renderSkins() {
     card.append(avatar, name);
     if (!open) {
       const how = document.createElement('small');
-      how.textContent = '🔒 ' + CHALLENGES.find((c) => c.skin === skin.id).title;
+      how.textContent = skin.price ? `🪙 ${skin.price} in de winkel` : '🔒 ' + CHALLENGES.find((c) => c.skin === skin.id).title;
       card.append(how);
     }
     card.addEventListener('click', () => {
@@ -1226,6 +1397,15 @@ function renderChallenges() {
     li.append(top, desc, bar);
     return li;
   }));
+  // dagelijkse challenge bovenaan
+  const li = document.createElement('li');
+  li.className = daily.done ? 'done daily' : 'daily';
+  const value = Math.min(dailyDef.goal, Math.floor(daily.value));
+  li.innerHTML = '<div class="top"><span>Vandaag</span><span></span></div><p></p><div class="bar"><i></i></div>';
+  li.querySelector('.top span:last-child').textContent = `${value} / ${dailyDef.goal}`;
+  li.querySelector('p').textContent = `${dailyDef.desc} Beloning: ${DAILY_REWARD} munten.`;
+  li.querySelector('i').style.width = `${(value / dailyDef.goal) * 100}%`;
+  $('challenge-list').prepend(li);
 }
 
 function applySettings() {
@@ -1235,9 +1415,10 @@ function applySettings() {
   $('out-sens').textContent = settings.sens.toFixed(1);
   $('out-fov').textContent = settings.fov;
   $('out-vol').textContent = Math.round(settings.vol * 100) + '%';
+  $('out-mus').textContent = Math.round(settings.mus * 100) + '%';
   resize();
 }
-[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['shadows', 'check'], ['hires', 'check'], ['bob', 'check'], ['names', 'check']]
+[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['hires', 'check'], ['bob', 'check'], ['names', 'check']]
   .forEach(([key, kind]) => {
     const el = $('set-' + key);
     if (kind === 'range') el.value = settings[key];
@@ -1253,6 +1434,9 @@ applySettings();
 document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.open === 'skins') renderSkins();
   if (btn.dataset.open === 'challenges') renderChallenges();
+  if (btn.dataset.open === 'shop') renderShop();
+  if (btn.dataset.open === 'board') renderBoard();
+  if (btn.dataset.open === 'draw') openDraw();
   $(btn.dataset.open).classList.remove('hidden');
 }));
 document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => {
@@ -1292,6 +1476,13 @@ $('btn-start').addEventListener('click', () => socket.emit('startGame'));
 
 function stopPlaying() {
   playing = false;
+  spectating = false;
+  paused = false;
+  joy.x = joy.y = 0;
+  lossNote = null;
+  document.body.classList.remove('spectating');
+  $('alarm').classList.add('hidden');
+  $('feed').replaceChildren();
   if (controls.isLocked) controls.unlock();
   clearRemotes();
   for (const pr of projectiles.values()) scene.remove(pr.g);
@@ -1356,6 +1547,7 @@ socket.on('lobby', (info) => {
     const tags = [skinById(p.skin).name];
     if (p.id === info.hostId) tags.push('host');
     if (p.id === socket.id) tags.push('jij');
+    if (p.waiting) tags.push('kijkt mee');
     return row(p.color, p.name, badge(tags.join(' · '), 'tag'));
   }));
   const isHost = info.hostId === socket.id;
@@ -1397,11 +1589,11 @@ socket.on('gameStart', (data) => {
   camera.lookAt(M.BROODJE_SPAWN.x, camY, M.BROODJE_SPAWN.z);
   broodje.position.set(M.BROODJE_SPAWN.x, 0.8, M.BROODJE_SPAWN.z);
   show('hud');
-  $('pause').classList.remove('hidden');
+  $('pause').classList.toggle('hidden', touchMode);
   $('holding').classList.add('hidden');
   $('item-hint').classList.add('hidden');
   banner(mode === 'teams' ? `Teams · jij speelt voor ${TEAM_NAMES[teams[socket.id]]}` : MODE_INFO[mode].name, 3500);
-  controls.lock(); // lukt direct bij de host (klik op Start); anderen klikken op "Verder spelen"
+  if (!touchMode) controls.lock(); // lukt direct bij de host (klik op Start); anderen klikken op "Verder spelen"
 });
 
 let scoreTick = 0;
@@ -1409,9 +1601,14 @@ let prevScore = 0;
 socket.on('state', (s) => {
   if (!playing) return;
   lastState = s;
+  const wasMine = holderId === socket.id;
   holderId = s.b ? s.b.h : null;
+  if (wasMine && holderId !== socket.id) {
+    big(lossNote ? lossNote.text : 'Broodje kwijt!', lossNote ? lossNote.kind : 'bad');
+    lossNote = null;
+  }
   const seen = new Set();
-  for (const [id, x, y, z, ry, score, flags, item, gadget] of s.p) {
+  for (const [id, x, y, z, ry, score, flags, item, gadget, ammo] of s.p) {
     if (id === socket.id) {
       // alleen de gewone seconde-punten tellen mee voor de challenge, geen bonussen
       if (holderId === id && score > prevScore) addStat('holdSeconds', Math.min(score - prevScore, 1));
@@ -1419,6 +1616,7 @@ socket.on('state', (s) => {
       if (item && !myItem && throwAnim <= 0) sfx('item');
       if (throwAnim <= 0) myItem = item; // vlak na een worp loopt de server nog even achter
       myGadget = gadget;
+      myAmmo = ammo;
       myFlags = flags;
       stunned = !!(flags & 2);
       continue;
@@ -1510,7 +1708,19 @@ socket.on('state', (s) => {
   $('holding').classList.toggle('hidden', holderId !== socket.id);
   $('stun').classList.toggle('hidden', !stunned);
   $('item-hint').classList.toggle('hidden', !myItem);
-  if (myItem) $('item-hint').textContent = `Klik of E: gooi ${ITEM_NAMES[myItem]}`;
+  if (myItem) {
+    $('item-hint').textContent = (touchMode ? 'Gooi-knop: ' : 'Klik of E: gooi ') +
+      (myAmmo ? `pizza uit de doos (nog ${myAmmo})` : ITEM_NAMES[myItem]);
+  }
+  // brandalarm: rode gloed en sirene, met uitleg waar je heen moet
+  const alarm = s.e === 'brand' && !spectating;
+  $('alarm').classList.toggle('hidden', !alarm);
+  if (alarm) {
+    const inside = me.z < M.OUTSIDE_Z;
+    $('alarm').classList.toggle('safe', !inside);
+    $('alarm-text').textContent = inside ? 'Naar buiten! De deur is beneden in de hal' : 'Je staat veilig buiten';
+    if (scoreTick % 20 === 0) sfx('siren');
+  }
   $('buff-boost').classList.toggle('hidden', !(myFlags & 4));
   $('buff-shield').classList.toggle('hidden', !(myFlags & 8));
   $('buff-banana').classList.toggle('hidden', !myGadget);
@@ -1555,11 +1765,24 @@ socket.on('event', (e) => {
   const mine = e.id === socket.id;
   if (e.type === 'pickup') {
     toast(`${nameOf(e.id)} ${mine ? 'hebt' : 'heeft'} het frikandelbroodje!`);
-    sfx('pickup');
-    if (mine) addStat('pickups', 1);
+    sfx(mine ? 'good' : 'pickup');
+    if (mine) {
+      big('Jij hebt het broodje!', 'good');
+      addStat('pickups', 1);
+    }
+  } else if (e.type === 'eaten') {
+    toast(`${nameOf(e.id)} ${mine ? 'hebt' : 'heeft'} het broodje op! Er ligt een nieuw in het midden`, 3000);
+    if (mine) lossNote = { text: 'Broodje is op!', kind: 'good' };
+  } else if (e.type === 'streak') {
+    if (mine) banner('Killstreak! Pizzadoos met 10 pizza\'s', 3500);
+    else toast(`${nameOf(e.id)} heeft een killstreak en een pizzadoos!`, 3000);
+    sfx('power');
+  } else if (e.type === 'say') {
+    say(e.id, CHAT[e.i]);
   } else if (e.type === 'tackle') {
     toast(`${nameOf(e.by)} tackelt ${victimName(e.victim)}!`);
-    sfx('crash');
+    if (e.victim === socket.id) lossNote = { text: `Getackeld door ${nameOf(e.by)}!`, kind: 'bad' };
+    sfx(e.victim === socket.id ? 'bad' : 'crash');
     if (e.by === socket.id) addStat('tackles', 1);
   } else if (e.type === 'hit') {
     const what = ['', 'een pizza', 'een bord', 'een plant'][e.kind];
@@ -1576,7 +1799,8 @@ socket.on('event', (e) => {
     if (mine) toast(`Uit de automaat: ${POWER_TEXT[e.kind]}`, 3000);
     if (mine) sfx('power');
   } else if (e.type === 'capture') {
-    banner(`${nameOf(e.id)} ${mine ? 'scoort' : 'scoort'} voor team ${TEAM_NAMES[e.team]}! +15`);
+    banner(`${nameOf(e.id)} scoort voor team ${TEAM_NAMES[e.team]}! +15`);
+    if (mine) lossNote = { text: 'Gescoord! +15', kind: 'good' };
     sfx('unlock');
   } else if (e.type === 'gameEvent') {
     banner(EVENT_TEXT[e.name], 4000);
@@ -1597,6 +1821,7 @@ socket.on('event', (e) => {
 });
 
 socket.on('gameOver', (data) => {
+  const watched = spectating;
   stopPlaying();
   const top = data.ranking[0];
   let text, winnerId = top.id, won;
@@ -1618,9 +1843,246 @@ socket.on('gameOver', (data) => {
   show(null);
   banner(text, 4500);
   setTimeout(() => { if (podium && !playing) show('gameover'); }, 4500);
+  $('earned').textContent = '';
+  if (watched) return;
   addStat('games', 1);
   if (won && data.ranking.length > 1) addStat('wins', 1);
+  // munten: 10 voor meedoen, 1 per 5 punten, 20 voor winst
+  const mine = data.ranking.find((p) => p.id === socket.id);
+  const earned = 10 + Math.floor((mine ? mine.score : 0) / 5) + (won && data.ranking.length > 1 ? 20 : 0);
+  addCoins(earned);
+  $('earned').textContent = `+${earned} munten verdiend`;
 });
+
+// later binnengekomen: meekijken tot het volgende potje
+socket.on('spectate', (data) => {
+  stopPlaying();
+  clearPodium();
+  mode = data.mode;
+  teams = data.teams;
+  lastState = null;
+  holderId = null;
+  playing = true;
+  spectating = true;
+  for (const [i, x, y, z, tip, dir] of data.props) {
+    Object.assign(props[i], { x, y, z, tip, dir, tipAnim: tip });
+    props[i].outer.position.set(x, y, z);
+  }
+  data.panels.forEach((b, i) => {
+    broken[i] = b;
+    panelMeshes[i].visible = !b;
+  });
+  refreshDynamic();
+  baseRings.forEach((r) => { r.visible = mode === 'teams'; });
+  document.body.classList.add('spectating');
+  show('hud');
+  banner('Je kijkt mee tot het volgende potje', 4000);
+});
+
+function updateSpectate(time) {
+  const list = [...remotes.values()];
+  if (!list.length) return;
+  const target = (holderId && remotes.get(holderId)) || list[specIndex % list.length];
+  const p = target.group.position;
+  camera.position.set(p.x + Math.sin(time * 0.3) * 5, p.y + 3.2, p.z + Math.cos(time * 0.3) * 5);
+  camera.lookAt(p.x, p.y + 1.2, p.z);
+}
+
+// ---------- Grote melding, berichten ----------
+let bigTimer = 0;
+function big(text, kind) {
+  const el = $('big');
+  el.textContent = text;
+  el.className = 'show ' + kind;
+  clearTimeout(bigTimer);
+  bigTimer = setTimeout(() => { el.className = kind; }, 1700);
+  if (kind === 'bad') sfx('bad');
+}
+function say(id, text) {
+  const li = row(colorOf(id), `${nameOf(id)}: ${text}`);
+  $('feed').append(li);
+  setTimeout(() => li.remove(), 5000);
+  const r = remotes.get(id);
+  if (!r) return;
+  const bubble = makeNameSprite(text);
+  bubble.position.y = 2.95;
+  bubble.material.color.set(0xffd34d);
+  r.group.add(bubble);
+  setTimeout(() => r.group.remove(bubble), 2500);
+}
+
+// ---------- Winkel ----------
+function renderShop() {
+  $('shop-list').replaceChildren(...SHOP.map((item) => {
+    const li = document.createElement('li');
+    const text = document.createElement('div');
+    text.innerHTML = '<b></b><small></small>';
+    text.querySelector('b').textContent = item.name;
+    text.querySelector('small').textContent = item.kind;
+    const btn = document.createElement('button');
+    btn.className = 'btn small';
+    const stamp = item.id.startsWith('stamp:') ? item.id.slice(6) : null;
+    if (!owns(item.id)) {
+      btn.textContent = `🪙 ${item.price}`;
+      btn.classList.add('primary');
+      btn.disabled = progress.coins < item.price;
+      btn.addEventListener('click', () => {
+        progress.owned.push(item.id);
+        addCoins(-item.price);
+        sfx('coin');
+        renderShop();
+      });
+    } else if (stamp) {
+      btn.textContent = progress.stamp === stamp ? 'Gekozen' : 'Kies';
+      btn.disabled = progress.stamp === stamp;
+      btn.addEventListener('click', () => {
+        progress.stamp = stamp;
+        save('kr-progress', progress);
+        renderShop();
+      });
+    } else {
+      btn.textContent = 'In bezit';
+      btn.disabled = true;
+    }
+    li.append(text, btn);
+    return li;
+  }));
+  $('stamp-now').textContent = { naam: 'je naam', custom: 'je eigen tekening' }[progress.stamp] || progress.stamp;
+}
+$('btn-stamp-name').addEventListener('click', () => {
+  progress.stamp = 'naam';
+  save('kr-progress', progress);
+  renderShop();
+});
+
+// ---------- Eigen stempel tekenen ----------
+const drawCanvas = $('draw-canvas');
+const drawCtx = drawCanvas.getContext('2d');
+let drawColor = '#5b3fa8';
+let drawing = false;
+function openDraw() {
+  drawCtx.clearRect(0, 0, 128, 128);
+  if (progress.custom) {
+    const img = new Image();
+    img.onload = () => drawCtx.drawImage(img, 0, 0);
+    img.src = progress.custom;
+  }
+}
+const drawPos = (e) => {
+  const r = drawCanvas.getBoundingClientRect();
+  return [((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128];
+};
+drawCanvas.addEventListener('pointerdown', (e) => {
+  drawing = true;
+  drawCanvas.setPointerCapture(e.pointerId);
+  drawCtx.strokeStyle = drawColor;
+  drawCtx.lineWidth = 7;
+  drawCtx.lineCap = drawCtx.lineJoin = 'round';
+  drawCtx.beginPath();
+  drawCtx.moveTo(...drawPos(e));
+  drawCtx.lineTo(...drawPos(e));
+  drawCtx.stroke();
+});
+drawCanvas.addEventListener('pointermove', (e) => {
+  if (!drawing) return;
+  drawCtx.lineTo(...drawPos(e));
+  drawCtx.stroke();
+});
+window.addEventListener('pointerup', () => { drawing = false; });
+document.querySelectorAll('#draw-colors button').forEach((btn) => {
+  btn.style.background = btn.dataset.color;
+  btn.addEventListener('click', () => { drawColor = btn.dataset.color; });
+});
+$('btn-draw-clear').addEventListener('click', () => drawCtx.clearRect(0, 0, 128, 128));
+$('btn-draw-save').addEventListener('click', () => {
+  const data = drawCanvas.toDataURL('image/png');
+  if (data.length >= 40000) return toast('Tekening is te groot, maak hem iets simpeler');
+  progress.custom = data;
+  progress.stamp = 'custom';
+  save('kr-progress', progress);
+  $('draw').classList.add('hidden');
+  renderShop();
+});
+
+// ---------- Ranglijst van de week ----------
+async function renderBoard() {
+  $('board-list').replaceChildren();
+  $('board-week').textContent = 'Laden…';
+  try {
+    const data = await (await fetch('/api/leaderboard')).json();
+    $('board-week').textContent = data.top.length ? `Week ${data.week.split('-W')[1]}` : 'Nog niemand heeft deze week gespeeld.';
+    $('board-list').replaceChildren(...data.top.map((p, i) =>
+      row([0xf5c542, 0xbfc5cc, 0xc98d5e][i] || 0x55565c, `${i + 1}. ${p.name}`, badge(`${p.points} pt · ${p.wins}× winst`, 'pts'))));
+  } catch (e) {
+    $('board-week').textContent = 'Ranglijst kon niet geladen worden.';
+  }
+}
+
+// ---------- Uitleg voor nieuwe spelers ----------
+if (!localStorage.getItem('kr-seen')) {
+  localStorage.setItem('kr-seen', '1');
+  $('howto').classList.remove('hidden');
+}
+addCoins(0);
+
+// ---------- Besturing op een telefoon ----------
+if (touchMode) {
+  document.body.classList.add('touch');
+  const stick = $('stick');
+  const knob = $('knob');
+  const moveStick = (t) => {
+    const r = stick.getBoundingClientRect();
+    let x = (t.clientX - (r.left + r.width / 2)) / (r.width / 2);
+    let y = (t.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    const len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    joy.x = x;
+    joy.y = y;
+    knob.style.transform = `translate(${x * 40}px, ${y * 40}px)`;
+  };
+  stick.addEventListener('touchstart', (e) => { e.preventDefault(); moveStick(e.changedTouches[0]); }, { passive: false });
+  stick.addEventListener('touchmove', (e) => { e.preventDefault(); moveStick(e.targetTouches[0]); }, { passive: false });
+  const release = () => {
+    joy.x = joy.y = 0;
+    knob.style.transform = '';
+  };
+  stick.addEventListener('touchend', release);
+  stick.addEventListener('touchcancel', release);
+
+  // vegen over de rest van het scherm = rondkijken
+  let lookId = null, lx = 0, ly = 0;
+  canvas.addEventListener('touchstart', (e) => {
+    if (spectating) specIndex++;
+    const t = e.changedTouches[0];
+    lookId = t.identifier; lx = t.clientX; ly = t.clientY;
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier !== lookId || !canAct()) continue;
+      camera.rotation.y -= (t.clientX - lx) * 0.006 * settings.sens;
+      camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x - (t.clientY - ly) * 0.006 * settings.sens, -1.35, 1.35);
+      lx = t.clientX; ly = t.clientY;
+    }
+  }, { passive: true });
+
+  const actions = {
+    jump: (down) => { keys.Space = down; },
+    dash: (down) => down && tryDash(),
+    throw: (down) => down && tryThrow(),
+    banana: (down) => down && canAct() && myGadget && socket.emit('gadget'),
+    emote: (down) => down && canAct() && me.onGround && setEmote(1),
+    menu: (down) => {
+      if (!down || !playing || spectating) return;
+      paused = true;
+      $('pause').classList.remove('hidden');
+    }
+  };
+  document.querySelectorAll('[data-act]').forEach((btn) => {
+    const act = actions[btn.dataset.act];
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); act(true); }, { passive: false });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); act(false); }, { passive: false });
+  });
+}
 
 socket.on('disconnect', () => {
   lobby = null;
@@ -1642,8 +2104,9 @@ function frame() {
   updateParticles(dt);
   updateDarkness(dt);
   if (playing) {
-    updateLocal(dt);
+    if (!spectating) updateLocal(dt);
     updateRemotes(dt);
+    if (spectating) updateSpectate(time);
     updateBroodje(dt, time);
     updateItems(dt, time);
   } else {
@@ -1667,7 +2130,7 @@ function frame() {
 
   renderer.clear();
   renderer.render(scene, camera);
-  if (playing && !stunned && !myEmote) {
+  if (playing && !spectating && !stunned && !myEmote) {
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
