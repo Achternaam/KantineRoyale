@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kantine Royale</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/build/three.module.js",
+        "three/addons/": "/vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- Startscherm -->
+  <section id="menu" class="screen">
+    <div class="card">
+      <div class="stamp">
+        <span class="stamp-small">Lunch &amp; Lounge presenteert</span>
+        <h1>Kantine<br>Royale</h1>
+        <span class="stamp-small">pak het frikandelbroodje</span>
+      </div>
+      <label for="name">Jouw naam</label>
+      <input id="name" type="text" maxlength="14" placeholder="Naam" autocomplete="off">
+      <button id="btn-create" class="btn primary">Create Lobby</button>
+      <div class="divider"><span>of</span></div>
+      <div class="join-row">
+        <input id="code" type="text" maxlength="4" placeholder="CODE" autocomplete="off">
+        <button id="btn-join" class="btn">Join Lobby</button>
+      </div>
+      <p id="menu-error" class="error"></p>
+      <div class="tab-row">
+        <button class="btn small" data-open="skins">Skins</button>
+        <button class="btn small" data-open="challenges">Challenges</button>
+        <button class="btn small" data-open="settings">Settings</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Lobby wachtruimte -->
+  <section id="lobby" class="screen hidden">
+    <div class="card">
+      <p class="label">Lobbycode</p>
+      <div id="lobby-code" class="code">----</div>
+      <p class="label">Spelers <span id="lobby-count"></span></p>
+      <ul id="lobby-players"></ul>
+      <p class="label">Spelmodus</p>
+      <div class="tab-row">
+        <button class="btn small mode" data-mode="klassiek">Klassiek</button>
+        <button class="btn small mode" data-mode="teams">Teams</button>
+        <button class="btn small mode" data-mode="voedsel">Voedselgevecht</button>
+      </div>
+      <p id="mode-desc" class="hint"></p>
+      <button id="btn-start" class="btn primary">Start Game</button>
+      <p id="lobby-wait" class="hint">Wachten tot de host de game start…</p>
+      <div class="tab-row">
+        <button class="btn small" data-open="skins">Skins</button>
+        <button class="btn small" data-open="challenges">Challenges</button>
+        <button class="btn small" data-open="settings">Settings</button>
+      </div>
+      <button id="btn-leave" class="btn ghost">Lobby verlaten</button>
+    </div>
+  </section>
+
+  <!-- HUD tijdens de game -->
+  <section id="hud" class="hidden">
+    <div id="timer">3:00</div>
+    <ul id="scoreboard"></ul>
+    <div id="crosshair"></div>
+    <div id="holding" class="hidden">Jij hebt het broodje! +1 per seconde</div>
+    <div id="toast"></div>
+    <div id="buffs">
+      <span id="buff-boost" class="hidden">⚡ Energie</span>
+      <span id="buff-shield" class="hidden">🛡 Dienblad</span>
+      <span id="buff-banana" class="hidden">🍌 Q: neerleggen</span>
+    </div>
+    <div id="emote-hint">1 Take the L · 2 Dab · 3 Zwaai · 4 Dans · T Spuitbus</div>
+    <div id="item-hint" class="hidden"></div>
+    <div id="dash">
+      <div id="dash-fill"></div>
+      <span>SHIFT · DASH</span>
+    </div>
+    <div id="stun" class="hidden"><span>KNOCK-OUT!</span></div>
+  </section>
+
+  <div id="banner"></div>
+
+  <!-- Escape-menu -->
+  <section id="pause" class="screen hidden">
+    <div class="card">
+      <p class="label">Pauze</p>
+      <h2>Even bijkomen</h2>
+      <button id="btn-resume" class="btn primary">Verder spelen</button>
+      <button class="btn" data-open="settings">Settings</button>
+      <button class="btn" data-open="controls">Besturing</button>
+      <button class="btn" data-open="challenges">Challenges</button>
+      <button id="btn-quit" class="btn ghost">Game verlaten</button>
+    </div>
+  </section>
+
+  <!-- Eindscherm -->
+  <section id="gameover" class="screen hidden">
+    <div class="card">
+      <p class="label">Tijd is om!</p>
+      <h2 id="winner"></h2>
+      <ol id="ranking"></ol>
+      <button id="btn-back" class="btn primary">Terug naar lobby</button>
+    </div>
+  </section>
+
+  <!-- Panelen bovenop de andere schermen -->
+  <section id="skins" class="screen modal hidden">
+    <div class="card wide">
+      <p class="label">Skins</p>
+      <div id="skin-grid"></div>
+      <button class="btn primary" data-close>Klaar</button>
+    </div>
+  </section>
+
+  <section id="challenges" class="screen modal hidden">
+    <div class="card wide">
+      <p class="label">Challenges</p>
+      <ul id="challenge-list"></ul>
+      <button class="btn primary" data-close>Terug</button>
+    </div>
+  </section>
+
+  <section id="settings" class="screen modal hidden">
+    <div class="card">
+      <p class="label">Settings</p>
+      <div class="setting">
+        <span>Muisgevoeligheid</span><output id="out-sens"></output>
+        <input id="set-sens" type="range" min="0.2" max="3" step="0.1">
+      </div>
+      <div class="setting">
+        <span>Kijkhoek (FOV)</span><output id="out-fov"></output>
+        <input id="set-fov" type="range" min="60" max="110" step="1">
+      </div>
+      <div class="setting">
+        <span>Volume</span><output id="out-vol"></output>
+        <input id="set-vol" type="range" min="0" max="1" step="0.05">
+      </div>
+      <label class="check"><input id="set-shadows" type="checkbox"> Schaduwen</label>
+      <label class="check"><input id="set-hires" type="checkbox"> Hoge resolutie</label>
+      <label class="check"><input id="set-bob" type="checkbox"> Camera beweegt mee bij rennen</label>
+      <label class="check"><input id="set-names" type="checkbox"> Namen boven spelers</label>
+      <button class="btn primary" data-close>Terug</button>
+    </div>
+  </section>
+
+  <section id="controls" class="screen modal hidden">
+    <div class="card">
+      <p class="label">Besturing</p>
+      <ul class="keys">
+        <li><b>W A S D</b><span>Rennen</span></li>
+        <li><b>Muis</b><span>Rondkijken</span></li>
+        <li><b>Spatie</b><span>Springen</span></li>
+        <li><b>Shift</b><span>Dash / tackle</span></li>
+        <li><b>Klik of E</b><span>Gooien</span></li>
+        <li><b>Q</b><span>Bananenschil neerleggen</span></li>
+        <li><b>1 2 3 4</b><span>Emotes (1 = Take the L)</span></li>
+        <li><b>T</b><span>Spuitbus op de muur</span></li>
+        <li><b>Esc</b><span>Menu</span></li>
+      </ul>
+      <p class="hint">Dash tegen de drager om het broodje los te slaan of tegen een tafel om hem om te gooien. Loop langs een automaat voor een power-up.</p>
+      <button class="btn primary" data-close>Terug</button>
+    </div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/mapdata.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

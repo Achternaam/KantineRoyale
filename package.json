@@ -1,0 +1,17 @@
+{
+  "name": "kantine-royale",
+  "version": "1.0.0",
+  "description": "Browser-based 3D multiplayer game in de schoolkantine",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "three": "^0.165.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
