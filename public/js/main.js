@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 
 const M = window.MapData;
 const C = M.COLORS;
@@ -129,9 +130,13 @@ const save = (key, value) => {
   scheduleSync();
 };
 let account = null; // { name, rp } als je bent ingelogd
+let party = null;   // je groep: { code, leader, members }
+let warm = false;   // in de wachtruimte van de lobby aan het rondlopen
+let pendingWarm = null;
 let syncTimer = 0;
 
-const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, sharp: false, bob: true, names: true, stamps: true, keys: {} });
+const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, sharp: false, bob: true, names: true, stamps: true, keys: {}, quality: 'middel', fps: false, shake: true });
+if (!['laag', 'middel', 'hoog'].includes(settings.quality)) settings.quality = 'middel';
 if (!settings.keys) settings.keys = {};
 // Voortgang van een gast staat in de browser en volgt precies dezelfde regels als die van de server
 // (Economy): munten, XP, schoolloopbaan, prestaties enzovoort. Ingelogd rekent de server.
@@ -219,9 +224,13 @@ setInterval(() => {
 }, 5000);
 
 // ---------- Geluid (klein synthesizertje, geen bestanden nodig) ----------
+// Alles loopt via "route": normaal de hoofduitgang, voor geluiden in de wereld een eigen kanaal
+// met volume op afstand en links/rechts (ruimtelijk geluid). In de aula en de gym galmt het.
 let audio = null;
-let output = null; // eindpunt voor alle geluiden: volume-begrenzer voor de uitgang
-function tone(f0, f1, dur, type, vol, delay = 0, master = settings.vol) {
+let output = null;    // ingang van de mix (droog + galm)
+let route = null;     // waar tone() en noise() nu naartoe gaan
+let reverbWet = null;
+function tone(f0, f1, dur, type, vol, delay = 0, master = settings.vol, dest = route) {
   const t = audio.currentTime + delay;
   const osc = audio.createOscillator();
   const gain = audio.createGain();
@@ -230,26 +239,49 @@ function tone(f0, f1, dur, type, vol, delay = 0, master = settings.vol) {
   osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
   gain.gain.setValueAtTime(vol * master, t);
   gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  osc.connect(gain).connect(output);
+  osc.connect(gain).connect(dest || output);
   osc.start(t);
   osc.stop(t + dur);
 }
-function noise(dur, vol, freq, delay = 0, master = settings.vol) {
-  const buffer = audio.createBuffer(1, audio.sampleRate * dur, audio.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+const noiseBuffers = new Map();
+function noise(dur, vol, freq, delay = 0, master = settings.vol, dest = route) {
+  const key = Math.round(dur * 100);
+  if (!noiseBuffers.has(key)) {
+    const buffer = audio.createBuffer(1, Math.max(1, Math.floor(audio.sampleRate * dur)), audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    noiseBuffers.set(key, buffer);
+  }
   const src = audio.createBufferSource();
   const filter = audio.createBiquadFilter();
   const gain = audio.createGain();
-  src.buffer = buffer;
+  src.buffer = noiseBuffers.get(key);
   filter.type = 'bandpass';
   filter.frequency.value = freq;
   gain.gain.value = vol * master;
-  src.connect(filter).connect(gain).connect(output);
+  src.connect(filter).connect(gain).connect(dest || output);
   src.start(audio.currentTime + delay);
 }
-function sfx(name) {
+// een kanaal voor een geluid op plek pos: zachter op afstand, links of rechts in je koptelefoon
+const camRight = new THREE.Vector3();
+function spatial(pos) {
+  const dx = pos.x - camera.position.x, dy = (pos.y || 0) - camera.position.y, dz = pos.z - camera.position.z;
+  const d = Math.hypot(dx, dy, dz);
+  if (d > 45) return null;
+  const gain = audio.createGain();
+  gain.gain.value = Math.pow(1 - d / 45, 1.4);
+  const pan = audio.createStereoPanner();
+  camRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  pan.pan.value = d < 0.5 ? 0 : THREE.MathUtils.clamp((dx * camRight.x + dz * camRight.z) / d, -1, 1) * 0.85;
+  gain.connect(pan).connect(output);
+  setTimeout(() => gain.disconnect(), 3000);
+  return gain;
+}
+function sfx(name, pos) {
   if (!audio || settings.vol <= 0) return;
+  const dest = pos && playing ? spatial(pos) : output;
+  if (!dest) return;
+  route = dest;
   if (name === 'jump') tone(260, 520, 0.12, 'sine', 0.25);
   else if (name === 'dash') noise(0.25, 0.6, 900);
   else if (name === 'throw') tone(700, 200, 0.16, 'triangle', 0.3);
@@ -281,28 +313,91 @@ function sfx(name) {
   else if (name === 'kwak') { tone(600, 250, 0.12, 'sawtooth', 0.25); tone(550, 230, 0.12, 'sawtooth', 0.25, 0.14); }
   else if (name === 'gong') { tone(110, 105, 1.2, 'sine', 0.4); tone(220, 210, 0.9, 'triangle', 0.15); }
   else if (name === 'laser') tone(1800, 200, 0.25, 'sawtooth', 0.18);
+  // nieuw: aftellen, omroeper, raken, fluitsignaal en menu's
+  else if (name === 'count') tone(880, 880, 0.14, 'square', 0.18);
+  else if (name === 'go') [523, 659, 784, 1047].forEach((f) => tone(f, f * 1.01, 0.45, 'square', 0.1));
+  else if (name === 'fanfare') [[523, 0], [659, 0.08], [784, 0.16], [1047, 0.24]].forEach(([f, d]) => tone(f, f, 0.22, 'sawtooth', 0.08, d));
+  else if (name === 'hitmark') { tone(2600, 2400, 0.04, 'square', 0.12); noise(0.03, 0.3, 5000); }
+  else if (name === 'whistle') { tone(2800, 2950, 0.35, 'sine', 0.25); tone(2800, 2650, 0.5, 'sine', 0.2, 0.38); }
+  else if (name === 'click') tone(620, 480, 0.05, 'triangle', 0.18);
+  else if (name === 'ping') { tone(1320, 1320, 0.09, 'sine', 0.25); tone(1760, 1760, 0.16, 'sine', 0.2, 0.09); }
+  else if (name === 'hover') tone(1200, 1300, 0.025, 'sine', 0.05);
+  else if (name === 'whoosh') noise(0.35, 0.3, 900);
+  else if (name === 'step-tile') { noise(0.04, 0.22, 2400); tone(170, 90, 0.05, 'sine', 0.1); }
+  else if (name === 'step-grass') noise(0.08, 0.3, 700);
+  else if (name === 'step-gym') { noise(0.035, 0.2, 3200); if (Math.random() < 0.15) tone(1900, 2500, 0.07, 'sine', 0.05); }
+  route = output;
+}
+// ondergrond onder iemands voeten, voor het geluid van voetstappen
+function surfaceAt(x, y, z) {
+  if (M.id === 'gym') return 'step-gym';
+  if (M.id === 'plein' || M.id === 'dak' || (M.OUTSIDE_Z !== null && z > M.OUTSIDE_Z)) return 'step-grass';
+  return 'step-tile';
+}
+// galm per map: veel in de aula en de gym, een beetje in de kantine, niets buiten
+function setReverb(mapId) {
+  if (!reverbWet) return;
+  reverbWet.gain.value = { aula: 0.4, gym: 0.32, kantine: 0.12 }[mapId] || 0;
+}
+function startAudio() {
+  audio = new (window.AudioContext || window.webkitAudioContext)();
+  const limiter = audio.createDynamicsCompressor();
+  limiter.threshold.value = -18;
+  limiter.ratio.value = 6;
+  limiter.connect(audio.destination);
+  output = audio.createGain();
+  output.connect(limiter);
+  // galm: een zelfgemaakte "kamer" van ruis die uitsterft
+  const conv = audio.createConvolver();
+  const len = audio.sampleRate * 1.8;
+  const impulse = audio.createBuffer(2, len, audio.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const data = impulse.getChannelData(c);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  conv.buffer = impulse;
+  reverbWet = audio.createGain();
+  output.connect(conv).connect(reverbWet).connect(limiter);
+  route = output;
+  setReverb(currentMap);
 }
 window.addEventListener('pointerdown', () => {
-  if (!audio) {
-    audio = new (window.AudioContext || window.webkitAudioContext)();
-    output = audio.createDynamicsCompressor();
-    output.threshold.value = -18;
-    output.ratio.value = 6;
-    output.connect(audio.destination);
-  }
+  if (!audio) startAudio();
   if (audio.state === 'suspended') audio.resume();
 });
+// geluidjes bij knoppen: klik bij indrukken, een zacht tikje als je eroverheen gaat
+const CLICKABLE = '.btn, .tile, .chip, .slot, .pass-card, .weekly-card, .story-card, .career-chip, .settings-card, .map-card, .x';
+document.addEventListener('pointerdown', (e) => { if (e.target.closest(CLICKABLE)) sfx('click'); });
+let hoverAt = 0;
+document.addEventListener('pointerover', (e) => {
+  const el = e.target.closest(CLICKABLE);
+  if (!el || el === document.lastHover || performance.now() - hoverAt < 60) return;
+  document.lastHover = el;
+  hoverAt = performance.now();
+  sfx('hover');
+});
 
-// Achtergrondmuziek: een stappen-sequencer met kick, hi-hat, bas en melodie.
-// Speelt alleen tijdens een potje en gaat sneller in de laatste minuut.
-const BASS = [110, 110, 131, 98];
-const LEAD = [440, 523, 659, 523, 587, 523, 440, 392, 440, 659, 784, 659, 587, 494, 440, 392];
+// ---------- Muziek: per modus een eigen nummer ----------
+// Een stappen-sequencer (16 stappen per maat) met kick, snare, hi-hat, bas en melodie. 0 = rust.
+const SONGS = {
+  menu: { bpm: 92, drums: false, bass: [110, 110, 131, 98], lead: [440, 523, 659, 523, 587, 523, 440, 392, 440, 659, 784, 659, 587, 494, 440, 392], wave: 'triangle' },
+  klassiek: { bpm: 120, bass: [110, 110, 131, 98], lead: [440, 523, 659, 523, 587, 523, 440, 392, 440, 659, 784, 659, 587, 494, 440, 392], wave: 'triangle' },
+  broodjes: { bpm: 128, bass: [98, 131, 147, 110], lead: [392, 494, 587, 494, 659, 587, 494, 440, 392, 494, 587, 784, 659, 587, 494, 392], wave: 'square', leadVol: 0.05 },
+  teams: { bpm: 124, bass: [110, 147, 131, 165], lead: [440, 0, 440, 523, 587, 0, 523, 440, 659, 0, 587, 523, 494, 0, 440, 0], wave: 'sawtooth', leadVol: 0.045 },
+  voedsel: { bpm: 132, bass: [131, 131, 175, 196], lead: [523, 659, 784, 659, 523, 659, 784, 1047, 880, 784, 659, 523, 587, 659, 523, 0], wave: 'square', leadVol: 0.05 },
+  lava: { bpm: 140, heavy: true, bass: [110, 110, 117, 104], lead: [440, 523, 659, 523, 440, 523, 622, 523, 440, 523, 659, 784, 740, 659, 622, 523], wave: 'sawtooth', leadVol: 0.05 },
+  prophunt: { bpm: 96, drums: 'light', staccato: true, bass: [98, 98, 92, 104], lead: [392, 0, 466, 0, 523, 0, 466, 0, 392, 0, 349, 0, 392, 466, 392, 0], wave: 'triangle', leadVol: 0.11 },
+  stoelen: { bpm: 150, waltz: true, bass: [131, 98, 131, 98], lead: [659, 587, 523, 587, 659, 659, 659, 0, 587, 587, 587, 0, 659, 784, 784, 0], wave: 'square', leadVol: 0.05 }
+};
+SONGS.duo = SONGS.teams;
+SONGS.trefbal = SONGS.voedsel;
 let musicStep = 0;
 let musicNext = 0;
 setInterval(() => {
   if (!audio || settings.mus <= 0 || audio.state !== 'running') return;
-  // in het menu een rustige versie zonder drums, in het potje het volle nummer
-  const bpm = !playing ? 92 : lastState && lastState.d ? 140 : 120;
+  const song = SONGS[playing ? mode : 'menu'] || SONGS.klassiek;
+  // in de laatste minuut (dubbele punten) gaat het tempo omhoog
+  const bpm = song.bpm * (playing && lastState && lastState.d ? 1.15 : 1);
   const stepDur = 60 / bpm / 4;
   // na een hapering (tabblad op de achtergrond) opnieuw inhaken in plaats van alles in één keer in te halen
   if (musicNext < audio.currentTime - 0.05) musicNext = audio.currentTime + 0.05;
@@ -312,18 +407,20 @@ setInterval(() => {
     const bar = Math.floor(musicStep / 16);
     // stoelendans: als de muziek stopt, is het echt stil
     const m = settings.mus * (playing ? 1 : 0.6) * (playing && lastState && lastState.x && lastState.x.mu === 0 ? 0 : 1);
-    if (playing && m > 0) {
-      if (step % 4 === 0) tone(130, 45, 0.13, 'sine', 0.5, d, m);
-      if (step % 4 === 2) noise(0.05, 0.18, 7000, d, m);
-      if (step === 4 || step === 12) noise(0.12, 0.3, 1800, d, m);
+    if (m > 0 && playing && song.drums !== false) {
+      const kick = song.waltz ? step % 12 === 0 || step === 8 : song.heavy ? step % 4 === 0 || step === 14 : step % 4 === 0;
+      if (kick) tone(130, 45, 0.13, 'sine', song.drums === 'light' ? 0.25 : 0.5, d, m, output);
+      if (step % 4 === 2 || (song.heavy && step % 2 === 1)) noise(0.05, song.drums === 'light' ? 0.08 : 0.18, 7000, d, m, output);
+      if (!song.waltz && song.drums !== 'light' && (step === 4 || step === 12)) noise(0.12, 0.3, 1800, d, m, output);
+      if (song.waltz && (step === 4 || step === 8)) noise(0.08, 0.2, 2500, d, m, output);
     }
-    if (m > 0 && [0, 3, 6, 8, 11, 14].includes(step)) {
-      const f = BASS[bar % 4];
-      tone(f, f, stepDur * 1.6, 'square', 0.1, d, m);
+    if (m > 0 && (song.staccato ? step % 4 === 0 : [0, 3, 6, 8, 11, 14].includes(step))) {
+      const f = song.bass[bar % 4];
+      tone(f, f, stepDur * (song.staccato ? 0.8 : 1.6), song.heavy ? 'sawtooth' : 'square', song.heavy ? 0.07 : 0.1, d, m, output);
     }
-    if (m > 0 && step % 2 === 0 && bar % 4 !== 3) {
-      const f = LEAD[(step / 2 + bar * 3) % LEAD.length];
-      tone(f, f, stepDur * 1.4, 'triangle', 0.09, d, m);
+    const note = song.lead[(step + bar * 3) % 16];
+    if (m > 0 && note && step % 2 === 0 && bar % 4 !== 3) {
+      tone(note, note, stepDur * (song.staccato ? 0.6 : 1.4), song.wave, song.leadVol || 0.09, d, m, output);
     }
     musicNext += stepDur;
     musicStep++;
@@ -336,6 +433,9 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.autoClear = false;
+// cartoonranden (alleen op kwaliteit Hoog): een donkere omlijning om alles
+const outline = new OutlineEffect(renderer, { defaultThickness: 0.006, defaultColor: [0.09, 0.09, 0.11], defaultAlpha: 0.9 });
+outline.enabled = false;
 
 const SKY = new THREE.Color(0x9fd4f5);
 const NIGHT = new THREE.Color(0x0b0d18);
@@ -372,8 +472,15 @@ const vmLight = new THREE.DirectionalLight(0xffffff, 1.4);
 vmLight.position.set(1, 2, 1);
 vmScene.add(vmLight);
 
+// Grafische kwaliteit: laag voor zwakke laptops, hoog met omlijnde cartoonranden en scherpere schaduwen.
+const QUALITY = {
+  laag: { ratio: 0.85, shadow: 0, outline: false },
+  middel: { ratio: 1.25, shadow: 1536, outline: false },
+  hoog: { ratio: 2, shadow: 2048, outline: true }
+};
+const quality = () => QUALITY[settings.quality] || QUALITY.middel;
 function resize() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.sharp ? 2 : 1.25));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.sharp ? 2 : quality().ratio));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   camera.aspect = vmCamera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -685,12 +792,15 @@ function buildProps() {
 }
 // rechtopstaande tafels en hele glasplaten zijn obstakels (zelfde regel als op de server)
 let crateList = []; // De vloer is lava: extra kratten, alleen in die modus
+let crateAll = [];  // alle kisten van dit potje, ook de weggesmolten
+let raftList = [];  // borden die als vlot op de lava drijven
 function refreshDynamic() {
   const t = M.PROP.table;
   M.dynamic = props.filter((p) => p.def.type === 'table' && !p.tip)
     .map((p) => ({ x: p.x, z: p.z, r: t.r, y0: p.y, y1: p.y + t.h }))
     .concat(M.panels.filter((g, i) => !broken[i]).map(M.panelSolid))
-    .concat(crateList.map(([x, y, z, w, h]) => ({ minX: x - w / 2, maxX: x + w / 2, minZ: z - w / 2, maxZ: z + w / 2, y0: y, y1: y + h })));
+    .concat(crateList.map(([x, y, z, w, h]) => ({ minX: x - w / 2, maxX: x + w / 2, minZ: z - w / 2, maxZ: z + w / 2, y0: y, y1: y + h })))
+    .concat(raftList.map(([, x, y, z]) => ({ minX: x - 0.7, maxX: x + 0.7, minZ: z - 0.7, maxZ: z + 0.7, y0: y, y1: y + 0.25 })));
 }
 function resetProps() {
   for (const p of props) {
@@ -759,6 +869,25 @@ function makeBroodje() {
 const broodje = makeBroodje();
 const broodjeLight = new THREE.PointLight(0xffa53a, 12, 9);
 broodje.add(broodjeLight);
+// zachte gloed om het broodje heen
+function glowSprite(color, size) {
+  if (!glowSprite.tex) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    glowSprite.tex = new THREE.CanvasTexture(c);
+  }
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite.tex, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  sp.scale.setScalar(size);
+  return sp;
+}
+broodje.add(glowSprite(0xffa53a, 2.6));
 scene.add(broodje);
 
 // lichtzuil zodat je het broodje overal kunt vinden
@@ -812,10 +941,11 @@ function ring(x, y, z, r, color) {
 let itemPickups = [];
 let crateGroup = null;
 // kratten voor De vloer is lava: houten kisten met donkere randen
-function setCrates(list) {
+function setCrates(list, gone) {
+  if (!gone) crateAll = list || [];
   if (crateGroup) mapRoot.remove(crateGroup);
   crateGroup = null;
-  crateList = list || [];
+  crateList = gone ? crateAll.filter((c, i) => !gone.includes(i)) : crateAll.slice();
   if (crateList.length) {
     crateGroup = new THREE.Group();
     for (const [x, y, z, w, h] of crateList) {
@@ -900,10 +1030,202 @@ function loadMap(id) {
   buildOutside();
   buildProps();
   buildPickups();
+  buildLife();
   for (const b of buses) b.g.position.y = M.GROUND;
+  setReverb(id);
   sun.target.position.set(M.CENTER.x, 0, M.CENTER.z);
   sun.position.set(M.CENTER.x + 16, 34, M.CENTER.z - 16);
   sun.shadow.needsUpdate = true;
+}
+
+// ---------- Levende maps: klok, schermen met de stand, ventilatoren, een flikkerende lamp en vogels ----------
+const life = { screens: [], fans: [], flicker: null, birds: [], drawAt: 0 };
+// lange muren van de map, met de kant die naar het midden kijkt
+function findWalls() {
+  return M.boxes.filter((b) => !b.glass && b.h >= 2.6 && Math.min(b.w, b.d) <= 0.7 && Math.max(b.w, b.d) >= 7)
+    .map((b) => {
+      const alongX = b.w > b.d;
+      const n = alongX ? { x: 0, z: Math.sign(M.CENTER.z - b.z) || 1 } : { x: Math.sign(M.CENTER.x - b.x) || 1, z: 0 };
+      return { b, alongX, n, len: Math.max(b.w, b.d), thick: Math.min(b.w, b.d) };
+    })
+    .sort((a, c) => c.len - a.len);
+}
+function wallPanel(wall, w, h, y, along, draw) {
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * 128);
+  c.height = Math.round(h * 128);
+  const tex = new THREE.CanvasTexture(c);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex }));
+  const { b, n, alongX, thick } = wall;
+  m.position.set(b.x + n.x * (thick / 2 + 0.03) + (alongX ? along : 0), b.y + y, b.z + n.z * (thick / 2 + 0.03) + (alongX ? 0 : along));
+  m.rotation.y = Math.atan2(n.x, n.z);
+  mapRoot.add(m);
+  const panel = { m, ctx: c.getContext('2d'), tex, draw, w: c.width, h: c.height };
+  life.screens.push(panel);
+  draw(panel);
+  tex.needsUpdate = true;
+}
+// klok met de echte tijd
+function drawClock(p) {
+  const { ctx, w } = p;
+  const r = w / 2;
+  ctx.clearRect(0, 0, w, w);
+  ctx.fillStyle = '#f2f0ea';
+  ctx.strokeStyle = '#26262b';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(r, r, r - 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  const d = new Date();
+  const hand = (a, len, width, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(r, r);
+    ctx.lineTo(r + Math.sin(a) * len, r - Math.cos(a) * len);
+    ctx.stroke();
+  };
+  ctx.fillStyle = '#26262b';
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    ctx.fillRect(r + Math.sin(a) * (r - 24) - 3, r - Math.cos(a) * (r - 24) - 3, 6, 6);
+  }
+  hand(((d.getHours() % 12) + d.getMinutes() / 60) / 12 * Math.PI * 2, r * 0.5, 9, '#26262b');
+  hand((d.getMinutes() / 60) * Math.PI * 2, r * 0.75, 6, '#26262b');
+  hand((d.getSeconds() / 60) * Math.PI * 2, r * 0.8, 3, '#e23b2e');
+}
+// scherm met de live stand (aula) of een scorebord (gym)
+function drawBoard(p, title) {
+  const { ctx, w, h } = p;
+  ctx.fillStyle = '#16161a';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#f26a1b';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(4, 4, w - 8, h - 8);
+  ctx.fillStyle = '#ffd34d';
+  ctx.font = `900 ${Math.round(h * 0.13)}px "Avenir Next", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(title, w / 2, h * 0.17);
+  const st = playing && lastState ? lastState : null;
+  ctx.font = `800 ${Math.round(h * 0.1)}px "Avenir Next", sans-serif`;
+  if (!st) {
+    ctx.fillStyle = '#fff';
+    ctx.fillText('KANTINE ROYALE', w / 2, h * 0.55);
+    return;
+  }
+  const secs = Math.ceil(st.t);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, w / 2, h * 0.32);
+  st.p.slice().sort((a, b) => b[5] - a[5]).slice(0, 4).forEach((pl, i) => {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = hex(colorOf(pl[0]));
+    ctx.fillText(`${i + 1}. ${(roster.get(pl[0]) || { name: '?' }).name}`.slice(0, 16), w * 0.08, h * (0.5 + i * 0.13));
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffd34d';
+    ctx.fillText(pl[5], w * 0.92, h * (0.5 + i * 0.13));
+  });
+  ctx.textAlign = 'center';
+}
+function buildLife() {
+  life.screens = [];
+  life.fans = [];
+  life.birds = [];
+  life.flicker = null;
+  const walls = findWalls();
+  const indoor = ['kantine', 'aula', 'gym'].includes(M.id);
+  if (indoor && walls[0]) wallPanel(walls[0], 0.9, 0.9, 2.55, -walls[0].len / 4, drawClock);
+  if (M.id === 'aula' && walls[1]) wallPanel(walls[1], 4, 2.2, 3.2, 0, (p) => drawBoard(p, 'LIVE STAND'));
+  if (M.id === 'gym' && walls[1]) wallPanel(walls[1], 3.2, 1.8, 3.6, 0, (p) => drawBoard(p, 'GYMZAAL'));
+  if (M.id === 'kantine') {
+    // twee plafondventilatoren boven de kantine en één lamp die flikkert
+    for (const x of [-9, 9]) {
+      const fan = new THREE.Group();
+      block(fan, 0x55565c, 0.08, 0.35, 0.08, 0, 0.18, 0, false);
+      block(fan, 0x3b3d44, 0.3, 0.1, 0.3, 0, 0, 0, false);
+      for (let i = 0; i < 4; i++) {
+        const blade = block(fan, 0xd9d5cb, 1.3, 0.03, 0.22, 0, -0.02, 0, false);
+        blade.position.set(Math.cos((i / 4) * Math.PI * 2) * 0.7, -0.02, Math.sin((i / 4) * Math.PI * 2) * 0.7);
+        blade.rotation.y = -(i / 4) * Math.PI * 2;
+      }
+      fan.position.set(x, M.CEILING - 0.45, -3);
+      mapRoot.add(fan);
+      life.fans.push(fan);
+    }
+    const flickerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const lampMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), flickerMat);
+    lampMesh.rotation.x = Math.PI / 2;
+    lampMesh.position.set(-2, M.CEILING - 0.025, 2.5);
+    mapRoot.add(lampMesh);
+    life.flicker = { mat: flickerMat, next: 0, on: true };
+  }
+  // vogels op het plein, het dak en buiten bij de kantine
+  const outside = M.ITEM_SPAWNS.filter((sp) => (M.id === 'plein' || M.id === 'dak' || (M.OUTSIDE_Z !== null && sp.z > M.OUTSIDE_Z)));
+  outside.slice(0, 4).forEach((sp, f) => {
+    for (let i = 0; i < 4; i++) {
+      const bird = new THREE.Group();
+      block(bird, 0x3b3d44, 0.16, 0.12, 0.26, 0, 0.1, 0, false);
+      block(bird, 0x55565c, 0.1, 0.1, 0.1, 0, 0.19, 0.12, false);
+      block(bird, 0xf4c430, 0.04, 0.03, 0.06, 0, 0.18, 0.2, false);
+      const wings = [-1, 1].map((side) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * 0.08, 0.14, 0);
+        block(pivot, 0x26262b, 0.22, 0.02, 0.14, side * 0.11, 0, 0, false);
+        bird.add(pivot);
+        return pivot;
+      });
+      const home = { x: sp.x + 2 + Math.cos(i * 1.7 + f) * 0.9, y: sp.y, z: sp.z + Math.sin(i * 1.7 + f) * 0.9 };
+      bird.position.set(home.x, M.groundAt(home.x, home.z, home.y + 1), home.z);
+      bird.rotation.y = Math.random() * Math.PI * 2;
+      mapRoot.add(bird);
+      life.birds.push({ g: bird, wings, home, fly: 0, vx: 0, vy: 0, vz: 0, back: 0, peck: Math.random() * 5 });
+    }
+  });
+}
+function updateLife(dt, time) {
+  const now = performance.now();
+  if (now > life.drawAt) {
+    life.drawAt = now + 1000;
+    for (const p of life.screens) {
+      p.draw(p);
+      p.tex.needsUpdate = true;
+    }
+  }
+  for (const fan of life.fans) fan.rotation.y += dt * 5;
+  if (life.flicker && now > life.flicker.next) {
+    life.flicker.on = !life.flicker.on || Math.random() < 0.3;
+    life.flicker.mat.color.setScalar(life.flicker.on ? 1 : 0.35);
+    life.flicker.next = now + (life.flicker.on ? 200 + Math.random() * 3000 : 40 + Math.random() * 120);
+  }
+  const people = [...remotes.values()].map((r) => r.group.position).concat(playing && !spectating ? [me] : []);
+  for (const b of life.birds) {
+    const g = b.g;
+    if (!b.fly) {
+      // pikken op de grond; komt er iemand aan, dan vliegen ze weg
+      g.position.y = M.groundAt(g.position.x, g.position.z, b.home.y + 1) + (Math.sin(time * 9 + b.peck) > 0.9 ? 0.03 : 0);
+      g.rotation.x = Math.sin(time * 3 + b.peck) > 0.7 ? 0.5 : 0;
+      if (people.some((p) => Math.hypot(p.x - g.position.x, p.z - g.position.z) < 4.5)) {
+        const a = Math.random() * Math.PI * 2;
+        Object.assign(b, { fly: 1, vx: Math.cos(a) * 6, vy: 5, vz: Math.sin(a) * 6, back: now + 15000 + Math.random() * 10000 });
+        g.rotation.set(0, Math.atan2(b.vx, b.vz), 0);
+        if (Math.random() < 0.3) sfx('hover', g.position);
+      }
+    } else {
+      g.position.x += b.vx * dt;
+      g.position.y += b.vy * dt;
+      g.position.z += b.vz * dt;
+      b.vy = Math.max(0.5, b.vy - dt * 1.5);
+      b.wings.forEach((w, i) => { w.rotation.z = Math.sin(time * 30) * 0.9 * (i ? -1 : 1); });
+      g.visible = g.position.y < 40;
+      if (now > b.back) {
+        b.fly = 0;
+        g.visible = true;
+        g.position.set(b.home.x, b.home.y, b.home.z);
+        b.wings.forEach((w) => { w.rotation.z = 0; });
+      }
+    }
+  }
 }
 
 const puddles = new Map(); // id -> mesh (melkplassen en het vettige spoor van het pizzabroodje)
@@ -1175,10 +1497,31 @@ function makePlayerModel(info) {
   for (const side of [-1, 1]) {
     block(body, skin.hair, 0.06, 0.22, 0.3, side * 0.24, 1.66, -0.04);
     block(body, skin.tone, 0.04, 0.1, 0.08, side * 0.245, 1.5, 0.02);
-    block(body, 0xffffff, 0.1, 0.1, 0.02, side * 0.1, 1.56, 0.222, false);
-    block(body, 0x26262b, 0.05, 0.07, 0.02, side * 0.1, 1.555, 0.232, false);
   }
-  block(body, 0x8a3b2e, 0.12, 0.03, 0.02, 0, 1.42, 0.222, false);
+  // gezicht los van de rest, zodat het kan knipperen en reageren
+  const faceGroup = new THREE.Group();
+  const eyes = [-1, 1].map((side) => {
+    const eye = new THREE.Group();
+    eye.position.set(side * 0.1, 1.56, 0.222);
+    block(eye, 0xffffff, 0.1, 0.1, 0.02, 0, 0, 0, false);
+    const pupil = block(eye, 0x26262b, 0.05, 0.07, 0.02, 0, -0.005, 0.01, false);
+    faceGroup.add(eye);
+    return { eye, pupil };
+  });
+  const brows = [-1, 1].map((side) => {
+    const brow = block(faceGroup, skin.hair === skin.tone ? 0x26262b : skin.hair, 0.12, 0.03, 0.02, side * 0.1, 1.645, 0.232, false);
+    brow.visible = false;
+    return brow;
+  });
+  const mouth = block(faceGroup, 0x8a3b2e, 0.12, 0.03, 0.02, 0, 1.42, 0.222, false);
+  const smile = [-1, 1].map((side) => {
+    const corner = block(faceGroup, 0x8a3b2e, 0.03, 0.03, 0.02, side * 0.085, 1.44, 0.222, false);
+    corner.visible = false;
+    return corner;
+  });
+  const openMouth = block(faceGroup, 0x3b1a14, 0.09, 0.07, 0.02, 0, 1.43, 0.223, false);
+  openMouth.visible = false;
+  g.add(faceGroup);
   const [hat, face, back] = (info.acc || 'skin.geen.rugzak').split('.');
   // op de rug: rugzak in spelers- of teamkleur, of een accessoire
   if (back === 'rugzak') {
@@ -1243,7 +1586,37 @@ function makePlayerModel(info) {
   bountyMark.position.y = 2.95;
   bountyMark.visible = false;
   g.add(bountyMark);
-  return { group: g, legL, legR, armL, armR, item, label, lSign, shield, board, bountyMark, walk: 0, emote: 0, emoteStart: 0, lean: 0, swingAt: 0, ragT: 0 };
+  return {
+    group: g, legL, legR, armL, armR, item, label, lSign, shield, board, bountyMark, walk: 0, emote: 0, emoteStart: 0, lean: 0, swingAt: 0, ragT: 0,
+    face: { eyes, brows, mouth, smile, openMouth, blinkAt: performance.now() + 1000 + Math.random() * 3000, expr: '' }
+  };
+}
+// Uitdrukking op het gezicht: normaal, blij (broodje), boos (dash), duizelig (knock-out), verdrietig, verbaasd, kauwen.
+function setFace(m, expr, now) {
+  const f = m.face;
+  if (!f) return;
+  if (f.expr !== expr) {
+    f.expr = expr;
+    f.brows.forEach((b, i) => {
+      b.visible = expr === 'angry' || expr === 'sad';
+      b.rotation.z = (expr === 'angry' ? 0.45 : -0.35) * (i ? 1 : -1);
+    });
+    f.smile.forEach((c) => { c.visible = expr === 'happy'; });
+    f.mouth.scale.x = 0.12 * (expr === 'happy' ? 1.5 : expr === 'angry' ? 0.8 : 1); // block() gebruikt de schaal als afmeting
+    f.mouth.position.y = expr === 'sad' ? 1.405 : 1.42;
+    f.mouth.visible = !['dizzy', 'surprised', 'chew'].includes(expr);
+    f.openMouth.visible = ['dizzy', 'surprised', 'chew'].includes(expr);
+  }
+  if (expr === 'chew') f.openMouth.scale.y = 0.07 * (0.4 + Math.abs(Math.sin(now / 90)) * 0.8);
+  // duizelig: de pupillen draaien rondjes
+  f.eyes.forEach(({ pupil }, i) => {
+    if (expr === 'dizzy') pupil.position.set(Math.cos(now / 90 + i * 3) * 0.022, Math.sin(now / 90 + i * 3) * 0.022 - 0.005, 0.01);
+    else pupil.position.set(0, -0.005, 0.01);
+  });
+  // knipperen: om de paar seconden heel even dicht
+  if (now > f.blinkAt + 120) f.blinkAt = now + 2000 + Math.random() * 3500;
+  const shut = now > f.blinkAt && expr !== 'dizzy';
+  f.eyes.forEach(({ eye }) => { eye.scale.y = shut ? 0.15 : expr === 'surprised' ? 1.25 : 1; });
 }
 const iconTextures = new Map();
 function iconTexture(name, color) {
@@ -1376,9 +1749,26 @@ function removeRemote(r) {
 function updateRemotes(dt) {
   const k = 1 - Math.exp(-14 * dt);
   const now = performance.now();
+  const renderT = now - 100;
   for (const r of remotes.values()) {
     const p = r.group.position;
-    const mx = (r.tx - p.x) * k, mz = (r.tz - p.z) * k;
+    let mx, mz;
+    const buf = r.buf;
+    if (buf && buf.length >= 2 && !replaying) {
+      // tussen de twee standen rond renderT in; is er nog niets nieuws, dan heel even doorschuiven
+      let i = buf.length - 1;
+      while (i > 0 && buf[i - 1].t > renderT) i--;
+      const a = buf[Math.max(0, i - 1)], b = buf[i];
+      let f = b.t === a.t ? 1 : (renderT - a.t) / (b.t - a.t);
+      f = Math.max(0, Math.min(f, 1 + Math.min(0.1, (renderT - b.t) / 1000) * 10 * 0.5));
+      const nx = a.x + (b.x - a.x) * f, nz = a.z + (b.z - a.z) * f;
+      r.ty = a.y + (b.y - a.y) * Math.min(1, f);
+      mx = nx - p.x;
+      mz = nz - p.z;
+    } else {
+      mx = (r.tx - p.x) * k;
+      mz = (r.tz - p.z) * k;
+    }
     p.x += mx;
     p.z += mz;
     r.baseY += (r.ty + (r.stunned && r.ragT > 0.7 ? 0.25 : r.vehicle ? 0.14 : 0) - r.baseY) * k;
@@ -1396,6 +1786,22 @@ function updateRemotes(dt) {
     if (!r.group.visible) continue;
 
     const speed = Math.hypot(mx, mz) / Math.max(dt, 0.001);
+    // uitdrukking: duizelig als lappenpop, boos bij een dash, blij met het broodje, kauwen bij een hap
+    setFace(r, r.stunned ? 'dizzy' : r.biting ? 'chew' : r.dashing ? 'angry' : r.holding ? 'happy' : 'normal', now);
+    // uitrekken bij een sprong, inzakken bij de landing, met een stofwolkje
+    const vy = (r.ty - (r.prevTy ?? r.ty)) / Math.max(dt, 0.001);
+    r.prevTy = r.ty;
+    if (r.airborne && Math.abs(vy) < 0.5 && !r.stunned) {
+      r.squash = 1;
+      puff(p.x, r.ty + 0.05, p.z, 0xd9d2c3, 4);
+    }
+    r.airborne = Math.abs(vy) > 2.5;
+    r.squash = Math.max(0, (r.squash || 0) - dt * 5);
+    const stretch = r.airborne && vy > 0 ? Math.min(0.14, vy * 0.015) : 0;
+    const sy = 1 + stretch - r.squash * 0.18, sxz = 1 - stretch * 0.5 + r.squash * 0.1;
+    r.group.scale.set(sxz, sy, sxz);
+    if (r.dashing && !r.wasDashing) puff(p.x, r.ty + 0.1, p.z, 0xd9d2c3, 5);
+    r.wasDashing = r.dashing;
     if (r.stunned) {
       // lappenpop
       r.ragT += dt;
@@ -1409,7 +1815,12 @@ function updateRemotes(dt) {
     r.ragT = 0;
     // voorover bij een dash
     r.lean += ((r.dashing ? 0.4 : 0) - r.lean) * Math.min(1, dt * 10);
+    const stepBefore = Math.floor(r.walk / Math.PI);
     r.walk += Math.min(speed, 12) * dt * 1.6;
+    if (Math.floor(r.walk / Math.PI) !== stepBefore && speed > 3 && Math.abs(r.ty - r.baseY) < 0.1 && playing) {
+      const pp = r.group.position;
+      if (Math.hypot(pp.x - camera.position.x, pp.z - camera.position.z) < 18) sfx(surfaceAt(pp.x, pp.y, pp.z), pp);
+    }
     const swing = r.vehicle || r.biting ? 0 : Math.sin(r.walk) * Math.min(1, speed / 4) * 0.9;
     const emote = activeEmote(r, now);
     const pose = poseModel(r, swing, r.itemKind, emote, (now - r.emoteStart) / 1000);
@@ -1457,7 +1868,9 @@ let throwAnim = 0;
 let landKick = 0;
 function updateArms(dt, speed) {
   const run = me.onGround ? Math.min(1, speed / RUN_SPEED) : 0;
+  const stepBefore = Math.floor(bobPhase / Math.PI);
   bobPhase += dt * (6 + speed * 0.9) * (run > 0.05 ? 1 : 0);
+  if (Math.floor(bobPhase / Math.PI) !== stepBefore && run > 0.3) sfx(surfaceAt(me.x, me.y, me.z)); // voetstap
   const swing = Math.sin(bobPhase) * run;
   const dash = dashLeft > 0 ? 1 : 0;
   const air = me.onGround ? 0 : THREE.MathUtils.clamp(me.vy * 0.015, -0.2, 0.15);
@@ -1491,7 +1904,7 @@ const ACTIONS = [
   ['forward', 'Vooruit', 'KeyW'], ['back', 'Achteruit', 'KeyS'], ['left', 'Links', 'KeyA'], ['right', 'Rechts', 'KeyD'],
   ['jump', 'Springen', 'Space'], ['dash', 'Dash', 'ShiftLeft'], ['throw', 'Gooien of klap', 'KeyE'], ['banana', 'Val neerzetten', 'KeyQ'],
   ['bite', 'Hap nemen', 'KeyB'], ['pass', 'Broodje overgooien', 'KeyG'], ['feint', 'Schijnbeweging', 'KeyH'],
-  ['dismount', 'Afstappen / vermomming', 'KeyR'], ['spray', 'Spuitbus', 'KeyT'],
+  ['dismount', 'Afstappen / vermomming', 'KeyR'], ['spray', 'Spuitbus', 'KeyT'], ['wheel', 'Emote-wiel (ingedrukt)', 'KeyY'], ['mark', 'Markering zetten', 'KeyM'],
   ['emote1', 'Emote 1', 'Digit1'], ['emote2', 'Emote 2', 'Digit2'], ['emote3', 'Emote 3', 'Digit3'],
   ['say1', 'Bericht: Hier!', 'KeyZ'], ['say2', 'Bericht: Pak hem!', 'KeyX'], ['say3', 'Bericht: Help!', 'KeyC'], ['say4', 'Bericht: GG', 'KeyV']
 ];
@@ -1546,7 +1959,7 @@ let myTeam = 0;
 let myDisguise = 0;
 let selfProp = null;        // verstoppertje: jouw eigen vermomming, van achteren te zien
 let rules = { grav: 1, speed: 1, jump: 1, dash: 1 }; // eigen spelregels van de host
-const hiderMe = () => mode === 'prophunt' && myTeam === 0;
+const hiderMe = () => mode === 'prophunt' && myTeam === 0 && !warm;
 const dashCooldown = () => (myClass === 'sprinter' ? 1.3 : DASH_COOLDOWN) * rules.dash;
 // op een telefoon is er geen muisvergrendeling: daar speel je zolang het pauzemenu dicht is
 const isActive = () => (touchMode || padMode ? !paused : controls.isLocked);
@@ -1574,7 +1987,104 @@ function setEmote(e) {
   socket.emit('emote', e);
 }
 function canAct() {
-  return playing && !spectating && isActive() && !stunned;
+  return playing && !spectating && isActive() && !stunned && !counting() && !ending;
+}
+// ---------- Aftellen, raakgevoel, omroeper ----------
+let goTime = 0;      // wanneer het aftellen voorbij is
+let flyStart = 0;
+let announced = { tackle: false, ten: false, leaders: [] };
+let ending = false;  // de laatste anderhalve seconde na het fluitsignaal (GAME!)
+let shakeAmt = 0;
+const counting = () => performance.now() < goTime;
+function shake(amount) {
+  if (settings.shake !== false) shakeAmt = Math.min(0.6, Math.max(shakeAmt, amount));
+}
+const MODE_TIPS = {
+  klassiek: ['Pak het broodje en houd het vast: 1 punt per seconde', 'Dash (Shift) tegen de drager om het af te pakken', 'B = hap (+5) · G = overgooien · H = schijnbeweging'],
+  teams: ['Oranje tegen Paars', 'Breng het broodje naar je eigen basis voor +15', 'Gooi het broodje over naar een teamgenoot met G'],
+  duo: ['Speel met z\'n tweeën, jullie punten tellen samen', 'Gooi het broodje naar je maat met G', 'Bescherm elkaar met klappen en worpen'],
+  voedsel: ['Geen broodje: elke rake worp is een punt', 'Pak spullen van de paarse ringen', 'Drie keer raak op rij = pizzadoos'],
+  broodjes: ['Elke 40 seconden een ander broodje', 'Kaassoufflé glijdt, saucijs is van voren niet te tackelen', 'Pizzabroodje laat een glad spoor achter'],
+  prophunt: ['Verstoppers: kies met R een vermomming en blijf stil staan', 'Zoekers: klik om te slaan, raak een verstopper om hem te vinden', 'Gevonden? Dan zoek je mee'],
+  lava: ['Na 15 seconden wordt de vloer lava: klim op tafels en kisten', 'Het gouden eiland geeft 3 punten per seconde', 'Niet stilstaan: hete voeten, smeltende plekken en lavaballen!'],
+  stoelen: ['Blijf in de buurt van de gele ringen', 'Stopt de muziek? Ga snel bij een stoel staan', 'Klap anderen weg van hun stoel'],
+  trefbal: ['Alleen ballen: elke rake worp is een punt', 'Ballen stuiteren tegen muren', 'Ontwijk door te springen en te dashen']
+};
+function startCountdown(seconds, first) {
+  goTime = performance.now() + seconds * 1000;
+  const el = $('countdown');
+  el.classList.remove('hidden');
+  $('cd-mode').textContent = MODE_INFO[mode].name;
+  $('cd-map').textContent = M.name;
+  $('cd-new').classList.toggle('hidden', !first);
+  $('cd-tips').replaceChildren(...(MODE_TIPS[mode] || []).map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+  let last = null;
+  const step = () => {
+    const left = (goTime - performance.now()) / 1000;
+    const n = left > 3 ? '' : left > 0 ? String(Math.ceil(left)) : 'GO!';
+    if (n !== last) {
+      last = n;
+      const num = $('cd-num');
+      num.textContent = n;
+      num.className = 'n' + (n === 'GO!' ? 'go' : n);
+      void num.offsetWidth; // animatie opnieuw starten
+      num.classList.add('pop');
+      if (n === 'GO!') sfx('go');
+      else if (n) sfx('count');
+    }
+    if (left > -0.7 && playing) requestAnimationFrame(step);
+    else {
+      el.classList.add('hidden');
+      if (playing && !spectating && !isActive() && !touchMode && !padMode) $('clickstart').classList.remove('hidden');
+    }
+  };
+  step();
+}
+// grote stempel in beeld, met een jingle
+let announceTimer = 0;
+function announce(text, color = '#ffd34d') {
+  const el = $('announce');
+  el.textContent = text;
+  el.style.setProperty('--c', color);
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => el.classList.remove('show'), 1600);
+  sfx('fanfare');
+}
+function hitmarker(big) {
+  const el = $('hitmarker');
+  el.className = big ? 'show big' : 'show';
+  clearTimeout(hitmarker.t);
+  hitmarker.t = setTimeout(() => { el.className = ''; }, big ? 260 : 170);
+  sfx('hitmark');
+}
+function hurt(amount) {
+  const el = $('hurt');
+  el.style.opacity = String(Math.min(1, amount));
+  el.classList.remove('fade');
+  void el.offsetWidth;
+  el.classList.add('fade');
+  shake(amount * 0.45);
+}
+// killfeed rechtsboven: wie deed wat bij wie
+function killfeed(by, ico, victim) {
+  const li = document.createElement('li');
+  const who = (id) => {
+    const span = document.createElement('span');
+    span.textContent = nameOf(id) === 'Jij' ? 'Jij' : nameOf(id);
+    span.style.color = hex(colorOf(id));
+    if (id === socket.id) span.className = 'me';
+    return span;
+  };
+  if (by) li.append(who(by));
+  li.insertAdjacentHTML('beforeend', icon(ico));
+  if (victim) li.append(who(victim));
+  $('killfeed').prepend(li);
+  while ($('killfeed').children.length > 5) $('killfeed').lastChild.remove();
+  setTimeout(() => li.classList.add('gone'), 5000);
+  setTimeout(() => li.remove(), 5600);
 }
 
 function tryDash() {
@@ -1677,6 +2187,8 @@ window.addEventListener('keydown', (e) => {
   if (action === 'pass') tryPass();
   if (action === 'feint') tryFeint();
   if (action === 'spray') trySpray();
+  if (action === 'wheel') openWheel();
+  if (action === 'mark') tryMark();
   if (action === 'dismount' && myVehicle && canAct()) socket.emit('dismount', false);
   if (action === 'dismount' && hiderMe() && canAct()) socket.emit('disguise');
   if (action.startsWith('emote')) playSlot(Number(action[5]) - 1);
@@ -1690,6 +2202,7 @@ function playSlot(i) {
 window.addEventListener('keyup', (e) => {
   const action = actionOf(e.code);
   if (action) held[action] = false;
+  if (action === 'wheel') closeWheel(true);
 });
 window.addEventListener('blur', () => { for (const k in held) held[k] = false; });
 
@@ -1758,6 +2271,7 @@ window.addEventListener('mousedown', (e) => {
   if (spectating || eliminated) specIndex++; // volgende speler volgen
   else if (e.button === 0 && controls.isLocked) tryThrow(); // de klik die de muis vastzet telt niet
   else if (e.button === 2 && controls.isLocked) tryPass();  // rechtermuisknop: broodje overgooien
+  else if (e.button === 1 && controls.isLocked) { e.preventDefault(); tryMark(); } // middelste knop: markering
 });
 window.addEventListener('contextmenu', (e) => { if (playing) e.preventDefault(); });
 
@@ -1767,7 +2281,7 @@ controls.addEventListener('lock', () => {
 });
 $('clickstart').addEventListener('click', () => controls.lock());
 controls.addEventListener('unlock', () => {
-  if (playing && !spectating && $('clickstart').classList.contains('hidden')) {
+  if (playing && !spectating && !ending && !warm && $('clickstart').classList.contains('hidden')) {
     $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
     if (padMode) paused = true;
   }
@@ -1788,7 +2302,7 @@ function updateLocal(dt) {
   const frozen = !!(myFlags & 512);     // verstoppertje: tellen tot twintig
   const sticky = !!(myFlags & 64);      // vast in het plakband
   const biting = biteLock > now;
-  const active = isActive() && !stunned && !frozen && !biting;
+  const active = isActive() && !stunned && !frozen && !biting && !counting() && !ending;
   const wish = wishDir();
   const boosted = myFlags & 4;
   const holding = holderId === socket.id;
@@ -1898,6 +2412,25 @@ function updateLocal(dt) {
   } else {
     const bob = settings.bob && me.onGround ? Math.abs(swing) * 0.05 : 0;
     camera.position.set(me.x, camY - bob - landKick * 0.12, me.z);
+  }
+  // aftellen: eerst een vlucht over de map, dan zakt de camera naar je ogen
+  if (counting()) {
+    const total = goTime - flyStart;
+    const k = Math.min(1, (now - flyStart) / total);
+    const a = k * 2.2 + 0.6;
+    const orbit = new THREE.Vector3(M.CENTER.x + Math.cos(a) * M.VIEW * 0.55, M.GROUND + 16, M.CENTER.z + Math.sin(a) * M.VIEW * 0.45);
+    const eye = new THREE.Vector3(me.x, camY, me.z);
+    const blend = THREE.MathUtils.smoothstep(k, 0.55, 1);
+    camera.position.lerpVectors(orbit, eye, blend);
+    const target = new THREE.Vector3().lerpVectors(new THREE.Vector3(M.CENTER.x, M.GROUND, M.CENTER.z),
+      new THREE.Vector3(M.BROODJE_SPAWN.x, camY, M.BROODJE_SPAWN.z), blend);
+    camera.lookAt(target);
+  }
+  // schokje bij raken en knallen
+  if (shakeAmt > 0.001) {
+    camera.position.x += (Math.random() - 0.5) * shakeAmt;
+    camera.position.y += (Math.random() - 0.5) * shakeAmt;
+    shakeAmt *= Math.exp(-dt * 9);
   }
   const facing = Math.atan2(-fwd.x, -fwd.z);
   if (myEmote && !stunned) {
@@ -2015,6 +2548,7 @@ function updateModeWorld(dt, time) {
       puff(pl.position.x + (Math.random() - 0.5) * w, pl.position.y + 0.1, pl.position.z + (Math.random() - 0.5) * d, 0xffa53a, 3);
     }
   }
+  if (mode === 'lava') updateLavaWorld(x, dt, time);
   const marked = mode === 'stoelen' && x && x.ch ? x.ch : [];
   while (chairRings.length < marked.length) {
     const ring = new THREE.Mesh(chairRingGeo, chairRingMat);
@@ -2032,6 +2566,118 @@ function updateModeWorld(dt, time) {
   chairRingMat.color.setHex(x && x.mu === 0 ? 0xe23b2e : 0xffd34d);
   chairRingMat.opacity = x && x.mu === 0 ? 0.6 + Math.sin(time * 12) * 0.3 : 0.6;
 }
+// ---------- Lava: gouden eiland, smeltende plekken, lavaballen en vlotten ----------
+const lavaFx = { group: null, island: null, melts: [], shadows: new Map(), rafts: new Map(), gone: 0, raftKey: '' };
+function lavaSpot(id) {
+  if (!id) return null;
+  const i = Number(id.slice(1));
+  if (id[0] === 't') {
+    const p = props[i];
+    return p && { x: p.outer.position.x, z: p.outer.position.z, top: p.y + M.PROP.table.h, r: 0.85, prop: p };
+  }
+  const c = crateAll[i];
+  return c && { x: c[0], z: c[2], top: c[1] + c[4], r: c[3] * 0.72 };
+}
+function clearLavaFx() {
+  if (lavaFx.group) scene.remove(lavaFx.group);
+  lavaFx.group = lavaFx.island = null;
+  lavaFx.melts = [];
+  lavaFx.shadows.clear();
+  lavaFx.rafts.clear();
+  lavaFx.gone = 0;
+  lavaFx.raftKey = '';
+  raftList = [];
+}
+function updateLavaWorld(x, dt, time) {
+  if (!x) return;
+  if (!lavaFx.group) {
+    lavaFx.group = new THREE.Group();
+    scene.add(lavaFx.group);
+    // gouden eiland: ring en een lichtbundel naar boven
+    const island = new THREE.Group();
+    island.add(new THREE.Mesh(new THREE.TorusGeometry(1, 0.09, 8, 32), new THREE.MeshBasicMaterial({ color: 0xffd34d })));
+    island.children[0].rotation.x = -Math.PI / 2;
+    const beamMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 10, 20, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
+    beamMesh.position.y = 5;
+    island.add(beamMesh);
+    lavaFx.group.add(island);
+    lavaFx.island = island;
+  }
+  const isl = lavaSpot(x.is);
+  lavaFx.island.visible = !!isl && x.lv <= 0;
+  if (isl) {
+    lavaFx.island.position.set(isl.x, isl.top + 0.06, isl.z);
+    lavaFx.island.scale.setScalar(isl.r + Math.sin(time * 5) * 0.05);
+    lavaFx.island.children[0].rotation.z = time;
+  }
+  // smeltende plekken gloeien rood en trillen
+  while (lavaFx.melts.length < (x.mt || []).length) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.08, 20), new THREE.MeshBasicMaterial({ color: 0xff3a10, transparent: true, opacity: 0.6, depthWrite: false }));
+    lavaFx.group.add(m);
+    lavaFx.melts.push(m);
+  }
+  lavaFx.melts.forEach((m, i) => {
+    const sp = lavaSpot((x.mt || [])[i]);
+    m.visible = !!sp;
+    if (!sp) return;
+    m.position.set(sp.x, sp.top + 0.05, sp.z);
+    m.scale.set(sp.r, 1, sp.r);
+    m.material.opacity = 0.45 + Math.sin(time * 18) * 0.25;
+    if (sp.prop) sp.prop.outer.position.x = sp.prop.x + Math.sin(time * 40) * 0.04;
+  });
+  // weggesmolten kisten verdwijnen
+  if ((x.gn || []).length !== lavaFx.gone) {
+    lavaFx.gone = x.gn.length;
+    setCrates(null, x.gn);
+  }
+  // lavaballen: een schaduw die groeit, daarna de knal
+  const live = new Set();
+  for (const [id, bx, by, bz, ms] of x.bl || []) {
+    live.add(id);
+    let sh = lavaFx.shadows.get(id);
+    if (!sh) {
+      sh = new THREE.Mesh(new THREE.CircleGeometry(2.3, 24), new THREE.MeshBasicMaterial({ color: 0x8a1a00, transparent: true, opacity: 0.5, depthWrite: false }));
+      sh.rotation.x = -Math.PI / 2;
+      lavaFx.group.add(sh);
+      lavaFx.shadows.set(id, sh);
+    }
+    const g = M.groundAt(bx, bz, by + 0.3);
+    sh.position.set(bx, g + 0.05, bz);
+    const k = 1 - Math.min(1, ms / 1600);
+    sh.scale.setScalar(0.3 + k * 0.7);
+    sh.material.opacity = 0.3 + k * 0.45 + Math.sin(time * 20) * 0.1 * k;
+  }
+  for (const [id, sh] of lavaFx.shadows) {
+    if (live.has(id)) continue;
+    lavaFx.group.remove(sh);
+    lavaFx.shadows.delete(id);
+  }
+  // vlotten
+  const key = (x.rf || []).map((r) => r[0]).join(',');
+  if (key !== lavaFx.raftKey) {
+    lavaFx.raftKey = key;
+    raftList = x.rf || [];
+    refreshDynamic();
+    for (const [id, m] of lavaFx.rafts) {
+      if (raftList.some((r) => r[0] === id)) continue;
+      puff(m.position.x, m.position.y, m.position.z, 0xf2f0ea, 5);
+      lavaFx.group.remove(m);
+      lavaFx.rafts.delete(id);
+    }
+    for (const [id, rx, ry, rz] of raftList) {
+      if (lavaFx.rafts.has(id)) continue;
+      const m = new THREE.Group();
+      mesh(cylGeo, mat(0xf2f0ea), m, 0, 0.12, 0).scale.set(0.8, 0.22, 0.8);
+      mesh(cylGeo, mat(0xd9d5cb), m, 0, 0.24, 0).scale.set(0.5, 0.04, 0.5);
+      m.position.set(rx, ry, rz);
+      lavaFx.group.add(m);
+      lavaFx.rafts.set(id, m);
+    }
+  }
+  for (const m of lavaFx.rafts.values()) m.rotation.y += dt * 0.6;
+}
+
 function clearChairRings() {
   for (const ring of chairRings) scene.remove(ring);
   chairRings.length = 0;
@@ -2061,7 +2707,8 @@ function modeHud(s) {
   if (x && mode === 'broodjes') text = `${BROODJE_TYPES[x.bt].name}: ${BROODJE_TYPES[x.bt].tip} · wissel over ${x.bn} s`;
   if (x && mode === 'lava') {
     alert = x.lv <= 0;
-    text = x.lv > 0 ? `De vloer wordt lava over ${x.lv} s. Klim op een tafel, kist, trap of bank!` : 'De vloer is lava! Klik om iemand eraf te slaan';
+    text = x.lv > 0 ? `De vloer wordt lava over ${x.lv} s. Klim op een tafel, kist, trap of bank!`
+      : `Gouden eiland = 3 punten per seconde · verplaatst over ${x.isn} s · blijf niet stilstaan!`;
   }
   if (x && mode === 'prophunt') {
     text = myTeam === 0 ? `Je bent een ${DISGUISE_NAMES[myDisguise] || 'verstopper'} · R = andere vermomming · nog ${x.hl} verstoppers`
@@ -2078,6 +2725,9 @@ function modeHud(s) {
   $('blindfold').classList.toggle('hidden', !(myFlags & 512));
   if (myFlags & 512 && x) $('blindfold-left').textContent = x.hd;
   $('wet').classList.toggle('hidden', !(myFlags & 1024));
+  // hete voeten: eerst een oranje gloed, daarna rood
+  $('hot').classList.toggle('hidden', !(myFlags & 2048));
+  $('hot').classList.toggle('max', !!(myFlags & 4096));
 }
 
 function updateDecoy(dt, time) {
@@ -2292,6 +2942,7 @@ function updatePodium(time, dt) {
       m.armL.rotation.set(-1.3, 0, -0.5 + clap);
       m.armR.rotation.set(-1.3, 0, 0.5 - clap);
     }
+    setFace(m, m.place === 0 ? 'happy' : m.place < 3 ? 'normal' : 'sad', performance.now());
     const base = m.place < 3 ? PODIUM_SPOTS[m.place].h + 0.07 : 0;
     m.group.position.y = base + pose.hop;
     m.group.rotation.set(pose.lean || 0, pose.spin, pose.roll);
@@ -2335,7 +2986,13 @@ function updatePodium(time, dt) {
 // ---------- Schermen en panelen ----------
 const screens = ['menu', 'lobby', 'hud', 'gameover'];
 function show(id) {
+  if (id !== 'lobby' && warm) leaveWarm();
+  if (id !== 'menu' && PAGES) closePages();
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
+  if (id === 'lobby') {
+    if (pendingWarm) enterWarm();
+    else if (!warm && lobby && !lobby.playing) socket.emit('warmAgain');
+  }
   if (id === 'menu') renderMenuSide();
   if (id !== 'hud') $('pause').classList.add('hidden');
 }
@@ -2573,6 +3230,185 @@ function trailArt(colors) {
   return span;
 }
 
+// ---------- Kluis: je uitrusting, zoals de locker in Fortnite ----------
+// Een klein 3D-venster met je eigen poppetje, voor de kluis (en de winkel)
+function miniView(canvasId, w, h) {
+  const v = {
+    renderer: new THREE.WebGLRenderer({ canvas: $(canvasId), antialias: true, alpha: true }),
+    scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(28, w / h, 0.1, 20), model: null, key: '', emote: 0, start: performance.now()
+  };
+  v.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  v.renderer.setSize(w, h, false);
+  v.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 2));
+  const light = new THREE.DirectionalLight(0xffffff, 1.5);
+  light.position.set(2, 4, 3);
+  v.scene.add(light);
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.05, 32), new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.35 }));
+  v.scene.add(disc);
+  v.camera.position.set(0, 1.05, 5.4);
+  v.camera.lookAt(0, 0.98, 0);
+  v.set = (skin, acc, emote = 0) => {
+    const key = `${skin}|${acc}`;
+    if (key !== v.key) {
+      v.key = key;
+      if (v.model) v.scene.remove(v.model.group);
+      v.model = makePlayerModel({ name: '', skin, acc, color: 0x3aa655 });
+      v.model.label.visible = false;
+      v.scene.add(v.model.group);
+    }
+    v.emote = emote;
+    v.start = performance.now();
+  };
+  v.render = () => {
+    if (!v.model) return;
+    const t = (performance.now() - v.start) / 1000;
+    const pose = poseModel(v.model, 0, 0, v.emote || (t % 7 < 1.6 ? 3 : 0), t);
+    v.model.group.position.y = pose.hop;
+    v.model.group.rotation.set(pose.lean || 0, -0.35 + Math.sin(t * 0.6) * 0.3 + pose.spin, pose.roll);
+    setFace(v.model, 'happy', performance.now());
+    v.renderer.render(v.scene, v.camera);
+  };
+  return v;
+}
+const lockerView = miniView('locker-canvas', 420, 560);
+const pickView = miniView('locker-canvas2', 420, 560);
+// soorten spullen in de kluis
+const LOCKER = [
+  { id: 'skin', name: 'Skin', icon: 'shirt' }, { id: 'hat', name: 'Hoofd', icon: 'crown' }, { id: 'face', name: 'Gezicht', icon: 'glasses' },
+  { id: 'back', name: 'Rug', icon: 'flag' }, { id: 'trail', name: 'Spoor', icon: 'bolt' }, { id: 'sound', name: 'Raakgeluid', icon: 'note' },
+  { id: 'class', name: 'Klasse', icon: 'shield' }, { id: 'stamp', name: 'Stempel', icon: 'spray' }, { id: 'emote', name: 'Emote', icon: 'emote' }
+];
+// alle spullen van één soort die je hebt: { id, name, source, look?, emote?, art }
+function lockerItems(cat) {
+  if (cat === 'skin') {
+    const weekly = progress.owned.filter((id) => id.startsWith('skin:wk')).map((id) => Catalog.weekSkin(id.slice(5))).filter(Boolean);
+    return SKINS.concat(weekly).filter(isUnlocked).map((k) => ({ id: k.id, name: k.name, source: k.source || (k.price ? 'Winkel' : k.pass ? 'Battlepass' : k.locked ? 'Challenge' : 'Standaard'), skin: k.id }));
+  }
+  if (['hat', 'face', 'back'].includes(cat)) {
+    return ACCESSORIES[cat].filter((a) => !a.price || owns('acc:' + a.id)).map((a) => ({ id: a.id, name: a.name, source: a.price ? 'Winkel' : 'Standaard', acc: { [cat]: a.id } }));
+  }
+  if (cat === 'trail') return TRAILS.filter((t) => !t.price || owns('trail:' + t.id)).map((t) => ({ id: t.id, name: t.name, source: t.price ? 'Winkel' : 'Standaard', colors: t.colors }));
+  if (cat === 'sound') return SOUNDS.filter((t) => !t.price || owns('sound:' + t.id)).map((t) => ({ id: t.id, name: t.name, source: t.price ? 'Winkel' : 'Standaard' }));
+  if (cat === 'class') return CLASSES.filter((c) => c.id === 'allrounder' || owns('class:' + c.id)).map((c) => ({ id: c.id, name: c.name, source: c.desc, icon: c.icon }));
+  if (cat === 'stamp') {
+    return ['naam'].concat(progress.custom ? ['custom'] : [], progress.owned.filter((id) => id.startsWith('stamp:')).map((id) => id.slice(6)))
+      .map((id) => ({ id, name: id === 'naam' ? 'Naam' : id === 'custom' ? 'Eigen tekening' : (Catalog.STAMP_NAMES[Number(id.slice(1))] || id), source: 'Spuitbus', icon: STAMP_ICON[id] || 'spray' }));
+  }
+  return EMOTE_NAMES.map((n, i) => i).filter((i) => i && (i <= 4 || owns('emote:' + i))).map((i) => ({ id: i, name: EMOTE_NAMES[i], source: EMOTE_SOURCE(i) || 'Standaard', emote: i }));
+}
+function equipped(cat, slot) {
+  if (cat === 'skin') return progress.skin;
+  if (['hat', 'face', 'back'].includes(cat)) return progress.acc[cat];
+  if (cat === 'trail' || cat === 'sound') return progress.fx[cat];
+  if (cat === 'class') return progress.cls;
+  if (cat === 'stamp') return progress.stamp;
+  return progress.loadout[slot];
+}
+function itemArt(cat, item) {
+  if (item.skin) return picture(thumb(item.skin, 0, accString(), false, true));
+  if (item.acc) return picture(thumb(progress.skin, 0, accString(Object.assign({}, progress.acc, item.acc)), cat === 'back', true));
+  if (item.emote) return picture(thumb(progress.skin, item.emote));
+  if (cat === 'trail') return trailArt(item.colors);
+  if (cat === 'sound') return bigIcon('note');
+  return bigIcon(item.icon || 'star');
+}
+function lockerTile(cat, item, label) {
+  const b = document.createElement('button');
+  b.className = 'lk-tile';
+  b.innerHTML = '<span class="lk-art"></span><span class="lk-name"></span>';
+  b.querySelector('.lk-art').append(item ? itemArt(cat, item) : bigIcon(LOCKER.find((l) => l.id === cat).icon));
+  b.querySelector('.lk-name').textContent = label || (item ? item.name : '');
+  return b;
+}
+function renderLocker() {
+  $('locker-home').classList.remove('hidden');
+  $('locker-pick').classList.add('hidden');
+  const slots = LOCKER.filter((l) => l.id !== 'emote');
+  $('locker-slots').replaceChildren(...slots.map((l) => {
+    const item = lockerItems(l.id).find((x) => String(x.id) === String(equipped(l.id)));
+    const t = lockerTile(l.id, item, l.name);
+    t.title = item ? item.name : l.name;
+    const fresh = allOwned().some((id) => id.startsWith((l.id === 'skin' ? 'skin' : ['hat', 'face', 'back'].includes(l.id) ? 'acc' : l.id) + ':') && !seenItems.has(id));
+    t.classList.toggle('dot-new', fresh);
+    t.addEventListener('click', () => openPick(l.id));
+    t.addEventListener('pointerenter', () => lockerShow(lockerView, l.id, item));
+    return t;
+  }));
+  $('locker-emotes').replaceChildren(...[0, 1, 2].map((i) => {
+    const n = progress.loadout[i];
+    const item = n ? lockerItems('emote').find((x) => x.id === n) : null;
+    const t = lockerTile('emote', item, item ? `${i + 1} · ${item.name}` : `Toets ${i + 1}`);
+    t.addEventListener('click', () => openPick('emote', i));
+    t.addEventListener('pointerenter', () => lockerShow(lockerView, 'emote', item));
+    return t;
+  }));
+  lockerShow(lockerView, 'skin', lockerItems('skin').find((x) => x.id === progress.skin));
+}
+function lockerShow(view, cat, item) {
+  const isHome = view === lockerView;
+  const look = item && item.acc ? accString(Object.assign({}, progress.acc, item.acc)) : accString();
+  view.set(item && item.skin ? item.skin : progress.skin, look, item && item.emote ? item.emote : 0);
+  $(isHome ? 'locker-kind' : 'pick-kind').textContent = LOCKER.find((l) => l.id === cat).name;
+  $(isHome ? 'locker-name' : 'pick-name').textContent = item ? item.name : 'Leeg';
+  $(isHome ? 'locker-source' : 'pick-source').textContent = item ? item.source : '';
+  if (cat === 'sound' && item && !isHome) sfx(item.id === 'standaard' ? 'hit' : item.id);
+}
+let pickCat = 'skin', pickSlot = 0;
+function openPick(cat, slot = 0) {
+  pickCat = cat;
+  pickSlot = slot;
+  $('locker-home').classList.add('hidden');
+  $('locker-pick').classList.remove('hidden');
+  $('locker-pick').classList.remove('from-right');
+  void $('locker-pick').offsetWidth;
+  $('locker-pick').classList.add('from-right');
+  markSeen(cat === 'skin' ? 'skins' : cat === 'emote' ? 'emotes' : cat === 'class' ? 'classes' : 'accessories');
+  renderPick();
+}
+function renderPick() {
+  const cat = pickCat;
+  $('pick-title').textContent = cat === 'emote' ? `Emote op toets ${pickSlot + 1}` : LOCKER.find((l) => l.id === cat).name;
+  $('pick-tabs').replaceChildren(...LOCKER.map((l) => {
+    const b = document.createElement('button');
+    b.className = 'pick-tab' + (l.id === cat ? ' on' : '');
+    b.innerHTML = icon(l.icon) + `<span>${l.name}</span>`;
+    b.addEventListener('click', () => { pickCat = l.id; renderPick(); });
+    return b;
+  }));
+  const items = lockerItems(cat);
+  const current = equipped(cat, pickSlot);
+  $('pick-grid').replaceChildren(...items.map((item) => {
+    const t = lockerTile(cat, item);
+    if (String(item.id) === String(current)) t.classList.add('on');
+    t.addEventListener('pointerenter', () => lockerShow(pickView, cat, item));
+    t.addEventListener('click', () => { equip(cat, item); renderPick(); lockerShow(pickView, cat, item); });
+    return t;
+  }));
+  lockerShow(pickView, cat, items.find((x) => String(x.id) === String(current)));
+}
+// iets aantrekken: opslaan, en in een lobby meteen aan de anderen laten zien
+function equip(cat, item) {
+  if (cat === 'skin') { progress.skin = item.id; buildArms(skinById(item.id)); }
+  if (['hat', 'face', 'back'].includes(cat)) progress.acc[cat] = item.id;
+  if (cat === 'trail' || cat === 'sound') progress.fx[cat] = item.id;
+  if (cat === 'class') progress.cls = item.id;
+  if (cat === 'stamp') progress.stamp = item.id;
+  if (cat === 'emote') {
+    const at = progress.loadout.indexOf(item.id);
+    if (at >= 0) progress.loadout[at] = progress.loadout[pickSlot];
+    progress.loadout[pickSlot] = item.id;
+  }
+  save('kr-progress', progress);
+  buildPreview();
+  sfx('click');
+  if (lobby) {
+    socket.emit('setSkin', progress.skin);
+    socket.emit('setClass', progress.cls);
+    socket.emit('setLook', { acc: accString(), fx: fxString(), title: progress.title });
+  }
+}
+$('btn-pick-back').addEventListener('click', renderLocker);
+
 // ---------- Profiel: account, rang, titel en statistieken ----------
 function rankBadge(rp) {
   const r = rankOf(rp);
@@ -2583,7 +3419,7 @@ function refreshAccountUi() {
   if (account) name.value = account.name;
   name.disabled = !!account;
   $('btn-profile').querySelector('span').textContent = account ? 'Profiel' : 'Inloggen';
-  $('rank-badge').innerHTML = account ? rankBadge(account.rp) + `<small>${titleName(progress.title)}</small>` : '<small>Niet ingelogd · voortgang staat alleen op dit apparaat</small>';
+  $('rank-badge').innerHTML = account ? rankBadge(account.rp) + (progress.title ? `<small>${titleName(progress.title)}</small>` : '') : '';
   if (!CLASSES.some((c) => c.id === progress.cls && (c.id === 'allrounder' || owns('class:' + c.id)))) progress.cls = 'allrounder';
   addCoins();
   buildArms(skinById(progress.skin));
@@ -2706,29 +3542,56 @@ function renderEmotes() {
   }));
 }
 
+// Opdrachten: rijen met een voortgangsbalk en rechts de beloning (zoals de opdrachten in Fortnite)
+function questRow(title, value, goal, reward, done) {
+  const li = document.createElement('li');
+  li.className = 'quest' + (done || value >= goal ? ' done' : '');
+  li.innerHTML = '<div class="q-main"><b></b><span class="q-bar"><i></i></span></div><span class="q-count"></span><span class="q-reward"></span>';
+  li.querySelector('b').textContent = title;
+  li.querySelector('i').style.width = `${Math.min(100, (value / goal) * 100)}%`;
+  li.querySelector('.q-count').textContent = done ? 'Klaar!' : `${Math.min(value, goal)} / ${goal}`;
+  li.querySelector('.q-reward').append(reward);
+  return li;
+}
+const coinReward = (n) => {
+  const el = document.createElement('span');
+  el.className = 'q-coins';
+  el.innerHTML = icon('coin') + `<b>${n}</b>`;
+  return el;
+};
+const skinReward = (id) => {
+  const img = picture(thumb(id, 0, 'skin.geen.rugzak', false, true));
+  img.className = 'q-skin';
+  return img;
+};
 function renderChallenges() {
-  $('challenge-list').replaceChildren(...CHALLENGES.map((c) => {
-    const value = Math.min(c.goal, Math.floor(stats[c.stat]));
-    const li = document.createElement('li');
-    if (value >= c.goal) li.className = 'done';
-    const top = document.createElement('div');
-    top.className = 'top';
-    const title = document.createElement('span');
-    title.textContent = c.title;
-    const count = document.createElement('span');
-    count.textContent = `${value} / ${c.goal}`;
-    top.append(title, count);
-    const desc = document.createElement('p');
-    desc.textContent = `${c.desc} Beloning: skin ${skinById(c.skin).name}.`;
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    const fill = document.createElement('i');
-    fill.style.width = `${(value / c.goal) * 100}%`;
-    bar.append(fill);
-    li.append(top, desc, bar);
-    return li;
+  $('q-daily').replaceChildren(...dailyDefs.map((def, i) =>
+    questRow(def.desc.replace(/\.$/, ''), Math.floor(daily.values[i]), def.goal, coinReward(DAILY_REWARD), daily.done[i])));
+  const week = Catalog.storyFor();
+  const step = progress.story.key === week.key ? progress.story.step : 0;
+  const value = progress.story.key === week.key ? progress.story.value : 0;
+  $('q-story-title').textContent = `Weekverhaal · ${week.story.title}`;
+  $('q-story').replaceChildren(...week.story.steps.map(([text, , goal], i) => {
+    const row = questRow(i <= step ? text : 'Nog geheim…', i < step ? goal : i === step ? value : 0, goal,
+      i === 4 ? skinReward(week.skin) : coinReward(40), i < step);
+    if (i > step) row.classList.add('locked');
+    return row;
   }));
-  $('challenge-list').prepend(...dailyRows());
+  $('challenge-list').replaceChildren(...CHALLENGES.map((c) =>
+    questRow(`${c.title}: ${c.desc.replace(/\.$/, '')}`, Math.floor(stats[c.stat] || 0), c.goal, skinReward(c.skin), (stats[c.stat] || 0) >= c.goal)));
+  // de prestaties die het dichtst bij hun volgende trede zijn
+  const near = ACHIEVEMENTS.map((a) => {
+    const tier = progress.ach[a.id] || 0;
+    if (tier >= 3) return null;
+    const goal = a.goals[tier];
+    return { a, tier, goal, value: Math.floor(stats[a.stat] || 0) };
+  }).filter(Boolean).sort((x, y) => y.value / y.goal - x.value / x.goal).slice(0, 6);
+  $('q-ach').replaceChildren(...near.map(({ a, tier, goal, value }) => {
+    const medal = document.createElement('span');
+    medal.className = 'q-medal m' + (tier + 1);
+    medal.innerHTML = icon('medal') + `<small>${TIER_NAMES[tier]}</small>`;
+    return questRow(`${a.name}: ${a.text.replace('{n}', goal)}`, value, goal, medal, false);
+  }));
 }
 // de drie dagelijkse challenges als lijstregels
 function dailyRows() {
@@ -2750,8 +3613,14 @@ function renderMenuSide() {
   const streak = progress.streak.last === today || progress.streak.last === Catalog.dailyFor().yesterday ? progress.streak.days : 0;
   $('streak-days').textContent = streak;
   const c = careerOf(progress.careerXp);
-  $('career-text').textContent = `${c.year} · level ${c.level}${progress.prestige ? ' · diploma ×' + progress.prestige : ''}`;
+  $('career-text').textContent = `${c.year}${progress.prestige ? ' · ' + '◆'.repeat(Math.min(3, progress.prestige)) : ''}`;
   $('career-bar').style.width = `${c.need ? (c.into / c.need) * 100 : 100}%`;
+  // ring rechtsonder: hoe ver je in dit level bent
+  $('career-level').textContent = c.level;
+  $('np-level').textContent = c.level;
+  $('np-level').classList.toggle('gold', progress.prestige === 1);
+  $('np-level').classList.toggle('diamond', progress.prestige >= 2);
+  $('career-ring').style.strokeDasharray = `${(c.need ? c.into / c.need : 1) * 213.6} 213.6`;
   const week = Catalog.storyFor();
   const step = progress.story.key === week.key ? progress.story.step : 0;
   $('story-title').textContent = week.story.title;
@@ -2820,7 +3689,16 @@ $('pass-next').addEventListener('click', () => { passPage++; renderPass(); });
 
 function applySettings() {
   controls.pointerSpeed = settings.sens;
-  sun.castShadow = settings.shadows;
+  const q = quality();
+  sun.castShadow = settings.shadows && q.shadow > 0;
+  if (q.shadow && sun.shadow.mapSize.x !== q.shadow) {
+    sun.shadow.mapSize.set(q.shadow, q.shadow);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+  outline.enabled = q.outline;
+  document.body.classList.toggle('q-hoog', settings.quality === 'hoog');
+  document.querySelectorAll('[data-quality]').forEach((b) => b.classList.toggle('active', b.dataset.quality === settings.quality));
+  $('fps').classList.toggle('hidden', !settings.fps);
   if (!playing) camera.fov = settings.fov;
   $('out-sens').textContent = settings.sens.toFixed(1);
   $('out-fov').textContent = settings.fov;
@@ -2828,7 +3706,12 @@ function applySettings() {
   $('out-mus').textContent = Math.round(settings.mus * 100) + '%';
   resize();
 }
-[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['sharp', 'check'], ['stamps', 'check'], ['bob', 'check'], ['names', 'check']]
+document.querySelectorAll('[data-quality]').forEach((b) => b.addEventListener('click', () => {
+  settings.quality = b.dataset.quality;
+  save('kr-settings', settings);
+  applySettings();
+}));
+[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['sharp', 'check'], ['stamps', 'check'], ['bob', 'check'], ['names', 'check'], ['fps', 'check'], ['shake', 'check']]
   .forEach(([key, kind]) => {
     const el = $('set-' + key);
     if (kind === 'range') el.value = settings[key];
@@ -2841,9 +3724,63 @@ function applySettings() {
   });
 applySettings();
 
+// Kluis, Winkel, Pass, Opdrachten en Carrière zijn aparte pagina's onder de bovenbalk (zoals Fortnite)
+var PAGES = ['locker', 'shop', 'pass', 'challenges', 'account'];
+// volgorde van de tabbladen: nieuwe pagina's schuiven van rechts of links binnen, alsof je swipet
+const NAV_ORDER = ['play', 'locker', 'shop', 'pass', 'challenges', 'account'];
+let currentPage = 'play';
+function slideTo(id) {
+  const from = NAV_ORDER.indexOf(currentPage), to = NAV_ORDER.indexOf(id);
+  if (from === to) return;
+  const dir = to > from ? 'from-right' : 'from-left';
+  currentPage = id;
+  PAGES.forEach((p) => {
+    const el = $(p);
+    el.classList.toggle('hidden', p !== id);
+    el.classList.remove('from-right', 'from-left');
+  });
+  document.body.classList.toggle('paged', id !== 'play');
+  const target = id === 'play' ? document.querySelector('#menu.hub') : $(id);
+  if (target) {
+    target.classList.remove('from-right', 'from-left');
+    void target.offsetWidth;
+    target.classList.add(dir);
+  }
+  document.querySelectorAll('.top-nav .nav').forEach((n) => n.classList.toggle('on', (n.dataset.open || n.dataset.nav) === id));
+  sfx('whoosh');
+}
+function closePages() {
+  if (currentPage !== 'play' && !$('menu').classList.contains('hidden')) return slideTo('play');
+  currentPage = 'play';
+  PAGES.forEach((id) => $(id).classList.add('hidden'));
+  document.body.classList.remove('paged');
+  document.querySelectorAll('.top-nav .nav').forEach((n) => n.classList.toggle('on', n.dataset.nav === 'play'));
+}
+document.querySelector('[data-nav="play"]').addEventListener('click', () => slideTo('play'));
+window.addEventListener('keydown', (e) => {
+  if (playing || e.target.tagName === 'INPUT' || document.querySelector('.modal:not(.hidden)')) return;
+  if (e.key === 'Escape' && currentPage !== 'play') closePages();
+  // pijltjes links en rechts: naar het vorige of volgende tabblad
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !$('menu').classList.contains('hidden')) {
+    const i = NAV_ORDER.indexOf(currentPage) + (e.key === 'ArrowRight' ? 1 : -1);
+    if (i >= 0 && i < NAV_ORDER.length) {
+      const next = NAV_ORDER[i];
+      if (next !== 'play') document.querySelector(`.top-nav [data-open="${next}"]`).click();
+      else slideTo('play');
+    }
+  }
+});
+document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => {
+  if (PAGES.includes(btn.dataset.open)) {
+    // de knop zelf maakt de pagina zichtbaar; hier komt het schuiven en de bovenbalk
+    requestAnimationFrame(() => slideTo(btn.dataset.open));
+  }
+}));
+document.querySelectorAll('.page [data-close]').forEach((btn) => btn.addEventListener('click', closePages));
 document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.open === 'skins') renderSkins();
   if (btn.dataset.open === 'challenges') renderChallenges();
+  if (btn.dataset.open === 'locker') renderLocker();
   if (btn.dataset.open === 'shop') renderShop();
   if (btn.dataset.open === 'board') renderBoard();
   if (btn.dataset.open === 'draw') openDraw();
@@ -2863,6 +3800,7 @@ document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener(
 }));
 document.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => {
   socket.emit('setMode', btn.dataset.mode);
+  $('modes').classList.add('hidden');
 }));
 
 function playerName() {
@@ -2871,6 +3809,7 @@ function playerName() {
   return n;
 }
 $('name').value = localStorage.getItem('kr-name') || '';
+$('name').addEventListener('input', () => { buildPreview(); sendPartyLook(); });
 
 const joinData = () => ({
   name: playerName(), skin: progress.skin, cls: progress.cls, acc: accString(), fx: fxString(), title: progress.title, token: getToken(),
@@ -2972,6 +3911,7 @@ function stopPlaying() {
   myTeam = 0;
   setMyDisguise(0);
   clearLava();
+  clearLavaFx();
   clearChairRings();
   if (crateList.length) setCrates([]);
   if (itemPickups.length !== M.ITEM_SPAWNS.length) setItemSpots(null);
@@ -3009,6 +3949,8 @@ function stopPlaying() {
 }
 function leave() {
   socket.emit('leaveLobby');
+  leaveWarm();
+  pendingWarm = null;
   lobby = null;
   stopPlaying();
   clearPodium();
@@ -3045,7 +3987,7 @@ function badge(text, cls) {
 socket.on('lobby', (info) => {
   lobby = info;
   roster = new Map(info.players.map((p) => [p.id, p]));
-  if (!info.playing) mode = info.mode;
+  if (!info.playing && !warm) mode = info.mode;
   $('lobby-code').textContent = info.code;
   $('lobby-kind').textContent = info.ranked ? 'Ranked' : info.public ? 'Openbare lobby' : 'Privélobby';
   $('lobby-setup').classList.toggle('hidden', info.ranked);
@@ -3105,6 +4047,10 @@ socket.on('lobby', (info) => {
     btn.disabled = !isHost || !!info.weekly;
   });
   $('mode-desc').textContent = MODE_INFO[info.mode].desc + (isHost ? '' : ' (de host kiest)');
+  $('mode-name').textContent = MODE_INFO[info.mode].name;
+  const tileIcon = document.querySelector(`.mode-tile[data-mode="${info.mode}"] i`);
+  if (tileIcon) $('mode-icon').innerHTML = tileIcon.innerHTML;
+  document.querySelector('.mode-current').disabled = !isHost || !!info.weekly;
 });
 
 // Map-roulette: de kaarten schuiven voorbij en remmen af op de gekozen map.
@@ -3138,6 +4084,8 @@ socket.on('voteCount', (counts) => {
 });
 
 socket.on('mapPick', (data) => {
+  leaveWarm();
+  closePages();
   clearInterval(overTimer);
   clearInterval(voteTimer);
   $('vote').classList.add('hidden');
@@ -3157,7 +4105,7 @@ socket.on('mapPick', (data) => {
   }
   if (ids.length !== 2 && cards[target + 1] === data.map) cards[target + 1] = ids.find((id) => id !== data.map && id !== cards[target + 2]);
   const strip = $('roulette-strip');
-  strip.innerHTML = cards.map((id) => `<div class="map-card m-${id}">${icon(M.maps[id].icon)}<b>${M.maps[id].name}</b></div>`).join('');
+  strip.innerHTML = cards.map((id) => `<div class="map-card m-${id}">${mapPreview[id] ? `<img src="${mapPreview[id]}" alt="">` : icon(M.maps[id].icon)}<b>${M.maps[id].name}</b></div>`).join('');
   $('roulette-sub').textContent = (data.rounds > 1 ? `Ronde ${data.round} van ${data.rounds} · ` : '') + MODE_INFO[data.mode].name;
   $('roulette').classList.remove('hidden');
   strip.style.transition = 'none';
@@ -3176,6 +4124,7 @@ socket.on('mapPick', (data) => {
 });
 
 socket.on('gameStart', (data) => {
+  pendingWarm = null;
   stopPlaying();
   clearPodium();
   clearInterval(overTimer);
@@ -3219,15 +4168,24 @@ socket.on('gameStart', (data) => {
   broodje.position.set(M.BROODJE_SPAWN.x, M.BROODJE_SPAWN.y + 0.8, M.BROODJE_SPAWN.z);
   show('hud');
   $('pause').classList.add('hidden');
-  $('clickstart').classList.toggle('hidden', touchMode || padMode);
+  $('clickstart').classList.toggle('hidden', touchMode || padMode || !!data.countdown);
   $('holding').classList.add('hidden');
   $('item-hint').classList.add('hidden');
   const role = mode === 'teams' ? `jij speelt voor team ${TEAM_NAMES[myTeam]}`
     : mode === 'duo' ? `jij speelt in duo ${myTeam + 1}`
     : mode === 'prophunt' ? (myTeam === 0 ? 'jij verstopt je! R = andere vermomming' : 'jij zoekt! Wacht tot de anderen verstopt zijn')
     : MODE_INFO[mode].name;
-  banner(`${M.name} · ${role}`, 3500);
+  if (!data.countdown) banner(`${M.name} · ${role}`, 3500);
   if (data.bounty) setTimeout(() => toast(`Er staat een premie van ${data.bounty} munten op jouw hoofd!`, 4000), 3600);
+  // aftellen met een vlucht over de map; de eerste keer in een modus met extra uitleg
+  const seenModes = load('kr-modes', {});
+  startCountdown(data.countdown || 0, !seenModes[mode]);
+  if (role !== MODE_INFO[mode].name) $('cd-map').textContent = `${M.name} · ${role}`;
+  seenModes[mode] = 1;
+  localStorage.setItem('kr-modes', JSON.stringify(seenModes));
+  flyStart = performance.now();
+  announced = { tackle: false, ten: false, leaders: [] };
+  ending = false;
   if (!touchMode) controls.lock(); // lukt direct bij de host (klik op Start); anderen klikken op "Verder spelen"
 });
 
@@ -3237,10 +4195,71 @@ let record = [];    // alle standen van dit potje, voor de herhaling van het bes
 let glassLog = [];  // gebroken glasplaten: [tijd op de klok, nummer]
 let replaying = false;
 socket.on('state', (s) => {
-  if (!playing) return;
+  if (!playing || warm) return;
   record.push(s);
   onState(s, false);
 });
+
+// ---------- Wachtruimte: rondlopen op het schoolplein terwijl je in de lobby wacht ----------
+socket.on('warmStart', (data) => {
+  pendingWarm = data;
+  if (!$('lobby').classList.contains('hidden') && (!playing || warm)) enterWarm();
+});
+socket.on('wstate', (s) => {
+  if (warm && playing) onState(s, false);
+});
+function enterWarm() {
+  const data = pendingWarm;
+  if (!data || !lobby || lobby.playing) return;
+  pendingWarm = null;
+  stopPlaying();
+  loadMap(data.map);
+  warm = true;
+  playing = true;
+  mode = 'voedsel';
+  teams = {};
+  myTeam = 0;
+  applyRules(null);
+  lastState = null;
+  holderId = null;
+  myItem = myGadget = myFlags = 0;
+  stunned = false;
+  myClass = progress.cls;
+  goTime = 0;
+  for (const [i, x, y, z, tip, dir] of data.props) {
+    if (!props[i]) continue;
+    Object.assign(props[i], { x, y, z, tip, dir, tipAnim: tip });
+    props[i].outer.position.set(x, y, z);
+  }
+  refreshDynamic();
+  Object.assign(me, { x: data.spawn.x, y: data.spawn.y, z: data.spawn.z, vx: 0, vy: 0, vz: 0, onGround: true });
+  camY = me.y + EYE_HEIGHT;
+  buildArms(skinById(progress.skin));
+  selfModel = makePlayerModel(modelInfo(socket.id));
+  selfModel.label.visible = false;
+  selfModel.group.visible = false;
+  scene.add(selfModel.group);
+  camera.fov = settings.fov;
+  camera.updateProjectionMatrix();
+  camera.position.set(me.x, camY, me.z);
+  camera.lookAt(M.CENTER.x, camY, M.CENTER.z);
+  document.body.classList.add('warm');
+  $('hud').classList.remove('hidden');
+  $('warm-hint').classList.remove('hidden');
+}
+function leaveWarm() {
+  if (!warm) return;
+  warm = false;
+  document.body.classList.remove('warm', 'locked');
+  $('warm-hint').classList.add('hidden');
+  stopPlaying();
+}
+// klik op de achtergrond van de lobby: rondlopen. Esc: terug naar de knoppen.
+canvas.addEventListener('click', () => {
+  if (warm && !controls.isLocked && !touchMode) controls.lock();
+});
+controls.addEventListener('lock', () => document.body.classList.add('locked'));
+controls.addEventListener('unlock', () => document.body.classList.remove('locked'));
 
 // Verwerkt één stand van de server. Bij een herhaling (replay) wordt alleen de wereld bijgewerkt
 // en staat je eigen poppetje er gewoon tussen.
@@ -3285,9 +4304,16 @@ function onState(s, replay) {
       remotes.set(id, r);
     }
     r.tx = x; r.ty = y; r.tz = z; r.try = ry;
+    // buffer voor soepele beweging: we tekenen iedereen 100 ms in het verleden, tussen twee standen in
+    if (!r.buf) r.buf = [];
+    if (!replay) {
+      r.buf.push({ t: performance.now(), x, y, z });
+      if (r.buf.length > 12) r.buf.shift();
+    }
     r.dashing = !!(flags & 1);
     r.stunned = !!(flags & 2);
     r.biting = !!(flags & 32);
+    r.holding = !!(s.b && s.b.h === id);
     r.bounty = !!(flags & 128);
     r.out = !!(flags & 256);
     if ((disguise || 0) !== (r.disguise || 0)) {
@@ -3392,6 +4418,11 @@ function onState(s, replay) {
   if (replay) return;
 
   const secs = Math.ceil(s.t);
+  if (!announced.ten && secs <= 10 && secs > 0 && !s.cd) {
+    announced.ten = true;
+    announce('NOG 10 SECONDEN!', '#ff5a4a');
+  }
+  checkComeback(s);
   $('timer').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${s.d ? ' ×2' : ''}`;
   $('timer').classList.toggle('low', secs <= 15);
   $('holding').classList.toggle('hidden', holderId !== socket.id);
@@ -3419,6 +4450,13 @@ function onState(s, replay) {
   $('buff-boost').classList.toggle('hidden', !(myFlags & 4));
   $('buff-shield').classList.toggle('hidden', !(myFlags & 8));
   $('buff-banana').classList.toggle('hidden', !myGadget);
+  // telefoon: alleen de knoppen die je nu kunt gebruiken
+  if (touchMode) {
+    document.body.classList.toggle('has-gadget', !!myGadget);
+    document.body.classList.toggle('can-swap', !!myVehicle || hiderMe());
+    const label = myItem ? 'Gooi' : 'Klap';
+    if ($('touch').querySelector('.t-throw').textContent !== label) $('touch').querySelector('.t-throw').textContent = label;
+  }
   if (myGadget) $('buff-banana-text').textContent = `Q: ${GADGET_NAMES[myGadget]}`;
   $('buff-vehicle').classList.toggle('hidden', !myVehicle);
 
@@ -3441,25 +4479,87 @@ function onState(s, replay) {
       });
       rows.unshift(...teamRows);
     }
-    $('scoreboard').replaceChildren(...rows);
+    // klein scorebord: de beste vier en jezelf. Tab houdt het grote scorebord open.
+    const top = rows.filter((li) => !li.classList.contains('team'));
+    const small = top.slice(0, 4);
+    const mine = top.find((li) => li.classList.contains('me'));
+    if (mine && !small.includes(mine)) small.push(mine);
+    $('scoreboard').replaceChildren(...rows.filter((li) => li.classList.contains('team')), ...small);
+    if (tabHeld) renderTabBoard(s);
   }
 }
+// comeback: wie een halve minuut geleden nog laatste stond en nu eerste staat
+function checkComeback(s) {
+  if (s.p.length < 3 || mode === 'stoelen' || mode === 'prophunt') return;
+  const order = s.p.slice().sort((a, b) => b[5] - a[5]);
+  const now = performance.now();
+  const hist = announced.leaders;
+  hist.push({ t: now, last: order[order.length - 1][0], first: order[0][0], top: order[0][5], second: order[1][5] });
+  while (hist.length && now - hist[0].t > 30000) hist.shift();
+  const leader = order[0][0];
+  if (order[0][5] > order[1][5] && order[0][5] >= 10 && announced.lastLeader && announced.lastLeader !== leader &&
+    hist.some((h) => h.last === leader) && now - (announced.comebackAt || 0) > 20000) {
+    announced.comebackAt = now;
+    announce(`COMEBACK! ${nameOf(leader).toUpperCase()}`, '#9bff7a');
+  }
+  announced.lastLeader = leader;
+}
+let tabHeld = false;
+function renderTabBoard(s) {
+  const rows = s.p.slice().sort((a, b) => b[5] - a[5]).map((p, i) => {
+    const info = roster.get(p[0]) || { name: '?' };
+    const tr = document.createElement('tr');
+    if (p[0] === socket.id) tr.className = 'me';
+    const state = [p[0] === holderId ? 'broodje' : '', p[6] & 128 ? 'premie' : '', p[6] & 256 ? 'eruit' : '', p[6] & 2 ? 'knock-out' : '',
+      mode === 'prophunt' ? (p[12] === 0 ? 'verstopt' : 'zoekt') : ''].filter(Boolean).join(' · ');
+    tr.innerHTML = `<td>${i + 1}</td><td><i class="dot" style="background:${hex(colorOf(p[0]))}"></i><span></span></td><td></td><td></td><td>${p[5]}</td>`;
+    tr.children[1].querySelector('span').textContent = info.name + (info.bot ? ' (bot)' : '');
+    tr.children[2].textContent = info.bot ? '' : `lvl ${info.lvl || 1}`;
+    tr.children[3].textContent = state;
+    return tr;
+  });
+  $('tab-rows').replaceChildren(...rows);
+  $('tab-title').textContent = `${MODE_INFO[mode].name} · ${M.name}`;
+}
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Tab' || !playing) return;
+  e.preventDefault();
+  if (tabHeld) return;
+  tabHeld = true;
+  $('tabboard').classList.remove('hidden');
+  if (lastState) renderTabBoard(lastState);
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code !== 'Tab') return;
+  tabHeld = false;
+  $('tabboard').classList.add('hidden');
+});
 
 // ---------- Herhaling van het beste moment ----------
 // De server wijst het moment aan; de client speelt de opgenomen standen rond dat moment
 // vertraagd af, inclusief meubels, glas en vliegende spullen, met een camera achter de dader.
 let replay = null;
-function startReplay(h, after) {
+function replayText(h) {
+  const who = (id) => (roster.get(id) || { name: '?' }).name;
+  return { tackle: `${who(h.by)} tackelt ${who(h.victim)}`, hit: `${who(h.by)} raakt ${who(h.victim)}`, found: `${who(h.by)} vindt ${who(h.victim)}`,
+    streak: `Killstreak van ${who(h.by)}`, capture: `${who(h.by)} scoort` }[h.text] || '';
+}
+function startReplay(h, after, propsAt) {
   const from = h.rem + 3.2, to = h.rem - 2.4;
   const frames = record.filter((s) => s.t <= from && s.t >= to);
   if (frames.length < 25) return false;
   // de wereld terugzetten naar hoe hij er vlak voor het moment uitzag
   resetProps();
-  for (const s of record) {
-    if (s.t <= from) break;
-    for (const [i, x, y, z, tip, dir] of s.o) {
-      Object.assign(props[i], { x, y, z, tip, dir, tipAnim: tip });
-      props[i].outer.position.set(x, y, z);
+  const setProp = ([i, x, y, z, tip, dir]) => {
+    if (!props[i]) return;
+    Object.assign(props[i], { x, y, z, tip, dir, tipAnim: tip });
+    props[i].outer.position.set(x, y, z);
+  };
+  if (propsAt) propsAt.forEach(setProp);
+  else {
+    for (const s of record) {
+      if (s.t <= from) break;
+      s.o.forEach(setProp);
     }
   }
   for (const [rem, i] of glassLog) {
@@ -3472,10 +4572,7 @@ function startReplay(h, after) {
   replay = { frames, i: 0, clock: 0, h, after, cam: new THREE.Vector3(), first: true };
   replaying = true;
   holderId = null;
-  const who = (id) => (roster.get(id) || { name: '?' }).name;
-  const text = { tackle: `${who(h.by)} tackelt ${who(h.victim)}`, hit: `${who(h.by)} raakt ${who(h.victim)}`,
-    streak: `Killstreak van ${who(h.by)}`, capture: `${who(h.by)} scoort` }[h.text] || '';
-  $('replay-text').textContent = text;
+  $('replay-text').textContent = replayText(h);
   $('replay').classList.remove('hidden');
   return true;
 }
@@ -3563,6 +4660,8 @@ function banner(text, ms = 3000) {
   bannerTimer = setTimeout(() => $('banner').classList.remove('show'), ms);
 }
 const nameOf = (id) => (id === socket.id ? 'Jij' : (roster.get(id) || { name: '?' }).name);
+// waar iemand staat, voor ruimtelijk geluid
+const posOf = (id) => (id === socket.id ? { x: me.x, y: me.y + 1, z: me.z } : remotes.has(id) ? remotes.get(id).group.position : null);
 const victimName = (id) => (id === socket.id ? 'jou' : nameOf(id));
 socket.on('event', (e) => {
   if (!playing) return;
@@ -3581,6 +4680,7 @@ socket.on('event', (e) => {
     toast(`${nameOf(e.victim)} is een tank en vangt de tackle van ${victimName(e.by)} op!`, 3000);
     sfx('crash');
   } else if (e.type === 'streak') {
+    announce(mine ? 'DRIE OP RIJ!' : `${nameOf(e.id).toUpperCase()}: DRIE OP RIJ!`, '#ff5a4a');
     if (mine) banner('Killstreak! Pizzadoos met 10 pizza\'s', 3500);
     else toast(`${nameOf(e.id)} heeft een killstreak en een pizzadoos!`, 3000);
     sfx('power');
@@ -3589,13 +4689,22 @@ socket.on('event', (e) => {
   } else if (e.type === 'tackle') {
     toast(`${nameOf(e.by)} tackelt ${victimName(e.victim)}!`);
     swingRemote(e.by);
+    killfeed(e.by, 'bolt', e.victim);
+    if (e.by === socket.id) { hitmarker(true); shake(0.25); }
+    if (e.victim === socket.id) hurt(0.9);
+    if (!announced.tackle) {
+      announced.tackle = true;
+      announce('EERSTE TACKLE!', '#ff8a3d');
+    }
     if (e.victim === socket.id) lossNote = { text: `Getackeld door ${nameOf(e.by)}!`, kind: 'bad' };
-    sfx(e.victim === socket.id ? 'bad' : 'crash');
-    if (e.by === socket.id) addStat('tackles', 1);
+    sfx(e.victim === socket.id ? 'bad' : 'crash', e.victim === socket.id ? null : posOf(e.victim));
   } else if (e.type === 'hit') {
     toast(`${nameOf(e.by)} gooit ${ITEM_WHAT[e.kind]} tegen ${victimName(e.victim)}!`);
+    killfeed(e.by, ['', 'pizza', 'target', 'target', 'target', 'target', 'target', 'target'][e.kind] || 'target', e.victim);
+    if (e.by === socket.id) hitmarker(false);
+    if (e.victim === socket.id) hurt(0.7);
     const hitSound = fxOf(e.by).sound;
-    sfx(e.by === socket.id ? progress.fx.sound !== 'standaard' ? progress.fx.sound : 'hit' : hitSound !== 'standaard' ? hitSound : 'hit');
+    sfx(e.by === socket.id ? progress.fx.sound !== 'standaard' ? progress.fx.sound : 'hit' : hitSound !== 'standaard' ? hitSound : 'hit', posOf(e.victim));
     if (e.by === socket.id) addStat('hits', 1);
   } else if (e.type === 'shield') {
     toast(`${nameOf(e.victim)} ${e.victim === socket.id ? 'vangt' : 'vangt'} de worp op met een dienblad!`);
@@ -3608,10 +4717,12 @@ socket.on('event', (e) => {
     if (mine) sfx('power');
     if (mine) addStat('powerups', 1);
   } else if (e.type === 'capture') {
+    killfeed(e.id, 'flag', null);
     banner(`${nameOf(e.id)} scoort voor team ${TEAM_NAMES[e.team]}! +15`);
     if (mine) lossNote = { text: 'Gescoord! +15', kind: 'good' };
     sfx('unlock');
   } else if (e.type === 'gameEvent') {
+    if (e.name === 'dubbel') announce('DUBBELE PUNTEN!', '#7fe3ff');
     banner(EVENT_TEXT[e.name], 4000);
     sfx('bell');
   } else if (e.type === 'respawn') {
@@ -3637,7 +4748,7 @@ socket.on('event', (e) => {
   } else if (e.type === 'spray') {
     placeSpray(e);
   } else if (e.type === 'biteStart') {
-    if (!mine) sfx('chomp');
+    if (!mine) sfx('chomp', posOf(e.id));
   } else if (e.type === 'bite') {
     if (mine) biteLock = 0;
     if (e.done) {
@@ -3658,11 +4769,14 @@ socket.on('event', (e) => {
     if (mine) toast('Schijnbeweging! Het broodje is even onzichtbaar');
   } else if (e.type === 'decoyPop') {
     confetti(e.x, e.y + 0.4, e.z);
+    sfx('pop', e);
   } else if (e.type === 'slap') {
     swingRemote(e.by);
     if (e.victim) {
-      sfx('slap');
-      if (e.victim === socket.id) toast(`${nameOf(e.by)} geeft je een klap!`);
+      sfx('slap', posOf(e.victim));
+      if (e.by === socket.id) hitmarker(false);
+      if (e.victim === socket.id) { toast(`${nameOf(e.by)} geeft je een klap!`); hurt(0.35); }
+      if (mode === 'lava' || mode === 'stoelen') killfeed(e.by, 'hand', e.victim);
     }
   } else if (e.type === 'block') {
     toast(`${nameOf(e.by)} kaatst af op het saucijzenbroodje van ${victimName(e.victim)}!`);
@@ -3675,22 +4789,29 @@ socket.on('event', (e) => {
   } else if (e.type === 'trap') {
     const what = ['', 'glijdt uit over een bananenschil', 'zit vast in het plakband', 'pakt een nepbroodje. Boem!', 'krijgt een emmer water over zich heen'][e.kind];
     toast(`${nameOf(e.victim)} ${what}`);
-    if (e.kind === 3) { confetti(e.x, e.y + 0.5, e.z); sfx('pop'); }
-    else if (e.kind === 4) { for (let i = 0; i < 4; i++) puff(e.x, e.y, e.z, 0x9fd4f5, 6); sfx('splash'); }
-    else sfx('slip');
+    killfeed(e.by, 'banana', e.victim);
+    if (e.victim === socket.id) hurt(0.6);
+    if (e.kind === 3) { confetti(e.x, e.y + 0.5, e.z); sfx('pop', e); }
+    else if (e.kind === 4) { for (let i = 0; i < 4; i++) puff(e.x, e.y, e.z, 0x9fd4f5, 6); sfx('splash', e); }
+    else sfx('slip', e);
   } else if (e.type === 'bounty') {
+    killfeed(e.by, 'target', e.victim);
+    announce('PREMIE!', '#f5c542');
     banner(`${nameOf(e.by)} pakt de premie van ${victimName(e.victim)}${e.coins ? `! +${e.coins} munten` : '!'}`, 3500);
     sfx('coin');
   } else if (e.type === 'revenge') {
+    killfeed(e.by, 'skull', e.victim);
     toast(`Wraak! ${nameOf(e.by)} pakt rivaal ${victimName(e.victim)} +5`, 3000);
     if (e.by === socket.id) big('Wraak! +5', 'good');
   } else if (e.type === 'burn') {
-    if (mine) big('Verbrand! −3', 'bad');
-    sfx('burn');
+    killfeed(null, 'fire', e.id);
+    if (mine) { big(e.why === 'heet' ? 'Hete voeten! −3' : 'Verbrand! −3', 'bad'); hurt(0.8); }
+    sfx('burn', posOf(e.id));
     const r = remotes.get(e.id);
     const at = r ? r.group.position : me;
     puff(at.x, at.y + 0.5, at.z, 0xff4a1a, 12);
   } else if (e.type === 'found') {
+    killfeed(e.by, 'eye', e.victim);
     toast(`${nameOf(e.by)} ${e.by === socket.id ? 'vindt' : 'vindt'} ${victimName(e.victim)}!`);
     sfx(e.victim === socket.id ? 'bad' : 'good');
     if (e.victim === socket.id) big('Gevonden! Nu zoek jij mee', 'bad');
@@ -3703,6 +4824,25 @@ socket.on('event', (e) => {
     sfx('good');
   } else if (e.type === 'chairOut') {
     if (!mine) toast(`${nameOf(e.id)} heeft geen stoel en ligt eruit`);
+  } else if (e.type === 'island') {
+    toast('Het gouden eiland is verplaatst!');
+    sfx('power');
+  } else if (e.type === 'melt') {
+    toast('Er smelten plekken weg! Spring eraf');
+    sfx('siren');
+  } else if (e.type === 'sink') {
+    const sp = lavaSpot(e.id);
+    if (sp) puff(sp.x, sp.top, sp.z, 0xff4a1a, 14);
+    sfx('burn');
+  } else if (e.type === 'lavaball') {
+    for (let i = 0; i < 4; i++) puff(e.x, e.y + 0.3 + i * 0.4, e.z, [0xff4a1a, 0xffa53a, 0xf4c430, 0x55565c][i], 8);
+    sfx('crash', e);
+    const d = Math.hypot(me.x - e.x, me.z - e.z);
+    if (d < 8) shake(0.5 * (1 - d / 8));
+  } else if (e.type === 'mark') {
+    addMarker(e);
+  } else if (e.type === 'admin') {
+    toast(e.text, 3500);
   } else if (e.type === 'chairWin') {
     banner(`${nameOf(e.id)} pakt de laatste stoel!`, 3500);
   }
@@ -3716,7 +4856,23 @@ function confetti(x, y, z) {
 }
 
 let lastOver = null; // de uitslag van het laatste potje, voor de schoolkrant en de clip
+// Fluitsignaal: eerst een grote GAME!-stempel terwijl alles vertraagd doorloopt, dan de uitslag.
+let gainedShown = false;
 socket.on('gameOver', (data) => {
+  // de beloning kan al binnenkomen voordat de uitslag in beeld staat
+  gainedShown = false;
+  $('earned').textContent = '';
+  $('over-rewards').replaceChildren();
+  if (!playing || spectating || eliminated) return handleGameOver(data);
+  ending = true;
+  $('tabboard').classList.add('hidden');
+  announce('GAME!', '#ffffff');
+  sfx('whistle');
+  if (controls.isLocked) controls.unlock();
+  setTimeout(() => handleGameOver(data), 1500);
+});
+function handleGameOver(data) {
+  ending = false;
   const watched = spectating;
   stopPlaying();
   lastOver = data;
@@ -3768,9 +4924,11 @@ socket.on('gameOver', (data) => {
   });
 
   $('over-buttons').classList.toggle('hidden', !data.final);
+  renderAwards(data);
+  renderMvpVote(data);
+  if (!watched) archiveReplay(data);
   $('btn-clip').classList.toggle('hidden', !data.highlight || !window.MediaRecorder);
   $('over-next').textContent = '';
-  $('over-rewards').replaceChildren();
   clearInterval(overTimer);
   const nextAt = performance.now() + data.nextIn * 1000;
   const finish = () => {
@@ -3800,11 +4958,12 @@ socket.on('gameOver', (data) => {
     $('over-rank').textContent = `${me2.rpDelta >= 0 ? '+' : ''}${me2.rpDelta} rangpunten · ${rankOf(me2.rp).name}`;
     refreshAccountUi();
   }
-  $('earned').textContent = watched ? '' : 'Beloning wordt berekend…';
-});
+  if (!gainedShown) $('earned').textContent = watched ? '' : 'Beloning wordt berekend…';
+}
 
 // Wat je dit potje verdiende: munten, XP, levels, prestaties, records, reeks en weekverhaal.
 function showGained(gained) {
+  gainedShown = true;
   const parts = [`+${gained.coins} munten`, `+${gained.xp} XP`];
   if (gained.daily) parts.push(`${gained.daily} dagelijkse challenge${gained.daily > 1 ? 's' : ''} gehaald`);
   $('earned').textContent = parts.join(' · ');
@@ -3828,13 +4987,17 @@ function showGained(gained) {
   }));
   if (gained.rewards.length || gained.unlocked.length || gained.storySkin || gained.ach.length) sfx('unlock');
   renderMenuSide();
+  refreshDots();
+  // nieuwe spullen komen groot in beeld zodra de uitslag er staat
+  if ((gained.items || []).length) setTimeout(() => queueShowcase(gained.items), playing ? 0 : 7800);
 }
 const masteryName = (key) => (key.startsWith('cls:') ? (CLASSES.find((c) => c.id === key.slice(4)) || { name: key }).name : (M.maps[key.slice(4)] || { name: key }).name);
 const recordLabel = (key, value) => ({ score: `${value} punten`, hold: `${value} s broodje vast`, far: `worp van ${value} m`, hits: `${value} keer raak` }[key]);
 
 // beloning van de server na een potje (ingelogd)
-socket.on('wallet', ({ account: data, gained }) => {
+socket.on('wallet', ({ account: data, gained, result }) => {
   adopt(data);
+  if (result && result.deltas && result.deltas.honors && !result.final) return refreshDots(); // erepunt, geen potje
   showGained(gained);
 });
 // gast: zelf uitrekenen met dezelfde regels
@@ -3847,8 +5010,40 @@ socket.on('result', (result) => {
 // meldingen van de server na het inloggen: cadeaus en een nieuw ranked-seizoen
 function handleMe(data) {
   adopt(data.account);
+  (data.warnings || []).forEach(showWarning);
   (data.notices || []).forEach((n, i) => setTimeout(() => { banner(n, 4500); sfx('unlock'); }, 800 + i * 4800));
 }
+// ---------- Beheerder: waarschuwingen, berichten en wegsturen ----------
+const warningQueue = [];
+function showWarning(text) {
+  warningQueue.push(text);
+  if (warningQueue.length === 1) nextWarning();
+}
+function nextWarning() {
+  if (!warningQueue.length) return;
+  $('warning-text').textContent = warningQueue[0];
+  $('warning').classList.remove('hidden');
+  if (controls.isLocked) controls.unlock();
+  sfx('bad');
+}
+$('btn-warning-ok').addEventListener('click', () => {
+  warningQueue.shift();
+  $('warning').classList.add('hidden');
+  nextWarning();
+});
+socket.on('warning', ({ text }) => showWarning(text));
+socket.on('adminMessage', ({ text }) => {
+  banner(`Beheerder: ${text}`, 6000);
+  sfx('bell');
+});
+socket.on('kicked', ({ text }) => {
+  lobby = null;
+  stopPlaying();
+  clearPodium();
+  show('menu');
+  $('menu-error').textContent = text ? `Je bent uit de lobby gezet: ${text}` : 'Je bent door de beheerder uit de lobby gezet.';
+});
+
 socket.on('gift', (g) => {
   banner(`${g.from} heeft je een cadeau gestuurd!`, 4000);
   sfx('unlock');
@@ -3962,7 +5157,9 @@ function shopTile(item, deal) {
   el.querySelector('.art').insertAdjacentHTML('beforeend', `<em>${item.kind}</em><em class="rar">${rarity.name}</em>`);
   if (owned) el.classList.add('owned');
   else if (progress.coins < price) el.classList.add('poor');
+  el.addEventListener('pointerenter', () => shopPreview(item));
   el.addEventListener('click', () => {
+    shopPreview(item);
     if (owned || progress.coins < price) return;
     if (confirmId !== item.id) {
       confirmId = item.id;
@@ -3992,6 +5189,53 @@ function shopTile(item, deal) {
     renderShop();
   });
   return el;
+}
+// Rechts in de winkel: je eigen poppetje dat het artikel past (zoals in Fortnite)
+const shopView = {
+  renderer: new THREE.WebGLRenderer({ canvas: $('shop-canvas'), antialias: true, alpha: true }),
+  scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(30, 300 / 440, 0.1, 20), model: null, key: '', emote: 0, start: 0
+};
+shopView.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+shopView.renderer.setSize(300, 440, false);
+shopView.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 2));
+const svLight = new THREE.DirectionalLight(0xffffff, 1.5);
+svLight.position.set(2, 4, 3);
+shopView.scene.add(svLight);
+shopView.camera.position.set(0, 1.05, 5.2);
+shopView.camera.lookAt(0, 0.95, 0);
+function shopPreview(item) {
+  let skin = progress.skin, acc = accString(), emote = 0;
+  if (item) {
+    const [kind, key] = item.id.split(':');
+    if (kind === 'skin') skin = key;
+    if (kind === 'acc') acc = accString(Object.assign({}, progress.acc, { [item.slot]: key }));
+    if (kind === 'emote') emote = Number(key);
+    $('shop-view-name').textContent = item.name;
+    $('shop-view-kind').textContent = `${item.kind} · ${RARITY[item.rarity].name}`;
+  } else {
+    $('shop-view-name').textContent = '';
+    $('shop-view-kind').textContent = 'Beweeg over een artikel om het te passen';
+  }
+  const key = `${skin}|${acc}`;
+  if (key !== shopView.key) {
+    shopView.key = key;
+    if (shopView.model) shopView.scene.remove(shopView.model.group);
+    shopView.model = makePlayerModel({ name: '', skin, acc, color: 0x3aa655 });
+    shopView.model.label.visible = false;
+    shopView.scene.add(shopView.model.group);
+  }
+  shopView.emote = emote;
+  shopView.start = performance.now();
+}
+function updateShopView() {
+  if ($('shop').classList.contains('hidden')) return;
+  if (!shopView.model) shopPreview(null);
+  const t = (performance.now() - shopView.start) / 1000;
+  const pose = poseModel(shopView.model, 0, 0, shopView.emote || (t % 6 < 1.5 ? 3 : 0), t);
+  shopView.model.group.position.y = pose.hop;
+  shopView.model.group.rotation.set(pose.lean || 0, Math.sin(t * 0.8) * 0.5 + pose.spin, pose.roll);
+  setFace(shopView.model, 'happy', performance.now());
+  shopView.renderer.render(shopView.scene, shopView.camera);
 }
 let giftFriends = null;
 function renderShop() {
@@ -4114,16 +5358,91 @@ previewLight.position.set(2, 4, 3);
 preview.scene.add(previewLight);
 preview.camera.position.set(0, 1.35, 5.4);
 preview.camera.lookAt(0, 1.05, 0);
+// Het hoofdmenu is een 3D-podiumpje in de school: jij in het midden, je groep naast je.
+const stage = { models: [], key: '' };
 function buildPreview() {
-  if (preview.model) preview.scene.remove(preview.model.group);
-  preview.model = makePlayerModel({ name: '', skin: progress.skin, acc: accString(), color: 0x3aa655 });
-  preview.model.label.visible = false;
-  preview.scene.add(preview.model.group);
+  const me2 = { id: 'me', name: $('name').value.trim() || (account && account.name) || 'Jij', skin: progress.skin, acc: accString(), pr: progress.prestige, ps: progress.passPrestige };
+  const others = party ? party.members.filter((m) => m.id !== socket.id) : [];
+  const list = [me2].concat(others);
+  const key = JSON.stringify(list);
+  if (key === stage.key) return;
+  stage.key = key;
+  for (const m of stage.models) scene.remove(m.group);
+  stage.models = list.map((info, i) => {
+    const m = makePlayerModel({ name: info.name, skin: info.skin, acc: info.acc, color: [0x3aa655, 0x2f6fde, 0xe23b2e, 0xf4c430][i], pr: info.pr, ps: info.ps });
+    m.label.visible = i > 0; // je eigen naam staat al in het menu
+    m.slot = i;
+    m.wave = 3 + Math.random() * 6;
+    scene.add(m.group);
+    return m;
+  });
 }
-function updatePreview(time) {
-  poseModel(preview.model, 0, 0, 3, time);
-  preview.model.group.rotation.y = Math.sin(time * 0.7) * 0.7;
-  preview.renderer.render(preview.scene, preview.camera);
+// lichtgevende schijven onder je poppetje en op de lege plekken van je groep
+const discMat = new THREE.MeshBasicMaterial({ color: 0x7fe3ff, transparent: true, opacity: 0.55, depthWrite: false });
+const discEmpty = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false });
+const stageDiscs = [0, 1, 2, 3].map((i) => {
+  const d = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.04, 32), i ? discEmpty : discMat);
+  d.visible = false;
+  scene.add(d);
+  return d;
+});
+const STAGE_OFFSETS = [[0, 0], [-1.35, -0.7], [1.35, -0.7], [-2.5, -1.5]];
+const slotVec = new THREE.Vector3();
+function updateSlots(show) {
+  const S = M.BROODJE_SPAWN;
+  const el = $('stage-slots');
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+  const filled = stage.models.length;
+  if (el.children.length !== 3) {
+    el.replaceChildren(...[1, 2, 3].map(() => {
+      const b = document.createElement('button');
+      b.className = 'slot-plus';
+      b.innerHTML = icon('plus');
+      b.title = 'Vriend uitnodigen';
+      b.addEventListener('click', () => { $('party').classList.remove('hidden'); renderParty(); });
+      return b;
+    }));
+  }
+  [...el.children].forEach((b, k) => {
+    const i = k + 1;
+    const [ox, oz] = STAGE_OFFSETS[i];
+    slotVec.set(S.x + ox, S.y + 1.1, S.z + oz).project(camera);
+    b.style.display = i < filled || slotVec.z > 1 ? 'none' : 'grid';
+    b.style.left = `${(slotVec.x * 0.5 + 0.5) * 100}%`;
+    b.style.top = `${(-slotVec.y * 0.5 + 0.5) * 100}%`;
+  });
+}
+function updateStage(time, show) {
+  for (const m of stage.models) m.group.visible = show;
+  stageDiscs.forEach((d) => { d.visible = show; });
+  updateSlots(show);
+  if (!show) return;
+  const S = M.BROODJE_SPAWN;
+  const offsets = STAGE_OFFSETS;
+  stageDiscs.forEach((d, i) => {
+    d.position.set(S.x + offsets[i][0], S.y + 0.03, S.z + offsets[i][1]);
+    d.material = i < stage.models.length ? discMat : discEmpty;
+  });
+  discMat.opacity = 0.45 + Math.sin(time * 3) * 0.12;
+  stage.models.forEach((m) => {
+    const [ox, oz] = offsets[m.slot] || [0, -2];
+    const emote = time % 14 > m.wave && time % 14 < m.wave + 2.2 ? 3 : 0; // af en toe zwaaien
+    const pose = poseModel(m, 0, 0, emote, time);
+    m.group.position.set(S.x + ox, S.y + pose.hop, S.z + oz);
+    m.group.rotation.set(0, Math.sin(time * 0.6 + m.slot) * 0.25 + pose.spin, pose.roll);
+    setFace(m, 'happy', performance.now());
+  });
+  // camera laag voor de spelers, een beetje deinend: je poppetje groot in het midden van het scherm
+  camera.position.set(S.x + Math.sin(time * 0.25) * 0.2, S.y + 1.1, S.z + 3.1);
+  camera.lookAt(S.x, S.y + 0.92, S.z - 0.3);
+  // naambordje net boven je hoofd, zoals in Fortnite
+  camera.updateMatrixWorld();
+  slotVec.set(S.x, S.y + 2.12, S.z).project(camera);
+  const plate = document.querySelector('.stage-name');
+  plate.style.left = `${(slotVec.x * 0.5 + 0.5) * 100}%`;
+  plate.style.top = `${(-slotVec.y * 0.5 + 0.5) * 100}%`;
+  broodje.visible = beacon.visible = false;
 }
 // Rendert een poppetje (eventueel in een emote-houding) naar een plaatje voor de tegels.
 const thumbCache = new Map();
@@ -4176,6 +5495,7 @@ function showProfileTab(id) {
   if (id === 'mastery') renderMastery();
   if (id === 'records') renderRecords(recordMap);
   if (id === 'rivals') renderRivals();
+  if (id === 'replays') renderReplays();
 }
 function renderAchievements() {
   const total = ACHIEVEMENTS.length * 3;
@@ -4526,6 +5846,477 @@ $('btn-clip').addEventListener('click', () => {
   recorder.start();
 });
 
+// ---------- Hoofdmenu: wat ga je spelen, en de uitgelichte kaarten ----------
+const PLAY_LABELS = {
+  public: ['Openbare lobby', 'Speel meteen mee'], ranked: ['Ranked', 'Tegen echte spelers'], create: ['Eigen lobby', 'Kies zelf modus en regels'],
+  practice: ['Oefenen', 'Tegen bots, elke modus'], code: ['Lobby met code', 'Doe mee met vrienden']
+};
+let playChoice = localStorage.getItem('kr-play') || 'public';
+if (!PLAY_LABELS[playChoice]) playChoice = 'public';
+function renderPlayChoice() {
+  $('play-title').textContent = PLAY_LABELS[playChoice][0];
+  $('play-sub').textContent = PLAY_LABELS[playChoice][1];
+  $('code-row').classList.toggle('hidden', playChoice !== 'code');
+  $('btn-play').classList.toggle('hidden', playChoice === 'code');
+  document.querySelectorAll('[data-play]').forEach((b) => b.classList.toggle('on', b.dataset.play === playChoice));
+}
+$('play-choice').addEventListener('click', () => $('play-options').classList.toggle('hidden'));
+document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => {
+  playChoice = b.dataset.play;
+  localStorage.setItem('kr-play', playChoice);
+  $('play-options').classList.add('hidden');
+  renderPlayChoice();
+}));
+$('btn-play').addEventListener('click', () => {
+  if (playChoice === 'public') $('btn-public').click();
+  if (playChoice === 'ranked') $('btn-ranked').click();
+  if (playChoice === 'create') $('btn-create').click();
+  if (playChoice === 'practice') $('btn-practice').click();
+});
+renderPlayChoice();
+// uitgelicht links boven: wisselt elke zes seconden, of klik op een stipje
+let featIndex = 0;
+function showFeat(i) {
+  featIndex = (i + 3) % 3;
+  document.querySelector('.feat-track').style.transform = `translateX(${-featIndex * 100}%)`;
+  document.querySelectorAll('.feat-dots i').forEach((d, k) => d.classList.toggle('on', k === featIndex));
+}
+document.querySelectorAll('.feat-dots i').forEach((d, k) => d.addEventListener('click', () => showFeat(k)));
+setInterval(() => { if (!$('menu').classList.contains('hidden')) showFeat(featIndex + 1); }, 6000);
+
+// ---------- Welkom: de eerste keer dat je het spel opent ----------
+let welcomeSkin = 'leerling';
+function openWelcome() {
+  $('welcome-logo').innerHTML = document.querySelector('.top-logo').innerHTML + '<span class="logo-tag">pak het frikandelbroodje</span>';
+  $('welcome-1').classList.remove('hidden');
+  $('welcome-2').classList.add('hidden');
+  $('welcome').classList.remove('hidden');
+}
+$('btn-welcome-next').addEventListener('click', () => {
+  $('welcome-1').classList.add('hidden');
+  $('welcome-2').classList.remove('hidden');
+  const renderChoice = () => {
+    $('welcome-skins').replaceChildren(...['leerling', 'sporter', 'hoodie', 'brugklasser'].map((id) => {
+      const card = tile('skin', picture(thumb(id, 0, 'skin.geen.rugzak', false, true)), skinById(id).name, id === welcomeSkin ? 'Gekozen' : 'Kies');
+      if (id === welcomeSkin) card.classList.add('selected');
+      card.addEventListener('click', () => { welcomeSkin = id; renderChoice(); });
+      return card;
+    }));
+  };
+  renderChoice();
+  $('welcome-name').focus();
+});
+$('btn-welcome-go').addEventListener('click', () => {
+  const name = $('welcome-name').value.trim();
+  if (name.length < 2) return ($('welcome-error').textContent = 'Kies een naam van minstens 2 letters.');
+  $('name').value = name;
+  playerName();
+  progress.skin = welcomeSkin;
+  save('kr-progress', progress);
+  buildArms(skinById(welcomeSkin));
+  buildPreview();
+  $('welcome').classList.add('hidden');
+  banner(`Welkom, ${name}!`, 3000);
+  sfx('unlock');
+});
+
+// ---------- Emote-wiel: Y ingedrukt houden, muis naar een emote, loslaten ----------
+const wheel = { open: false, x: 0, y: 0, pick: -1, list: [], speed: 1 };
+function openWheel() {
+  if (!canAct() || wheel.open) return;
+  wheel.list = EMOTE_NAMES.map((n, i) => i).filter((i) => i && (i <= 4 || owns('emote:' + i)));
+  wheel.open = true;
+  wheel.x = wheel.y = 0;
+  wheel.pick = -1;
+  wheel.speed = controls.pointerSpeed;
+  controls.pointerSpeed = 0; // de camera staat stil zolang het wiel open is
+  const n = wheel.list.length;
+  $('wheel-ring').replaceChildren(...wheel.list.map((e, i) => {
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    seg.style.left = `calc(50% + ${Math.cos(a) * 130}px)`;
+    seg.style.top = `calc(50% + ${Math.sin(a) * 130}px)`;
+    seg.append(picture(thumb(progress.skin, e)));
+    if (touchMode) seg.addEventListener('touchstart', (ev) => { ev.preventDefault(); wheel.pick = i; closeWheel(true); }, { passive: false });
+    return seg;
+  }));
+  $('wheel-name').textContent = 'Kies een emote';
+  $('wheel').classList.remove('hidden');
+}
+function closeWheel(play) {
+  if (!wheel.open) return;
+  wheel.open = false;
+  controls.pointerSpeed = wheel.speed;
+  $('wheel').classList.add('hidden');
+  if (play && wheel.pick >= 0 && canAct() && me.onGround) setEmote(wheel.list[wheel.pick]);
+}
+document.addEventListener('mousemove', (e) => {
+  if (!wheel.open) return;
+  wheel.x += e.movementX || 0;
+  wheel.y += e.movementY || 0;
+  const len = Math.hypot(wheel.x, wheel.y);
+  if (len > 90) { wheel.x *= 90 / len; wheel.y *= 90 / len; }
+  if (len < 25) return;
+  const n = wheel.list.length;
+  const a = Math.atan2(wheel.y, wheel.x) + Math.PI / 2;
+  wheel.pick = ((Math.round((a / (Math.PI * 2)) * n) % n) + n) % n;
+  [...$('wheel-ring').children].forEach((seg, i) => seg.classList.toggle('on', i === wheel.pick));
+  $('wheel-name').textContent = EMOTE_NAMES[wheel.list[wheel.pick]];
+});
+
+// ---------- Pingen: middelste muisknop zet een markering ----------
+const markers = [];
+function tryMark() {
+  if (!canAct()) return;
+  raycaster.far = 70;
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const hit = raycaster.intersectObjects(wallMeshes, false)[0];
+  raycaster.far = 5;
+  const p = hit ? hit.point : camera.position.clone().add(lookDir().multiplyScalar(20));
+  socket.emit('mark', { x: p.x, y: p.y, z: p.z });
+}
+function addMarker(e) {
+  const el = document.createElement('div');
+  el.className = 'marker';
+  el.style.color = hex(colorOf(e.id));
+  el.innerHTML = icon('target') + '<span></span>';
+  $('markers').append(el);
+  const m = { el, x: e.x, y: e.y, z: e.z, until: performance.now() + 5000 };
+  markers.push(m);
+  sfx('ping', e);
+}
+const markVec = new THREE.Vector3();
+function updateMarkers() {
+  const now = performance.now();
+  for (let i = markers.length - 1; i >= 0; i--) {
+    const m = markers[i];
+    if (now > m.until || !playing) {
+      m.el.remove();
+      markers.splice(i, 1);
+      continue;
+    }
+    markVec.set(m.x, m.y + 0.6, m.z).project(camera);
+    const behind = markVec.z > 1;
+    m.el.style.display = behind ? 'none' : 'flex';
+    m.el.style.left = `${(markVec.x * 0.5 + 0.5) * 100}%`;
+    m.el.style.top = `${(-markVec.y * 0.5 + 0.5) * 100}%`;
+    m.el.querySelector('span').textContent = `${Math.round(Math.hypot(m.x - me.x, m.z - me.z))} m`;
+  }
+}
+
+// ---------- Nieuw vrijgespeeld: een showcase met een draaiend poppetje ----------
+const showcaseQueue = [];
+const showcase = {
+  renderer: new THREE.WebGLRenderer({ canvas: $('showcase-canvas'), antialias: true, alpha: true }),
+  scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(30, 1, 0.1, 20), model: null, item: null
+};
+showcase.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+showcase.renderer.setSize(320, 320, false);
+showcase.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 2));
+const scLight = new THREE.DirectionalLight(0xffffff, 1.6);
+scLight.position.set(2, 4, 3);
+showcase.scene.add(scLight);
+showcase.camera.position.set(0, 1.2, 4.6);
+showcase.camera.lookAt(0, 1, 0);
+function queueShowcase(ids) {
+  for (const id of ids) if (/^(skin|emote|acc|trail|sound|stamp|class):/.test(id)) showcaseQueue.push(id);
+  if (showcaseQueue.length && $('showcase').classList.contains('hidden')) nextShowcase();
+}
+function nextShowcase() {
+  const id = showcaseQueue.shift();
+  if (!id) return $('showcase').classList.add('hidden');
+  const [kind, key] = id.split(':');
+  const names = { skin: 'Skin', emote: 'Emote', acc: 'Accessoire', trail: 'Spoor', sound: 'Raakgeluid', stamp: 'Stempel', class: 'Klasse' };
+  let name = key;
+  if (kind === 'skin') name = skinById(key).name;
+  else if (kind === 'emote') name = EMOTE_NAMES[Number(key)];
+  else if (kind === 'class') name = (CLASSES.find((c) => c.id === key) || {}).name;
+  else name = (SHOP.find((x) => x.id === id) || {}).name || key;
+  if (showcase.model) showcase.scene.remove(showcase.model.group);
+  const look = kind === 'acc' ? accString(Object.assign({}, progress.acc, { [(SHOP.find((x) => x.id === id) || {}).slot || 'hat']: key })) : accString();
+  showcase.model = makePlayerModel({ name: '', skin: kind === 'skin' ? key : progress.skin, acc: look, color: 0x3aa655 });
+  showcase.model.label.visible = false;
+  showcase.scene.add(showcase.model.group);
+  showcase.kind = kind;
+  showcase.key = key;
+  showcase.start = performance.now();
+  $('showcase-kind').textContent = names[kind] || 'Nieuw';
+  $('showcase-name').textContent = name;
+  $('btn-showcase-wear').classList.toggle('hidden', !['skin', 'class', 'trail', 'sound'].includes(kind));
+  $('showcase').classList.remove('hidden');
+  sfx('unlock');
+  if (controls.isLocked) controls.unlock();
+}
+function updateShowcase() {
+  if ($('showcase').classList.contains('hidden') || !showcase.model) return;
+  const t = (performance.now() - showcase.start) / 1000;
+  const pose = poseModel(showcase.model, 0, 0, showcase.kind === 'emote' ? Number(showcase.key) : t % 4 < 1.4 ? 3 : 0, t);
+  showcase.model.group.position.y = pose.hop - Math.max(0, 1 - t * 2.5) * 2; // springt omhoog in beeld
+  showcase.model.group.rotation.set(pose.lean || 0, t * 1.2 + pose.spin, pose.roll);
+  setFace(showcase.model, 'happy', performance.now());
+  showcase.renderer.render(showcase.scene, showcase.camera);
+}
+$('btn-showcase-next').addEventListener('click', nextShowcase);
+$('btn-showcase-wear').addEventListener('click', () => {
+  if (showcase.kind === 'skin') { progress.skin = showcase.key; buildArms(skinById(showcase.key)); }
+  if (showcase.kind === 'class') progress.cls = showcase.key;
+  if (showcase.kind === 'trail') progress.fx.trail = showcase.key;
+  if (showcase.kind === 'sound') progress.fx.sound = showcase.key;
+  save('kr-progress', progress);
+  buildPreview();
+  if (lobby) {
+    socket.emit('setSkin', progress.skin);
+    socket.emit('setClass', progress.cls);
+    socket.emit('setLook', { acc: accString(), fx: fxString(), title: progress.title });
+  }
+  nextShowcase();
+});
+
+// ---------- Stipjes bij nieuwe dingen ----------
+const seenItems = new Set(load('kr-seenitems', { list: [] }).list || []);
+if (!seenItems.size) progress.owned.concat(progress.unlocked.map((id) => 'skin:' + id)).forEach((id) => seenItems.add(id)); // eerste keer: alles is al gezien
+const DOT_GROUPS = { skins: ['skin'], accessories: ['acc', 'trail', 'sound'], emotes: ['emote'], classes: ['class'] };
+function allOwned() {
+  return progress.owned.concat(progress.unlocked.map((id) => 'skin:' + id));
+}
+function refreshDots() {
+  const owned = allOwned();
+  let lockerFresh = false;
+  for (const [panel, kinds] of Object.entries(DOT_GROUPS)) {
+    const fresh = owned.some((id) => kinds.includes(id.split(':')[0]) && !seenItems.has(id));
+    document.querySelectorAll(`#locker [data-open="${panel}"]`).forEach((b) => b.classList.toggle('dot-new', fresh));
+    lockerFresh = lockerFresh || fresh;
+  }
+  document.querySelectorAll('[data-open="locker"]').forEach((b) => b.classList.toggle('dot-new', lockerFresh));
+  const shopDay = String(Catalog.shopFor().day);
+  document.querySelectorAll('[data-open="shop"]').forEach((b) => b.classList.toggle('dot-new', localStorage.getItem('kr-shopday') !== shopDay));
+  const tiers = ACHIEVEMENTS.reduce((a, x) => a + (progress.ach[x.id] || 0), 0);
+  document.querySelectorAll('[data-open="account"]').forEach((b) => b.classList.toggle('dot-new', Number(localStorage.getItem('kr-achseen') || 0) < tiers));
+}
+function markSeen(panel) {
+  if (panel === 'shop') localStorage.setItem('kr-shopday', String(Catalog.shopFor().day));
+  if (panel === 'account') localStorage.setItem('kr-achseen', String(ACHIEVEMENTS.reduce((a, x) => a + (progress.ach[x.id] || 0), 0)));
+  const kinds = DOT_GROUPS[panel];
+  if (kinds) allOwned().forEach((id) => { if (kinds.includes(id.split(':')[0])) seenItems.add(id); });
+  try { localStorage.setItem('kr-seenitems', JSON.stringify({ list: [...seenItems] })); } catch (e) { /* vol */ }
+  refreshDots();
+}
+document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => markSeen(b.dataset.open)));
+setTimeout(refreshDots, 500);
+
+// ---------- Eindscherm: MVP-kaartjes en stemmen op de speler van het potje ----------
+const AWARDS = [
+  ['Broodjeskoning', (p) => p.hold, (v) => `${v} s met het broodje`],
+  ['Scherpschutter', (p) => p.hits, (v) => `${v} keer raak`],
+  ['Tackelaar', (p) => p.tackles, (v) => `${v} tackles`],
+  ['Sloper', (p) => p.tables + p.glass, (v) => `${v} dingen gesloopt`],
+  ['Lappenpop', (p) => p.knocked, (v) => `${v} keer gevlogen`],
+  ['Klapper', (p) => p.slaps, (v) => `${v} klappen`],
+  ['Speurneus', (p) => p.finds, (v) => `${v} gevonden`],
+  ['Lavaloper', (p) => p.lava, (v) => `${v} s veilig`],
+  ['Smulpaap', (p) => p.bites, (v) => `${v} happen`]
+];
+function renderAwards(data) {
+  const picks = AWARDS.map(([title, get, text]) => {
+    const best = data.ranking.slice().sort((a, b) => get(b) - get(a))[0];
+    return best && get(best) > 0 ? { title, p: best, text: text(get(best)), v: get(best) } : null;
+  }).filter(Boolean).slice(0, 4);
+  $('mvp-cards').replaceChildren(...picks.map((a, i) => {
+    const card = document.createElement('div');
+    card.className = 'mvp-card';
+    card.style.animationDelay = `${0.1 + i * 0.12}s`;
+    card.innerHTML = '<small></small><img alt=""><b></b><span></span>';
+    card.querySelector('small').textContent = a.title;
+    card.querySelector('img').src = thumb(a.p.skin, 0, a.p.acc, false, true);
+    card.querySelector('b').textContent = a.p.name;
+    card.querySelector('span').textContent = a.text;
+    return card;
+  }));
+}
+let mvpTimer = 0;
+function renderMvpVote(data) {
+  clearInterval(mvpTimer);
+  const people = data.ranking.filter((p) => !p.isBot);
+  $('mvp-vote').classList.toggle('hidden', !data.mvp || people.length < 2);
+  if (!data.mvp) return;
+  const until = performance.now() + data.mvp * 1000;
+  let voted = null;
+  const counts = {};
+  const draw = () => {
+    $('mvp-list').replaceChildren(...people.filter((p) => p.id !== socket.id).map((p) => {
+      const chip = document.createElement('button');
+      chip.className = 'chip' + (voted === p.id ? ' active' : '');
+      chip.innerHTML = icon('heart') + '<span></span><b></b>';
+      chip.querySelector('span').textContent = p.name;
+      chip.querySelector('b').textContent = counts[p.id] || '';
+      chip.addEventListener('click', () => {
+        voted = p.id;
+        socket.emit('mvpVote', p.id);
+        draw();
+      });
+      return chip;
+    }));
+  };
+  draw();
+  socket.off('mvpCount');
+  socket.on('mvpCount', (c) => { Object.keys(counts).forEach((k) => delete counts[k]); Object.assign(counts, c); draw(); });
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((until - performance.now()) / 1000));
+    $('mvp-left').textContent = left ? `· nog ${left} s` : '';
+    if (!left) clearInterval(mvpTimer);
+  };
+  tick();
+  mvpTimer = setInterval(tick, 500);
+}
+socket.on('mvpResult', (res) => {
+  $('mvp-vote').classList.add('hidden');
+  if (!res) return;
+  banner(`${res.id === socket.id ? 'Jij bent' : `${res.name} is`} de speler van het potje! (${res.votes} ${res.votes === 1 ? 'stem' : 'stemmen'})`, 5000);
+  sfx('fanfare');
+  // gasten tellen hun erepunt zelf
+  if (res.id === socket.id && !account) {
+    const out = Economy.award(localAccount(), { score: 0, won: false, final: false, factor: 0, deltas: { honors: 1 }, maxes: {} });
+    applyLocal(out);
+  }
+});
+
+// ---------- Herhalingen: de hoogtepunten van je laatste vijf potjes ----------
+function archiveReplay(data) {
+  if (!data.highlight || !record.length) return;
+  const h = data.highlight;
+  const from = h.rem + 3.2, to = h.rem - 2.4;
+  const frames = record.filter((st) => st.t <= from && st.t >= to);
+  if (frames.length < 25) return;
+  // zo stonden de meubels vlak voor het moment
+  const propsAt = new Map();
+  for (const st of record) {
+    if (st.t <= from) break;
+    for (const o of st.o) propsAt.set(o[0], o);
+  }
+  const item = {
+    at: Date.now(), map: data.map, mode: data.mode, h, frames, props: [...propsAt.values()], glass: glassLog.filter(([rem]) => rem > to),
+    roster: [...roster.entries()].map(([id, p]) => [id, { name: p.name, skin: p.skin, acc: p.acc, color: p.color }]), teams,
+    text: replayText(h)
+  };
+  try {
+    const list = JSON.parse(localStorage.getItem('kr-replays') || '[]');
+    list.unshift(item);
+    while (list.length > 5) list.pop();
+    localStorage.setItem('kr-replays', JSON.stringify(list));
+  } catch (e) {
+    try { localStorage.setItem('kr-replays', JSON.stringify([item])); } catch (e2) { /* te groot */ }
+  }
+}
+function renderReplays() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('kr-replays') || '[]'); } catch (e) { /* kapot */ }
+  $('replay-list').replaceChildren(...(list.length ? list.map((r, i) => {
+    const li = row(0xf26a1b, `${M.maps[r.map] ? M.maps[r.map].name : r.map} · ${MODE_INFO[r.mode] ? MODE_INFO[r.mode].name : ''}`);
+    const when = document.createElement('small');
+    when.textContent = new Date(r.at).toLocaleString('nl-NL', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    const watch = document.createElement('button');
+    watch.className = 'btn small primary';
+    watch.textContent = 'Bekijk';
+    watch.addEventListener('click', () => playArchived(r, false));
+    const clip = document.createElement('button');
+    clip.className = 'btn small';
+    clip.textContent = 'Clip';
+    clip.addEventListener('click', () => playArchived(r, true));
+    li.append(when, watch, clip);
+    return li;
+  }) : [Object.assign(document.createElement('li'), { textContent: 'Speel een potje, dan verschijnt hier het beste moment.' })]));
+}
+function playArchived(r, asClip) {
+  if (playing || lobby) return toast('Kan alleen vanuit het hoofdmenu');
+  document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
+  loadMap(r.map);
+  mode = r.mode;
+  teams = r.teams || {};
+  roster = new Map(r.roster);
+  record = r.frames;
+  glassLog = r.glass || [];
+  const back = () => { show('menu'); roster = new Map(); };
+  let recorder = null;
+  const chunks = [];
+  const type = window.MediaRecorder && ['video/webm;codecs=vp9', 'video/webm', 'video/mp4'].find((t) => MediaRecorder.isTypeSupported(t));
+  if (asClip && type) {
+    recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: type, videoBitsPerSecond: 6000000 });
+    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => download(new Blob(chunks, { type }), `kantine-royale-clip.${type.includes('mp4') ? 'mp4' : 'webm'}`);
+  }
+  if (!startReplay(r.h, () => { if (recorder) recorder.stop(); back(); }, r.props)) return back();
+  $('replay-text').textContent = r.text || '';
+  show(null);
+  if (recorder) recorder.start();
+}
+
+// ---------- Groep: samen met vrienden spelen ----------
+const partyLook = () => Object.assign(joinData(), { name: $('name').value.trim() || (account && account.name) || 'Speler' });
+function sendPartyLook() {
+  if (party) socket.emit('partyLook', partyLook());
+}
+socket.on('party', (info) => {
+  party = info;
+  $('party-summary').textContent = info ? `${info.members.length} in je groep · code ${info.code}` : 'Speel samen met vrienden';
+  $('btn-party').classList.toggle('active', !!info);
+  buildPreview();
+  if (!$('party').classList.contains('hidden')) renderParty();
+});
+socket.on('partyPulled', (res) => {
+  if (res && res.ok) {
+    $('menu-error').textContent = '';
+    document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
+    show('lobby');
+    toast('Je groep is een lobby in gegaan, je bent meegekomen');
+  }
+});
+socket.on('partyInvite', ({ from, code }) => {
+  banner(`${from} nodigt je uit in zijn groep`, 5000);
+  $('party-code').value = code;
+  $('party').classList.remove('hidden');
+  renderParty();
+});
+function renderParty() {
+  $('party-none').classList.toggle('hidden', !!party);
+  $('party-in').classList.toggle('hidden', !party);
+  if (!party) return;
+  $('party-code-show').textContent = party.code;
+  $('party-members').replaceChildren(...party.members.map((m) => {
+    const li = row(m.id === party.leader ? 0xf5c542 : 0x19b5b0, m.name + (m.id === socket.id ? ' (jij)' : ''));
+    li.append(badge(m.id === party.leader ? 'leider' : 'lid', 'tag'));
+    return li;
+  }));
+  $('party-friends').replaceChildren();
+  if (!account) return $('party-friends').append(Object.assign(document.createElement('li'), { textContent: 'Log in om vrienden uit te nodigen, of deel de code.' }));
+  api('/api/friends').then(({ friends }) => {
+    const online = friends.filter((f) => f.online);
+    $('party-friends').replaceChildren(...(online.length ? online.map((f) => {
+      const li = row(0x3aa655, f.name);
+      const b = document.createElement('button');
+      b.className = 'btn small primary';
+      b.textContent = 'Uitnodigen';
+      b.addEventListener('click', () => { socket.emit('partyInvite', f.username); b.textContent = 'Verstuurd'; b.disabled = true; });
+      li.append(b);
+      return li;
+    }) : [Object.assign(document.createElement('li'), { textContent: 'Geen vrienden online.' })]));
+  }).catch(() => {});
+}
+document.querySelector('[data-open="party"]').addEventListener('click', renderParty);
+$('btn-party-create').addEventListener('click', () => {
+  socket.emit('partyCreate', partyLook(), (res) => { if (!res.ok) $('party-error').textContent = res.error; });
+});
+$('btn-party-join').addEventListener('click', () => {
+  $('party-error').textContent = '';
+  socket.emit('partyJoin', Object.assign(partyLook(), { code: $('party-code').value }), (res) => {
+    if (!res.ok) $('party-error').textContent = res.error;
+  });
+});
+$('btn-party-leave').addEventListener('click', () => socket.emit('partyLeave'));
+$('btn-party-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(party.code); toast('Groepscode gekopieerd'); } catch (e) { /* niet toegestaan */ }
+});
+
 // ---------- Uitnodigingslink: /?lobby=CODE ----------
 const invite = (new URLSearchParams(location.search).get('lobby') || '').toUpperCase().slice(0, 4);
 if (invite.length === 4) {
@@ -4537,10 +6328,52 @@ if (invite.length === 4) {
 }
 
 // ---------- Uitleg voor nieuwe spelers ----------
-if (!localStorage.getItem('kr-seen')) {
-  localStorage.setItem('kr-seen', '1');
-  $('howto').classList.remove('hidden');
+// laadscherm: kaartplaatjes voor het rad maken, daarna het menu (en de eerste keer het welkomstscherm)
+const TIPS = [
+  'Wist je dat je met H een schijnbeweging maakt? Het echte broodje is dan even onzichtbaar.',
+  'Neem een hap met B: 5 punten, maar je moet een seconde stilstaan.',
+  'Houd Tab ingedrukt voor het grote scorebord.',
+  'Zonder voorwerp in je hand geeft klikken een klap.',
+  'Bij De vloer is lava geeft het gouden eiland 3 punten per seconde.',
+  'Met de middelste muisknop zet je een markering voor je teamgenoten.',
+  'Houd Y ingedrukt voor het emote-wiel.',
+  'Gooi een bord op de lava: het drijft vijf seconden als vlot.',
+  'Speel elke dag voor je inlogreeks: dag 7 en 30 geven iets unieks.',
+  'Maak een groep met vrienden, dan komen jullie altijd in hetzelfde potje.'
+];
+$('load-tip').textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
+const mapPreview = {};
+async function bootLoading() {
+  const ids = M.MAP_IDS;
+  const shot = document.createElement('canvas');
+  shot.width = 320;
+  shot.height = 180;
+  for (let i = 0; i < ids.length; i++) {
+    $('load-fill').style.width = `${((i + 0.5) / (ids.length + 1)) * 100}%`;
+    await new Promise((ok) => setTimeout(ok, 30));
+    try {
+      loadMap(ids[i]);
+      const a = 0.7;
+      camera.position.set(M.CENTER.x + Math.cos(a) * M.VIEW * 0.8, M.GROUND + 26, M.CENTER.z + Math.sin(a) * M.VIEW * 0.7);
+      camera.lookAt(M.CENTER.x, M.GROUND + 2, M.CENTER.z);
+      sun.shadow.needsUpdate = true;
+      renderer.clear();
+      renderer.render(scene, camera);
+      const ctx = shot.getContext('2d');
+      ctx.drawImage(renderer.domElement, 0, 0, renderer.domElement.width, renderer.domElement.height, 0, 0, 320, 180);
+      mapPreview[ids[i]] = shot.toDataURL('image/jpeg', 0.8);
+    } catch (e) {
+      console.warn('Kaartplaatje mislukt', e);
+    }
+  }
+  loadMap('kantine');
+  $('load-fill').style.width = '100%';
+  await new Promise((ok) => setTimeout(ok, 250));
+  $('loading').classList.add('done');
+  if (!localStorage.getItem('kr-name') && !getToken()) openWelcome();
 }
+setTimeout(bootLoading, 50);
+localStorage.setItem('kr-seen', '1');
 refreshAccountUi(); // haalt ook beloningen op die nog niet waren uitgekeerd
 socket.on('connect', () => { if (getToken()) socket.emit('hello', getToken()); });
 if (getToken()) {
@@ -4595,7 +6428,7 @@ if (touchMode) {
     bite: (down) => down && tryBite(),
     pass: (down) => down && tryPass(),
     dismount: (down) => down && canAct() && (hiderMe() ? socket.emit('disguise') : myVehicle && socket.emit('dismount', false)),
-    emote: (down) => down && playSlot(Math.max(0, progress.loadout.findIndex((n) => n))),
+    emote: (down) => down && (wheel.open ? closeWheel(false) : openWheel()),
     menu: (down) => {
       if (!down || !playing || spectating) return;
       paused = true;
@@ -4609,25 +6442,73 @@ if (touchMode) {
   });
 }
 
-socket.on('disconnect', () => {
+// Verbinding kwijt: even proberen terug te komen. Lukt dat binnen 30 seconden, dan speel je gewoon verder.
+let lostAt = 0;
+let lostTimer = 0;
+function backToMenu(text) {
+  $('reconnect').classList.add('hidden');
+  clearInterval(lostTimer);
   lobby = null;
   stopPlaying();
   clearPodium();
-  $('menu-error').textContent = 'Verbinding met de server verbroken.';
+  $('menu-error').textContent = text || '';
   show('menu');
+}
+socket.on('disconnect', (reason) => {
+  if (reason === 'io server disconnect' || (!lobby && !playing)) {
+    if (reason === 'io server disconnect') backToMenu('De verbinding met de server is verbroken.');
+    return;
+  }
+  lostAt = performance.now();
+  $('reconnect').classList.remove('hidden');
+  if (controls.isLocked) controls.unlock();
+  clearInterval(lostTimer);
+  const tickLost = () => {
+    const left = Math.max(0, 30 - Math.floor((performance.now() - lostAt) / 1000));
+    $('reconnect-left').textContent = left;
+    if (!left) backToMenu('De verbinding met de server is verbroken.');
+  };
+  tickLost();
+  lostTimer = setInterval(tickLost, 500);
 });
+socket.on('connect', () => {
+  if (!lostAt) return;
+  lostAt = 0;
+  clearInterval(lostTimer);
+  $('reconnect').classList.add('hidden');
+  if (socket.recovered) toast('Weer verbonden!', 2500);
+  else backToMenu('Je was te lang weg, het potje is zonder jou verder gegaan.');
+});
+$('btn-reconnect-menu').addEventListener('click', () => backToMenu(''));
+socket.on('afk', ({ seconds }) => {
+  big(`Beweeg! Over ${seconds} s word je eruit gezet`, 'bad');
+});
+
+// als app te installeren (werkt alleen via https of op localhost)
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 // ---------- Game loop ----------
 const clock = new THREE.Clock();
+let fpsFrames = 0, fpsTime = 0;
 let frameCount = 0;
 const menuEl = $('menu');
 function frame() {
   requestAnimationFrame(frame);
   if (++frameCount % 2 === 0) sun.shadow.needsUpdate = true;
-  const dt = Math.min(0.05, clock.getDelta());
+  const raw = clock.getDelta();
+  const dt = Math.min(0.05, raw) * (ending ? 0.25 : 1); // GAME!: alles vertraagd
+  if (settings.fps) {
+    fpsFrames++;
+    fpsTime += raw;
+    if (fpsTime > 0.5) {
+      $('fps').textContent = `${Math.round(fpsFrames / fpsTime)} fps`;
+      fpsFrames = fpsTime = 0;
+    }
+  }
   const time = clock.elapsedTime;
 
   updateOutside(dt);
+  updateLife(dt, time);
   updateProps(dt);
   updateParticles(dt);
   updateDarkness(dt);
@@ -4649,8 +6530,10 @@ function frame() {
       updateReplay(dt, time);
     } else if (podium) {
       updatePodium(time, dt);
+    } else if (!menuEl.classList.contains('hidden')) {
+      updateStage(time, true);
     } else {
-      // rustige rondvlucht boven de school achter de menu's
+      // rustige rondvlucht boven de school achter de lobby
       const a = time * 0.1;
       camera.position.set(M.CENTER.x + Math.cos(a) * M.VIEW, M.GROUND + 32, M.CENTER.z + Math.sin(a) * (M.VIEW - 2));
       camera.lookAt(M.CENTER.x, M.GROUND + 3, M.CENTER.z);
@@ -4662,10 +6545,23 @@ function frame() {
     }
   }
 
-  if (!menuEl.classList.contains('hidden')) updatePreview(time);
+  if (playing || podium || replaying || menuEl.classList.contains('hidden')) updateStage(time, false);
+  if (playing) updateMarkers();
+  updateShowcase();
+  updateShopView();
+  if (!$('locker').classList.contains('hidden')) ($('locker-pick').classList.contains('hidden') ? lockerView : pickView).render();
   renderer.clear();
-  if (podium && !playing && !replaying) renderer.render(podiumScene, podiumCam);
-  else renderer.render(scene, camera);
+  // doorzichtige en lichtgevende dingen (lampen, ringen, lava, lichtbundels) krijgen geen cartoonrand
+  if (outline.enabled && frameCount % 30 === 0) {
+    for (const root of [scene, podiumScene]) {
+      root.traverse((o) => {
+        const m = o.material;
+        if (m && !Array.isArray(m) && !m.userData.outlineParameters && (m.isMeshBasicMaterial || m.transparent)) m.userData.outlineParameters = { visible: false };
+      });
+    }
+  }
+  if (podium && !playing && !replaying) outline.render(podiumScene, podiumCam);
+  else outline.render(scene, camera);
   if (playing && !spectating && !eliminated && !stunned && !myEmote && !replaying && !hiderMe()) {
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);

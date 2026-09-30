@@ -48,15 +48,16 @@
   }
 
   function newGained() {
-    return { coins: 0, xp: 0, rewards: [], unlocked: [], daily: 0, ach: [], mastery: [], records: [], story: [], storySkin: null, level: 0, streak: null, extra: 0 };
+    return { coins: 0, xp: 0, rewards: [], unlocked: [], daily: 0, ach: [], mastery: [], records: [], story: [], storySkin: null, level: 0, streak: null, extra: 0, items: [] };
   }
   function giveCoins(p, n, gained) {
     p.coins += n;
     gained.coins += n;
   }
-  function giveItem(p, id) {
+  function giveItem(p, id, gained) {
     if (p.owned.includes(id)) return false;
     p.owned.push(id);
+    if (gained) gained.items.push(id); // voor de "nieuw!"-showcase
     return true;
   }
 
@@ -70,7 +71,7 @@
     while (p.bpTier < tier) {
       const reward = pass[p.bpTier++];
       if (reward.coins) giveCoins(p, reward.coins, gained);
-      else if (!giveItem(p, reward.id)) giveCoins(p, 15, gained); // had je al (na een prestige): munten
+      else if (!giveItem(p, reward.id, gained)) giveCoins(p, 15, gained); // had je al (na een prestige): munten
       gained.rewards.push(reward.label);
     }
     const before = Catalog.careerOf(p.careerXp).level;
@@ -92,7 +93,7 @@
     for (let level = before + 1; level <= after; level++) {
       giveCoins(p, 25, gained);
       gained.mastery.push({ key, level });
-      if (level === Catalog.MASTERY_MAX && key.startsWith('cls:')) giveItem(p, 'skin:gd' + key.slice(4));
+      if (level === Catalog.MASTERY_MAX && key.startsWith('cls:')) giveItem(p, 'skin:gd' + key.slice(4), gained);
     }
   }
 
@@ -124,7 +125,7 @@
     stats.storySteps = (stats.storySteps || 0) + 1;
     gained.story.push(p.story.step);
     giveCoins(p, 40, gained);
-    if (p.story.step === steps.length && giveItem(p, 'skin:' + week.skin)) gained.storySkin = Catalog.weekSkin(week.skin).name;
+    if (p.story.step === steps.length && giveItem(p, 'skin:' + week.skin, gained)) gained.storySkin = Catalog.weekSkin(week.skin).name;
   }
 
   // Telt statistieken op en kijkt wat er daardoor vrijkomt.
@@ -153,6 +154,7 @@
       if ((stats[c.stat] || 0) >= c.goal && !p.unlocked.includes(c.skin)) {
         p.unlocked.push(c.skin);
         gained.unlocked.push(Catalog.skinById(c.skin).name);
+        gained.items.push('skin:' + c.skin);
       }
     }
     advanceStory(p, stats, deltas || {}, gained);
@@ -169,8 +171,8 @@
     const coins = 10 + 5 * Math.min(p.streak.days, 10);
     giveCoins(p, coins, gained);
     let reward = null;
-    if (p.streak.days === 7 && giveItem(p, 'stamp:reeks7')) reward = 'Stempel Vlammenreeks';
-    if (p.streak.days === 30 && giveItem(p, 'skin:stamgast')) reward = 'Skin Stamgast';
+    if (p.streak.days === 7 && giveItem(p, 'stamp:reeks7', gained)) reward = 'Stempel Vlammenreeks';
+    if (p.streak.days === 30 && giveItem(p, 'skin:stamgast', gained)) reward = 'Skin Stamgast';
     gained.streak = { days: p.streak.days, coins, reward };
   }
 

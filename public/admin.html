@@ -5,46 +5,113 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kantine Royale · beheer</title>
   <style>
-    body { max-width: 760px; margin: 0 auto; padding: 24px 16px; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #26262b; background: #fbf8f2; }
-    h1 { font-size: 24px; }
-    input, button, select { padding: 9px 12px; font: inherit; border: 2px solid #ddd6c8; border-radius: 8px; }
+    body { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #26262b; background: #fbf8f2; }
+    h1 { margin: 0 0 4px; font-size: 26px; color: #5b3fa8; }
+    h2 { margin: 0 0 10px; font-size: 18px; color: #5b3fa8; }
+    section { margin: 16px 0; padding: 16px; background: #fff; border: 2px solid #ebe5d8; border-radius: 14px; }
+    input, button, select, textarea { padding: 8px 11px; font: inherit; border: 2px solid #ddd6c8; border-radius: 8px; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 54px; }
     button { font-weight: 800; color: #fff; background: #5b3fa8; border-color: #5b3fa8; cursor: pointer; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
-    td, th { padding: 7px 8px; text-align: left; border-bottom: 1px solid #e4ddcf; }
-    #note { font-weight: 700; color: #d9540f; }
+    button:hover { filter: brightness(1.1); }
+    button.orange { background: #f26a1b; border-color: #f26a1b; }
+    button.red { background: #d12f2f; border-color: #d12f2f; }
+    button.grey { background: #8d9299; border-color: #8d9299; }
+    button.small { padding: 4px 8px; font-size: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+    .tabs button { background: #c9c3b6; border-color: #c9c3b6; color: #26262b; }
+    .tabs button.on { background: #5b3fa8; border-color: #5b3fa8; color: #fff; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td, th { padding: 7px 8px; text-align: left; border-bottom: 1px solid #e4ddcf; vertical-align: top; }
+    #note { position: sticky; top: 0; z-index: 2; min-height: 22px; margin: 0; padding: 6px 10px; font-weight: 800; color: #fff; background: #26262b; border-radius: 8px; }
+    #note:empty { display: none; }
+    .stats { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 800; }
+    .stats span { padding: 4px 10px; background: #f3eefc; border-radius: 999px; }
+    .items { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; }
+    .items span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; font-size: 13px; font-weight: 700; background: #f3eefc; border-radius: 999px; }
+    .lobby { margin: 10px 0; padding: 12px; border: 2px solid #ebe5d8; border-radius: 12px; }
+    .lobby h3 { margin: 0 0 6px; font-size: 16px; }
+    .lobby h3 small { font-weight: 600; color: #55565c; }
+    .player { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0; border-top: 1px solid #f0ebe0; }
+    .player b { min-width: 150px; }
+    .player em { font-style: normal; font-size: 12px; color: #55565c; min-width: 70px; }
+    .muted { color: #8d9299; font-size: 13px; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <h1>Kantine Royale · beheer</h1>
-  <p>Vul de beheersleutel in (de waarde van ADMIN_KEY op de server).</p>
+  <p class="muted">Vul je beheersleutel in (de waarde van ADMIN_KEY op de server). De sleutel wordt alleen in dit tabblad onthouden.</p>
   <div class="row">
-    <input id="key" type="password" placeholder="Beheersleutel" autocomplete="off">
-    <button id="load">Meldingen laden</button>
-  </div>
-  <div class="row">
-    <input id="name" type="text" placeholder="Accountnaam">
-    <button id="ban">Blokkeren</button>
-    <button id="unban">Blokkade opheffen</button>
-  </div>
-  <h2>Iets geven</h2>
-  <p>Geef een ingelogde speler een skin, klasse, emote, stempel, accessoire, spoor of raakgeluid, en/of munten. De speler krijgt er een melding van.</p>
-  <div class="row">
-    <input id="give-name" type="text" placeholder="Accountnaam">
-    <select id="give-item"><option value="">Laad eerst de lijst →</option></select>
-    <button id="give-load">Lijst laden</button>
-  </div>
-  <div class="row">
-    <input id="give-coins" type="number" min="0" max="100000" placeholder="Munten (optioneel)">
-    <button id="give">Geven</button>
+    <input id="key" type="password" placeholder="Beheersleutel" autocomplete="off" size="40">
+    <button id="check">Inloggen</button>
   </div>
   <p id="note"></p>
-  <table>
-    <thead><tr><th>Wanneer</th><th>Gemeld</th><th>Reden</th><th>Door</th></tr></thead>
-    <tbody id="reports"></tbody>
-  </table>
+
+  <div class="row tabs">
+    <button data-tab="live" class="on">Live in het spel</button>
+    <button data-tab="player">Speler beheren</button>
+    <button data-tab="reports">Meldingen</button>
+  </div>
+
+  <!-- ===== Live ===== -->
+  <section id="tab-live">
+    <h2>Lobby's en potjes</h2>
+    <p class="muted">Ververst elke 3 seconden. Kies een actie per lobby of per speler.</p>
+    <div id="lobbies"><p class="muted">Log eerst in.</p></div>
+  </section>
+
+  <!-- ===== Speler ===== -->
+  <section id="tab-player" class="hidden">
+    <h2>Speler opzoeken</h2>
+    <div class="row">
+      <input id="name" type="text" placeholder="Accountnaam">
+      <button id="lookup">Opzoeken</button>
+    </div>
+    <div id="account" class="hidden">
+      <div class="stats" id="acc-stats"></div>
+
+      <h2 style="margin-top:16px">Waarschuwen</h2>
+      <textarea id="warn-text" maxlength="200" placeholder="Bijvoorbeeld: Kies een nettere naam of je account wordt geblokkeerd."></textarea>
+      <div class="row"><button id="warn" class="orange">Waarschuwing sturen</button><span class="muted">Online ziet de speler hem meteen, anders bij de volgende keer inloggen.</span></div>
+      <div id="acc-warnings" class="muted"></div>
+
+      <h2 style="margin-top:16px">Geven</h2>
+      <div class="row">
+        <select id="give-item"><option value="">Geen voorwerp, alleen munten</option></select>
+        <input id="give-coins" type="number" min="0" max="100000" placeholder="Munten">
+        <button id="give">Geven</button>
+      </div>
+
+      <h2 style="margin-top:16px">Afpakken</h2>
+      <div class="row">
+        <input id="take-coins" type="number" min="0" placeholder="Munten afpakken">
+        <button id="take-coins-btn" class="red">Munten afpakken</button>
+      </div>
+      <p class="muted">Klik op × om een voorwerp af te pakken. Had de speler het aan, dan krijgt hij het standaarduiterlijk terug.</p>
+      <div class="items" id="acc-items"></div>
+
+      <h2 style="margin-top:16px">Blokkeren</h2>
+      <div class="row">
+        <button id="ban" class="red">Blokkeren</button>
+        <button id="unban" class="grey">Blokkade opheffen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Meldingen ===== -->
+  <section id="tab-reports" class="hidden">
+    <h2>Meldingen van spelers</h2>
+    <button id="load">Meldingen laden</button>
+    <table>
+      <thead><tr><th>Wanneer</th><th>Gemeld</th><th>Reden</th><th>Door</th></tr></thead>
+      <tbody id="reports"></tbody>
+    </table>
+  </section>
+
   <script>
     const $ = (id) => document.getElementById(id);
+    try { $('key').value = sessionStorage.getItem('kr-admin') || ''; } catch (e) { /* geen opslag */ }
+    const note = (text) => { $('note').textContent = text; clearTimeout(note.t); note.t = setTimeout(() => { $('note').textContent = ''; }, 5000); };
     async function call(path, body) {
       const res = await fetch(path, {
         method: body ? 'POST' : 'GET',
@@ -55,50 +122,151 @@
       if (!res.ok) throw new Error(data.error || 'Er ging iets mis.');
       return data;
     }
-    async function load() {
-      try {
-        const { reports } = await call('/api/admin/reports');
-        $('note').textContent = reports.length ? '' : 'Er zijn geen meldingen.';
-        $('reports').replaceChildren(...reports.map((r) => {
-          const tr = document.createElement('tr');
-          [new Date(r.created_at).toLocaleString('nl-NL'), r.target, r.reason, r.reporter].forEach((text) => {
-            tr.insertCell().textContent = text;
-          });
-          tr.addEventListener('click', () => { $('name').value = r.target.replace(' (gast)', ''); });
-          return tr;
-        }));
-      } catch (e) {
-        $('note').textContent = e.message;
-      }
-    }
-    async function ban(banned) {
-      try {
-        const out = await call('/api/admin/ban', { name: $('name').value, banned });
-        $('note').textContent = `${out.name} is ${banned ? 'geblokkeerd' : 'weer toegelaten'}.`;
-      } catch (e) {
-        $('note').textContent = e.message;
-      }
-    }
-    $('give-load').addEventListener('click', async () => {
-      try {
-        const { items } = await call('/api/admin/items');
-        $('give-item').replaceChildren(new Option('Geen voorwerp, alleen munten', ''), ...items.map((x) => new Option(x.name, x.id)));
-        $('note').textContent = `${items.length} dingen om te geven.`;
-      } catch (e) {
-        $('note').textContent = e.message;
-      }
+    const run = (fn) => async (...args) => { try { await fn(...args); } catch (e) { note(e.message); } };
+    const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids); return e; };
+
+    // ---------- tabbladen ----------
+    document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+      document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
+      ['live', 'player', 'reports'].forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+    }));
+
+    $('check').addEventListener('click', run(async () => {
+      const { items } = await call('/api/admin/items');
+      try { sessionStorage.setItem('kr-admin', $('key').value); } catch (e) { /* geen opslag */ }
+      $('give-item').replaceChildren(new Option('Geen voorwerp, alleen munten', ''), ...items.map((x) => new Option(x.name, x.id)));
+      note('Ingelogd als beheerder.');
+      refreshLobbies();
+    }));
+
+    // ---------- live ----------
+    const MODES = { klassiek: 'Klassiek', teams: 'Teams', duo: "Duo's", voedsel: 'Voedselgevecht', broodjes: 'Broodjesbar', prophunt: 'Verstoppertje', lava: 'De vloer is lava', stoelen: 'Stoelendans', trefbal: 'Trefbal' };
+    const EVENTS = [['donker', 'Stroomstoring'], ['goud', 'Gouden broodje'], ['regen', 'Pizzaregen'], ['brand', 'Brandalarm'], ['dubbel', 'Dubbele punten']];
+    let busy = false;
+    const act = (code, action, extra) => run(async () => {
+      await call('/api/admin/lobby', Object.assign({ code, action }, extra));
+      note('Gedaan.');
+      refreshLobbies();
     });
-    $('give').addEventListener('click', async () => {
+    async function refreshLobbies() {
+      if (busy || !$('key').value) return;
+      // niet verversen terwijl je in een tekstvak typt
+      if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#lobbies input')) return;
+      busy = true;
       try {
-        const out = await call('/api/admin/give', { name: $('give-name').value, id: $('give-item').value, coins: $('give-coins').value });
-        $('note').textContent = `${out.name} kreeg: ${out.given.join(', ')}.`;
+        const { lobbies } = await call('/api/admin/lobbies');
+        $('lobbies').replaceChildren(...(lobbies.length ? lobbies.map(lobbyCard) : [el('p', { className: 'muted', textContent: 'Er zijn nu geen lobby\'s.' })]));
       } catch (e) {
-        $('note').textContent = e.message;
+        $('lobbies').replaceChildren(el('p', { className: 'muted', textContent: e.message }));
       }
+      busy = false;
+    }
+    setInterval(refreshLobbies, 3000);
+    function lobbyCard(l) {
+      const state = l.playing ? `potje bezig · nog ${l.remaining} s` : 'in de wachtruimte';
+      const card = el('div', { className: 'lobby' },
+        el('h3', {}, `${l.code} · ${MODES[l.mode] || l.mode}${l.playing ? ' op ' + l.map : ''} `, el('small', { textContent: `(${l.public ? 'openbaar' : 'privé'}${l.ranked ? ', ranked' : ''} · ${state})` })));
+      const msg = el('input', { placeholder: 'Bericht aan de hele lobby', maxLength: 120, size: 34 });
+      card.append(el('div', { className: 'row' }, msg, el('button', { textContent: 'Versturen', onclick: () => act(l.code, 'message', { text: msg.value })() })));
+      if (l.playing) {
+        card.append(el('div', { className: 'row' },
+          ...EVENTS.map(([id, name]) => el('button', { className: 'small orange', textContent: name, onclick: act(l.code, 'event', { value: id }) })),
+          el('button', { className: 'small', textContent: '+30 s', onclick: act(l.code, 'time', { value: 30 }) }),
+          el('button', { className: 'small', textContent: '−30 s', onclick: act(l.code, 'time', { value: -30 }) }),
+          el('button', { className: 'small', textContent: 'Broodje resetten', onclick: act(l.code, 'broodje') }),
+          el('button', { className: 'small', textContent: 'Confetti', onclick: act(l.code, 'confetti') }),
+          el('button', { className: 'small red', textContent: 'Potje beëindigen', onclick: act(l.code, 'end') })));
+      }
+      for (const p of l.players) {
+        const row = el('div', { className: 'player' },
+          el('b', { textContent: `${p.name}${p.bot ? ' (bot)' : p.account ? '' : ' (gast)'}${p.host ? ' · host' : ''}${l.holder === p.id ? ' · broodje' : ''}` }),
+          el('em', { textContent: l.playing ? `${p.score} pt` : '' }));
+        const b = (text, action, cls, extra) => el('button', { className: 'small ' + (cls || ''), textContent: text, onclick: act(l.code, action, Object.assign({ id: p.id }, extra)) });
+        if (l.playing) {
+          row.append(b('Broodje geven', 'broodje'), b('Lanceren', 'launch', 'orange'), b('Knock-out', 'stun', 'orange'),
+            b('Superkracht', 'boost'), b('Pizzadoos', 'pizza'), b('Val', 'trap', '', { value: 1 + Math.floor(Math.random() * 4) }),
+            b('Naar het broodje', 'teleport'), b('+10 pt', 'score', '', { value: 10 }), b('−10 pt', 'score', '', { value: -10 }));
+        }
+        if (!p.bot) {
+          row.append(el('button', {
+            className: 'small orange', textContent: 'Waarschuwen', onclick: run(async () => {
+              const text = prompt(`Waarschuwing voor ${p.name}:`);
+              if (!text) return;
+              await call('/api/admin/warn', { id: p.id, text });
+              note(`Waarschuwing verstuurd naar ${p.name}.`);
+            })
+          }));
+          if (p.account) row.append(el('button', { className: 'small grey', textContent: 'Profiel', onclick: () => { $('name').value = p.account; document.querySelector('[data-tab="player"]').click(); lookup(); } }));
+        }
+        row.append(b(p.bot ? 'Bot weghalen' : 'Wegsturen', 'kick', 'red'));
+        card.append(row);
+      }
+      return card;
+    }
+
+    // ---------- speler ----------
+    const lookup = run(async () => {
+      const a = await call('/api/admin/account?name=' + encodeURIComponent($('name').value.trim()));
+      $('account').classList.remove('hidden');
+      $('acc-stats').replaceChildren(...[`${a.name}`, `${a.coins} munten`, `level ${a.level}`, `${a.rp} rangpunten`, a.online ? 'online' : 'offline',
+        a.banned ? 'GEBLOKKEERD' : 'niet geblokkeerd', `${a.warnings.length} waarschuwing${a.warnings.length === 1 ? '' : 'en'}`].map((t) => el('span', { textContent: t })));
+      $('acc-warnings').replaceChildren(...a.warnings.slice().reverse().map((w) => el('div', { textContent: `${new Date(w.at).toLocaleString('nl-NL')}: ${w.text}${w.seen ? '' : ' (nog niet gezien)'}` })));
+      $('acc-items').replaceChildren(...(a.items.length ? a.items.map((it) => el('span', {}, it.name, el('button', {
+        className: 'small red', textContent: '×', title: 'Afpakken', onclick: run(async () => {
+          if (!confirm(`${it.name} afpakken van ${a.name}?`)) return;
+          await call('/api/admin/take', { name: a.name, id: it.id });
+          note(`${it.name} afgepakt.`);
+          lookup();
+        })
+      }))) : [el('p', { className: 'muted', textContent: 'Deze speler heeft nog niets.' })]));
     });
-    $('load').addEventListener('click', load);
-    $('ban').addEventListener('click', () => ban(true));
-    $('unban').addEventListener('click', () => ban(false));
+    $('lookup').addEventListener('click', lookup);
+    $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup(); });
+    $('warn').addEventListener('click', run(async () => {
+      const out = await call('/api/admin/warn', { name: $('name').value, text: $('warn-text').value });
+      $('warn-text').value = '';
+      note(`Waarschuwing verstuurd naar ${out.name}${out.live ? ' (direct gezien)' : ' (bij de volgende keer inloggen)'}.`);
+      lookup();
+    }));
+    $('give').addEventListener('click', run(async () => {
+      const out = await call('/api/admin/give', { name: $('name').value, id: $('give-item').value, coins: $('give-coins').value });
+      $('give-coins').value = '';
+      note(`${out.name} kreeg: ${out.given.join(', ')}.`);
+      lookup();
+    }));
+    $('take-coins-btn').addEventListener('click', run(async () => {
+      const out = await call('/api/admin/take', { name: $('name').value, coins: $('take-coins').value });
+      $('take-coins').value = '';
+      note(`${out.name} heeft nu ${out.coins} munten.`);
+      lookup();
+    }));
+    const ban = (banned) => run(async () => {
+      const out = await call('/api/admin/ban', { name: $('name').value, banned });
+      note(`${out.name} is ${banned ? 'geblokkeerd' : 'weer toegelaten'}.`);
+      lookup();
+    });
+    $('ban').addEventListener('click', ban(true));
+    $('unban').addEventListener('click', ban(false));
+
+    // ---------- meldingen ----------
+    $('load').addEventListener('click', run(async () => {
+      const { reports } = await call('/api/admin/reports');
+      if (!reports.length) note('Er zijn geen meldingen.');
+      $('reports').replaceChildren(...reports.map((r) => {
+        const tr = document.createElement('tr');
+        [new Date(r.created_at).toLocaleString('nl-NL'), r.target, r.reason, r.reporter].forEach((text) => { tr.insertCell().textContent = text; });
+        tr.style.cursor = 'pointer';
+        tr.title = 'Klik om deze speler op te zoeken';
+        tr.addEventListener('click', () => {
+          if (r.target.endsWith('(gast)')) return note('Dit is een gast: die kun je alleen live waarschuwen of wegsturen.');
+          $('name').value = r.target;
+          document.querySelector('[data-tab="player"]').click();
+          lookup();
+        });
+        return tr;
+      }));
+    }));
+    if ($('key').value) $('check').click();
   </script>
 </body>
 </html>

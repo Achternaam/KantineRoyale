@@ -215,24 +215,24 @@ function resetBot(p, level) {
 // ---------- Doelen in de andere modi ----------
 const randomNode = (nav) => nav.open[Math.floor(Math.random() * nav.open.length)];
 
-// De vloer is lava: naar de dichtstbijzijnde tafel (erop springen) of een plek die geen vloer is.
-function lavaGoal(lobby, p, nav) {
-  const M = MapData;
-  if (!M.onFloor(p.x, p.z, p.y) && p.bot.ground) return null; // staat al veilig
-  const d = (o) => Math.hypot(o.x - p.x, o.z - p.z) + Math.abs(o.y - p.y) * 2;
-  let best = null;
-  for (const o of lobby.props) {
-    if (o.type !== 'table' || o.tip) continue;
-    const spot = { x: o.x, y: o.y, z: o.z, top: o.y + M.PROP.table.h, jump: true };
-    if (!best || d(spot) < d(best)) best = spot;
-  }
-  for (const [x, y, z, , h] of lobby.lavaBlocks || []) {
-    const spot = { x, y, z, top: y + h, jump: h > 0.45 };
-    if (!best || d(spot) < d(best)) best = spot;
-  }
-  if (!nav.safe) nav.safe = nav.open.filter((n) => !M.onFloor(n.x, n.z, n.y));
-  for (const n of nav.safe) if (!best || d(n) + 1.5 < d(best)) best = n;
-  return best;
+// De vloer is lava: van tafel naar kist springen. Bots zoeken het gouden eiland op en springen weg
+// als hun plek te heet wordt of wegsmelt.
+function lavaGoal(lobby, p, now, api) {
+  const L = lobby.lava;
+  if (!L || now < lobby.lavaAt - 4000) return null;
+  const spots = api.lavaSpots(lobby).filter((s) => !L.melting[s.id]);
+  if (!spots.length) return null;
+  const here = spots.find((s) => api.onSpot(p, s));
+  const b = p.bot;
+  const wantMove = !here || p.heat > 2.5 + b.skill * 1.5 || (L.island && here.id !== L.island && Math.random() < 0.08 * b.skill);
+  if (!wantMove && here) return null;
+  const d = (s) => Math.hypot(s.x - p.x, s.z - p.z);
+  // liefst het eiland als dat dichtbij is, anders de dichtstbijzijnde andere plek
+  const others = spots.filter((s) => s !== here).sort((a, c) => d(a) - d(c));
+  const island = others.find((s) => s.id === L.island && d(s) < 7);
+  const pick = island || others.find((s) => d(s) < 6) || others[0];
+  if (!pick) return null;
+  return { x: pick.x, y: pick.top, z: pick.z, top: pick.top, hop: true };
 }
 
 // Verstoppertje: een verstopper zoekt een plekje naast een meubel dat op zijn vermomming lijkt.
@@ -306,7 +306,7 @@ function think(lobby, p, now, api) {
   const decoy = lobby.decoy && holder !== p ? lobby.decoy : null;
   if (decoy && b.seen[decoy.id] === undefined) b.seen[decoy.id] = Math.random() < 0.8 - b.skill * 0.3; // trapt erin of niet
   if (lobby.mode === 'lava') {
-    goal = lavaGoal(lobby, p, nav);
+    goal = lavaGoal(lobby, p, now, api);
   } else if (lobby.mode === 'prophunt') {
     goal = p.team === 0 ? hideGoal(lobby, p, nav, now, enemies) : seekGoal(lobby, p, nav, now, enemies.filter((o) => o.team === 0));
   } else if (lobby.mode === 'stoelen') {
@@ -433,9 +433,9 @@ function move(lobby, p, now, dt, api) {
     const goal = b.goal;
     const direct = Math.hypot(goal.x - p.x, goal.z - p.z);
     // dichtbij en op dezelfde hoogte: recht eropaf. Anders de route over het net volgen.
-    // op een tafel springen (lava): dichtbij genoeg en op de grond, dan afzetten
-    if (goal.jump && direct < 1.7 && b.ground && p.y < goal.top - 0.3) b.vy = 8.5;
-    if (direct < 2.5 && Math.abs(goal.y - p.y) < 0.8) {
+    // lava: van plek naar plek springen (over de lava heen)
+    if (goal.hop && b.ground && (goal.top - p.y > 0.3 ? direct < 1.7 : direct > 1.3 && direct < 6)) b.vy = 8.5;
+    if ((direct < 2.5 || goal.hop) && Math.abs(goal.y - p.y) < 1.2) {
       b.path = [];
       if (direct > 0.25) { wx = (goal.x - p.x) / direct; wz = (goal.z - p.z) / direct; }
     } else {
@@ -460,7 +460,7 @@ function move(lobby, p, now, dt, api) {
     b.vz = b.dashZ * DASH_SPEED;
   } else {
     // na een duw of val vlieg je even door; anders snel optrekken en afremmen
-    const k = 1 - Math.exp(-(now < b.knockUntil || !b.ground ? 2 : 12) * dt);
+    const k = 1 - Math.exp(-(now < b.knockUntil ? 2 : !b.ground ? 6 : 12) * dt);
     b.vx += ((stunned ? 0 : wx * speed) - b.vx) * k;
     b.vz += ((stunned ? 0 : wz * speed) - b.vz) * k;
   }

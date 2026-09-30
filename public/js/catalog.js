@@ -130,7 +130,8 @@
     { id: 'kameleon', name: 'Kameleon', stat: 'hideWins', goal: 10, how: 'Blijf 10 keer verstopt tot het einde' },
     { id: 'premiejager', name: 'Premiejager', stat: 'bounties', goal: 5, how: 'Pak 5 premies' },
     { id: 'wraakengel', name: 'Wraakengel', stat: 'revenges', goal: 10, how: 'Neem 10 keer wraak op je rivaal' },
-    { id: 'stamgast', name: 'Stamgast', stat: 'streakDays', goal: 30, how: 'Speel 30 dagen op rij' }
+    { id: 'stamgast', name: 'Stamgast', stat: 'streakDays', goal: 30, how: 'Speel 30 dagen op rij' },
+    { id: 'publiekslieveling', name: 'Publiekslieveling', stat: 'honors', goal: 10, how: 'Word 10 keer speler van het potje' }
   ];
   // titles voor meesterschap van een map (niveau 10)
   const MAP_NAMES = { kantine: 'de Kantine', gym: 'de Gymzaal', aula: 'de Aula', plein: 'het Schoolplein', dak: 'het Dak' };
@@ -348,7 +349,8 @@
     ['ver', 'Verre worp', 'farHit', [15, 25, 35], 'Raak iemand van {n} meter afstand', 'max'],
     ['kanon', 'Kanon', 'mostHits', [5, 10, 20], 'Raak {n} keer iemand in één potje', 'max'],
     ['serie', 'Onverslaanbaar', 'winStreak', [2, 3, 5], 'Win {n} potjes op rij', 'max'],
-    ['zilverrand', 'Diplomahouder', 'prestiges', [1, 2, 5], 'Haal {n} keer je diploma', 'max']
+    ['zilverrand', 'Diplomahouder', 'prestiges', [1, 2, 5], 'Haal {n} keer je diploma', 'max'],
+    ['mvp', 'Publiekslieveling', 'honors', [1, 10, 50], 'Word {n} keer gekozen tot speler van het potje']
   ].map(([id, name, stat, goals, text, max]) => ({ id, name, stat, goals, text, max: !!max }));
   const TIER_NAMES = ['Brons', 'Zilver', 'Goud'];
   const ACH_COINS = [20, 50, 100];

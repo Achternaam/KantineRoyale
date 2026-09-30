@@ -1,0 +1,17 @@
+{
+  "name": "Kantine Royale",
+  "short_name": "Kantine Royale",
+  "description": "Pak het frikandelbroodje! Een 3D-multiplayerspel in de schoolkantine.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#2a1c5c",
+  "theme_color": "#5b3fa8",
+  "lang": "nl",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { Server } = require('socket.io');
@@ -40,7 +41,6 @@ const ROUND_SECONDS = 120;    // een ronde in een toernooi
 const VOTE_MS = 8000;         // stemmen op de map
 const PICK_MS = 4500;         // de map-roulette voor elk potje
 const BETWEEN_MS = 12000;     // tussenstand tussen twee toernooirondes
-const ZONE_SECONDS = 20;      // eindsprint: het speelveld krimpt
 // allrounder is gratis, de rest speel je vrij in de battlepass
 const CLASSES = ['allrounder', 'sprinter', 'werper', 'tank', 'springer', 'magneet'];
 const VEHICLE_RESPAWN_MS = 5000;
@@ -87,8 +87,20 @@ const PARTY_POINTS = [10, 7, 5, 3, 2, 1, 1, 1];
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// Even geen verbinding (slechte wifi)? Binnen 30 seconden terug en je zit weer in hetzelfde potje.
+const io = new Server(server, { connectionStateRecovery: { maxDisconnectionDuration: 30000, skipMiddlewares: true } });
+const RECONNECT_MS = 30000;
+const AFK_MS = 60000;          // een minuut niets doen in een openbaar potje: eruit
+const GO_MS = 3500;            // aftellen 3, 2, 1 voor elk potje
+const MVP_MS = 20000;          // zo lang kun je stemmen op de speler van het potje
+const MAX_PARTY = 4;
 
+// De startpagina met het volledige adres in het deelplaatje (WhatsApp en Discord willen een compleet adres)
+app.set('trust proxy', true);
+const indexHtml = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+app.get(['/', '/index.html'], (req, res) => {
+  res.type('html').send(indexHtml.replace(/%ORIGIN%/g, `${req.protocol}://${req.get('host')}`));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three')));
 
@@ -166,18 +178,26 @@ const apiError = (res) => (e) => {
 // Cadeaus die nog in je brievenbus liggen gaan mee in de meldingen en worden daarna geleegd.
 async function freshAccount(account) {
   const notices = [];
+  const warnings = [];
   const season = economy.rankSeason(account);
   if (season) {
     account = await db.updateAccount(account.id, { progress: season.progress, rank_points: season.rank_points });
     notices.push(season.reward ? `Nieuw ranked-seizoen! Je krijgt de ${season.reward}.` : 'Er is een nieuw ranked-seizoen begonnen.');
   }
   const p = economy.wallet(account);
+  // waarschuwingen die de speler nog niet heeft gezien
+  const unseen = (Array.isArray(p.warnings) ? p.warnings : []).filter((w) => !w.seen);
+  if (unseen.length) {
+    warnings.push(...unseen.map((w) => w.text));
+    p.warnings = p.warnings.map((w) => Object.assign({}, w, { seen: true }));
+    account = await db.updateAccount(account.id, { progress: p });
+  }
   if (p.inbox.length) {
     for (const g of p.inbox) notices.push(`Cadeau van ${g.from}: ${g.name}!`);
     p.inbox = [];
     account = await db.updateAccount(account.id, { progress: p });
   }
-  return { account, notices };
+  return { account, notices, warnings };
 }
 
 app.post('/api/register', (req, res) => {
@@ -208,8 +228,8 @@ app.post('/api/login', (req, res) => {
     if (!ok) return res.status(401).json({ error: 'Naam of wachtwoord klopt niet.' });
     if (found.banned) return res.status(403).json({ error: 'Dit account is geblokkeerd.' });
     const token = await newSession(found);
-    const { account, notices } = await freshAccount(await db.findAccount(found.username));
-    res.json({ token, account: publicAccount(account), notices });
+    const { account, notices, warnings } = await freshAccount(await db.findAccount(found.username));
+    res.json({ token, account: publicAccount(account), notices, warnings });
   })().catch(apiError(res));
 });
 
@@ -218,8 +238,8 @@ app.get('/api/me', (req, res) => {
   (async () => {
     const found = await accountFor(bearer(req));
     if (!found) return res.status(401).json({ error: 'Niet ingelogd.' });
-    const { account, notices } = await freshAccount(found);
-    res.json({ account: publicAccount(account), notices });
+    const { account, notices, warnings } = await freshAccount(found);
+    res.json({ account: publicAccount(account), notices, warnings });
   })().catch(apiError(res));
 });
 
@@ -401,6 +421,208 @@ app.post('/api/admin/give', (req, res) => {
   })().catch(apiError(res));
 });
 
+// Een account bekijken: wat heeft iemand, en hoeveel waarschuwingen staan er al.
+app.get('/api/admin/account', (req, res) => {
+  if (!isAdmin(req, res)) return;
+  (async () => {
+    const account = await db.findAccount(String(req.query.name || '').trim().toLowerCase());
+    if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
+    const p = economy.wallet(account);
+    const names = new Map(giveable().map((x) => [x.id, x.name]));
+    const items = p.owned.map((id) => ({ id, name: names.get(id) || id }))
+      .concat(p.unlocked.map((id) => ({ id: 'skin:' + id, name: `Skin ${Catalog.skinById(id).name} (challenge)` })));
+    res.json({
+      name: account.display, coins: p.coins, banned: !!account.banned, rp: account.rank_points,
+      level: Catalog.careerOf(p.careerXp).level, warnings: p.warnings || [], items, online: presence.has(account.username)
+    });
+  })().catch(apiError(res));
+});
+
+// Iets afpakken: een voorwerp en/of munten. Had de speler het aan, dan gaat hij terug naar het standaarduiterlijk.
+app.post('/api/admin/take', (req, res) => {
+  if (!isAdmin(req, res)) return;
+  (async () => {
+    const account = await db.findAccount(String(req.body.name || '').trim().toLowerCase());
+    if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
+    const p = economy.wallet(account);
+    const id = String(req.body.id || '');
+    const coins = Math.max(0, Math.min(1000000, Math.floor(Number(req.body.coins) || 0)));
+    const taken = [];
+    if (id) {
+      const [kind, key] = id.split(':');
+      const had = p.owned.includes(id) || (kind === 'skin' && p.unlocked.includes(key));
+      if (!had) return res.status(400).json({ error: 'Dat heeft deze speler niet.' });
+      p.owned = p.owned.filter((x) => x !== id);
+      if (kind === 'skin') p.unlocked = p.unlocked.filter((x) => x !== key);
+      if (kind === 'skin' && p.skin === key) p.skin = 'leerling';
+      if (kind === 'class' && p.cls === key) p.cls = 'allrounder';
+      if (kind === 'stamp' && p.stamp === key) p.stamp = 'naam';
+      if (kind === 'emote') p.loadout = p.loadout.map((n) => (String(n) === key ? 0 : n));
+      if (kind === 'trail' && p.fx.trail === key) p.fx.trail = 'geen';
+      if (kind === 'sound' && p.fx.sound === key) p.fx.sound = 'standaard';
+      if (kind === 'acc') for (const slot of Object.keys(p.acc)) if (p.acc[slot] === key) p.acc[slot] = Catalog.ACCESSORIES[slot][0].id;
+      taken.push(id);
+    }
+    if (coins) {
+      p.coins = Math.max(0, p.coins - coins);
+      taken.push(`${coins} munten`);
+    }
+    if (!taken.length) return res.status(400).json({ error: 'Kies iets om af te pakken.' });
+    await db.updateAccount(account.id, { progress: p });
+    res.json({ ok: true, name: account.display, taken, coins: p.coins });
+  })().catch(apiError(res));
+});
+
+// Waarschuwing: de speler krijgt een melding die hij moet wegklikken. Online meteen, anders bij de volgende keer inloggen.
+// Werkt voor accounts (op naam) en voor iedereen die nu in een lobby zit (op speler-id, ook gasten).
+app.post('/api/admin/warn', (req, res) => {
+  if (!isAdmin(req, res)) return;
+  const text = String(req.body.text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!text) return res.status(400).json({ error: 'Schrijf een waarschuwing.' });
+  (async () => {
+    if (req.body.id) {
+      const sock = io.sockets.sockets.get(String(req.body.id));
+      if (!sock) return res.status(404).json({ error: 'Deze speler is niet meer online.' });
+      sock.emit('warning', { text });
+      if (!sock.data.username) return res.json({ ok: true, name: 'gast', live: true });
+      req.body.name = sock.data.username;
+    }
+    const account = await db.findAccount(String(req.body.name || '').trim().toLowerCase());
+    if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
+    const p = economy.wallet(account);
+    p.warnings = (Array.isArray(p.warnings) ? p.warnings : []).concat({ text, at: new Date().toISOString(), seen: false }).slice(-20);
+    const sock = presence.get(account.username);
+    if (sock && !req.body.id) sock.emit('warning', { text });
+    if (sock) p.warnings[p.warnings.length - 1].seen = true;
+    await db.updateAccount(account.id, { progress: p });
+    res.json({ ok: true, name: account.display, live: !!sock, count: p.warnings.length });
+  })().catch(apiError(res));
+});
+
+// ---------- Beheer in het spel: lobby's bekijken en live ingrijpen ----------
+app.get('/api/admin/lobbies', (req, res) => {
+  if (!isAdmin(req, res)) return;
+  res.json({
+    lobbies: [...lobbies.values()].map((l) => ({
+      code: l.code, mode: l.mode, map: l.map, playing: l.playing, public: l.public, ranked: l.ranked,
+      remaining: l.playing ? Math.ceil(l.remaining) : null, holder: l.playing && l.broodje ? l.broodje.holder : null,
+      players: [...l.players.values()].concat([...l.waiting.values()]).map((p) => ({
+        id: p.id, name: p.name, bot: !!p.isBot, account: p.username || null, score: Math.floor(p.score || 0), host: p.id === l.hostId
+      }))
+    }))
+  });
+});
+const ADMIN_EVENTS = ['donker', 'goud', 'regen', 'brand', 'dubbel'];
+app.post('/api/admin/lobby', (req, res) => {
+  if (!isAdmin(req, res)) return;
+  const lobby = lobbies.get(String(req.body.code || '').toUpperCase());
+  if (!lobby) return res.status(404).json({ error: 'Deze lobby bestaat niet meer.' });
+  const action = String(req.body.action || '');
+  const target = req.body.id ? lobby.players.get(String(req.body.id)) : null;
+  const now = Date.now();
+  const needGame = () => {
+    if (!lobby.playing) throw new Error('Dit kan alleen tijdens een potje.');
+    MapData.use(lobby.map);
+    MapData.dynamic = lobby.dynamic;
+  };
+  const needTarget = () => {
+    if (!target) throw new Error('Kies een speler.');
+  };
+  try {
+    if (action === 'message') {
+      const text = String(req.body.text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (!text) throw new Error('Schrijf een bericht.');
+      emit(lobby, { type: 'admin', text });
+      io.to(lobby.code).emit('adminMessage', { text }); // ook zichtbaar in de lobby, buiten een potje
+    } else if (action === 'event') {
+      needGame();
+      const type = String(req.body.value);
+      if (!ADMIN_EVENTS.includes(type)) throw new Error('Onbekend event.');
+      if (type === 'brand' && MapData.OUTSIDE_Z === null) throw new Error('Op deze map kun je niet naar buiten.');
+      if (type === 'dubbel') lobby.double = true;
+      else {
+        lobby.event = { type, until: now + EVENT_MS[type] };
+        if (type === 'regen') lobby.items.forEach((it) => { it.availableAt = 0; });
+      }
+      emit(lobby, { type: 'gameEvent', name: type });
+    } else if (action === 'time') {
+      needGame();
+      const secs = Math.max(-600, Math.min(600, Math.floor(Number(req.body.value) || 0)));
+      lobby.endsAt = Math.max(now + 3000, lobby.endsAt + secs * 1000);
+      emit(lobby, { type: 'admin', text: secs > 0 ? `De beheerder geeft ${secs} seconden extra!` : 'De beheerder maakt het potje korter!' });
+    } else if (action === 'end') {
+      needGame();
+      lobby.endsAt = now;
+      emit(lobby, { type: 'admin', text: 'De beheerder beëindigt het potje' });
+    } else if (action === 'broodje') {
+      needGame();
+      if (NO_BROODJE.includes(lobby.mode)) throw new Error('Deze modus heeft geen broodje.');
+      resetBroodje(lobby);
+      if (target && !target.out) {
+        lobby.broodje.holder = target.id;
+        target.safeUntil = now + 1500;
+        emit(lobby, { type: 'pickup', id: target.id });
+      } else {
+        emit(lobby, { type: 'respawn' });
+      }
+    } else if (action === 'launch') {
+      needGame();
+      needTarget();
+      stun(lobby, target, Math.random() - 0.5, Math.random() - 0.5, now, 1400, 6, 22); // de lucht in!
+      emit(lobby, { type: 'admin', text: `${target.name} wordt gelanceerd!` });
+    } else if (action === 'stun') {
+      needGame();
+      needTarget();
+      stun(lobby, target, 0, 1, now, 2500, 0, 3);
+    } else if (action === 'boost') {
+      needGame();
+      needTarget();
+      target.boostUntil = now + 20000;
+      target.shield = true;
+      emit(lobby, { type: 'admin', text: `${target.name} krijgt superkrachten van de beheerder` });
+    } else if (action === 'trap') {
+      needGame();
+      needTarget();
+      target.gadget = Math.min(4, Math.max(1, Math.floor(Number(req.body.value)) || 1));
+    } else if (action === 'pizza') {
+      needGame();
+      needTarget();
+      target.item = 1;
+      target.ammo = STREAK_AMMO;
+    } else if (action === 'teleport') {
+      needGame();
+      needTarget();
+      const b = lobby.broodje;
+      const to = NO_BROODJE.includes(lobby.mode) || !b ? MapData.BROODJE_SPAWN : { x: b.x, y: b.holder ? b.y : b.y - BROODJE_REST, z: b.z };
+      teleport(lobby, target, { x: to.x + 1, y: to.y, z: to.z });
+    } else if (action === 'score') {
+      needGame();
+      needTarget();
+      target.score = Math.max(0, target.score + Math.max(-500, Math.min(500, Math.floor(Number(req.body.value) || 0))));
+    } else if (action === 'confetti') {
+      needGame();
+      for (const p of lobby.players.values()) emit(lobby, { type: 'decoyPop', x: p.x, y: p.y + 1.5, z: p.z });
+    } else if (action === 'kick') {
+      needTarget();
+      if (target.isBot) {
+        lobby.players.delete(target.id);
+        sendLobby(lobby);
+      } else {
+        const sock = io.sockets.sockets.get(target.id);
+        if (sock) {
+          sock.emit('kicked', { text: String(req.body.text || '').slice(0, 120) });
+          leaveLobby(sock);
+        }
+      }
+    } else {
+      throw new Error('Onbekende actie.');
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  res.json({ ok: true });
+});
+
 app.post('/api/logout', (req, res) => {
   (async () => {
     const token = bearer(req);
@@ -454,7 +676,7 @@ function roundStats() {
     score: 0, pickups: 0, throws: 0, powerups: 0, emotes: 0, sprays: 0, tables: 0, cJumps: 0, cLifts: 0, hits: 0, tackles: 0, hold: 0,
     bites: 0, eaten: 0, passes: 0, feints: 0, slaps: 0, traps: 0, trapHits: 0, knocked: 0, lavaSeconds: 0, burns: 0, finds: 0,
     chairs: 0, trefHits: 0, captures: 0, bounties: 0, bountyCoins: 0, revenges: 0, glass: 0, catches: 0, rides: 0, fireSafe: 0,
-    holdRun: 0, bestHold: 0, farHit: 0, rv: {}, found: false, out: false, outPlace: 0
+    holdRun: 0, bestHold: 0, farHit: 0, rv: {}, found: false, out: false, outPlace: 0, heat: 0, heatX: 0, heatY: 0, heatZ: 0
   };
 }
 
@@ -467,6 +689,7 @@ function newPlayer(socket, data, lobby) {
     // schoolloopbaan (level), prestige (naamrand) en battlepass-prestige (sterren); voor ingelogde spelers vult de server dit zelf in
     lvl: cleanInt(data.lvl, 100) || 1, pr: cleanInt(data.pr, 99), ps: cleanInt(data.ps, 99), winRun: cleanInt(data.ws, 99),
     key: 'g:' + name.toLowerCase(), nemesis: typeof data.nem === 'string' ? data.nem.slice(0, 20) : '',
+    games: cleanInt(data.gp, 100000), winRate: Math.max(0, Math.min(1, Number(data.wr) || 0)),
     accountId: null, username: null, rp: null, lastReport: 0, safeUntil: 0, noMountUntil: 0, vehicle: 0, velX: 0, velZ: 0, lastX: 0, lastZ: 0,
     blindUntil: 0, armor: false, ready: false, team: 0, x: 0, y: 0, z: 0, ry: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
     lastDash: 0, dashUntil: 0, dashX: 0, dashZ: 1, lastSpray: 0, lastSay: 0, streak: 0, ammo: 0, bounty: 0,
@@ -521,7 +744,7 @@ function note(lobby, score, text, by, victim) {
 }
 
 // vriendelijk vuur staat uit in de teammodi
-const sameTeam = (lobby, a, b) => TEAM_MODES.includes(lobby.mode) && a.team === b.team;
+const sameTeam = (lobby, a, b) => lobby.playing && TEAM_MODES.includes(lobby.mode) && a.team === b.team;
 // punten tellen dubbel in de laatste minuut en driedubbel met het gouden broodje
 const multiplier = (lobby) => (lobby.double ? 2 : 1) * (lobby.event.type === 'goud' ? 3 : 1);
 const rule = (lobby, id) => Catalog.ruleValue(lobby.opts.rules, id);
@@ -796,7 +1019,9 @@ function tickBroodje(lobby, now, dt) {
 
 // ---------- Gooibare spullen, automaten, vallen en plassen ----------
 function randomKind(lobby) {
+  if (lobby.warm && !lobby.playing) return [1, 2, 3, 4, 5, 6][Math.floor(Math.random() * 6)];
   if (lobby.mode === 'trefbal') return 7;
+  if (lobby.mode === 'lava') return [2, 2, 2, 1, 3, 6][Math.floor(Math.random() * 6)]; // veel borden om vlotten van te maken
   const mask = lobby.opts.rules.items & (lobby.opts.extras ? 127 : 0b1000111); // de host kan melk, friet en blikje uitzetten
   const pool = ITEM_POOL.concat([7]).filter((k) => mask & (1 << (k - 1)));
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : 1;
@@ -819,7 +1044,7 @@ function tickItems(lobby, now) {
     if (item.availableAt > now) return;
     const s = lobby.itemSpots[i];
     for (const p of lobby.players.values()) {
-      if (p.item || p.out || p.stunnedUntil > now || (lobby.mode === 'prophunt' && p.team === 0)) continue; // verstoppers gooien niet
+      if (p.item || p.out || p.stunnedUntil > now || (lobby.playing && lobby.mode === 'prophunt' && p.team === 0)) continue; // verstoppers gooien niet
       if (Math.hypot(p.x - s.x, p.z - s.z) < 1.2 * reach(p) && Math.abs(p.y - s.y) < 1.2) {
         p.item = item.kind;
         item.kind = randomKind(lobby);
@@ -959,6 +1184,7 @@ function tickProjectiles(lobby, now, dt) {
     // een pak melk laat een plas achter waar het neerkomt
     const die = () => {
       if (pr.kind === 4) addPuddle(lobby, { kind: 1, x: pr.x, y: pr.y, z: pr.z, until: now + PUDDLE_MS });
+      if (pr.kind === 2 && lobby.mode === 'lava' && lobby.playing) addRaft(lobby, pr.x, pr.y, pr.z);
       return false;
     };
     for (let s = 0; s < SUB; s++) {
@@ -972,7 +1198,7 @@ function tickProjectiles(lobby, now, dt) {
         if (pr.y < p.y - 0.1 || pr.y > p.y + 1.95) continue;
         if (Math.hypot(p.x - pr.x, p.z - pr.z) > pr.r) continue;
         // verstoppertje: een zoeker die een verstopper raakt, heeft hem gevonden
-        if (lobby.mode === 'prophunt') {
+        if (lobby.mode === 'prophunt' && lobby.playing) {
           if (owner && owner.team === 1 && p.team === 0) find(lobby, owner, p, now);
           return die();
         }
@@ -996,7 +1222,7 @@ function tickProjectiles(lobby, now, dt) {
           note(lobby, (lobby.broodje.holder === null && pr.kind !== 5 ? 4 : 3) + far / 4, 'hit', owner.id, p.id);
           claimAttack(lobby, owner, p, now);
         }
-        if (owner && (lobby.mode === 'voedsel' || lobby.mode === 'trefbal')) owner.score += multiplier(lobby);
+        if (owner && lobby.playing && (lobby.mode === 'voedsel' || lobby.mode === 'trefbal')) owner.score += multiplier(lobby);
         emit(lobby, { type: 'hit', by: pr.owner, victim: p.id, kind: pr.kind });
         // killstreak: drie rake worpen op rij geeft een pizzadoos met tien pizza's
         if (owner && lobby.mode !== 'trefbal' && ++owner.streak % STREAK_HITS === 0) {
@@ -1062,7 +1288,8 @@ function refreshDynamic(lobby) {
     .filter((o) => o.type === 'table' && !o.tip)
     .map((o) => ({ x: o.x, z: o.z, r: t.r, y0: o.y, y1: o.y + t.h }))
     .concat(MapData.panels.filter((g, i) => !lobby.panels[i]).map(MapData.panelSolid))
-    .concat((lobby.lavaBlocks || []).map(blockSolid));
+    .concat((lobby.lavaBlocks || []).filter((b, i) => !(lobby.lava && lobby.lava.gone.includes(i))).map(blockSolid))
+    .concat(lobby.lava ? lobby.lava.rafts.map((r) => ({ minX: r.x - 0.7, maxX: r.x + 0.7, minZ: r.z - 0.7, maxZ: r.z + 0.7, y0: r.y, y1: r.y + 0.25 })) : []);
 }
 const blockSolid = ([x, y, z, w, h]) => ({ minX: x - w / 2, maxX: x + w / 2, minZ: z - w / 2, maxZ: z + w / 2, y0: y, y1: y + h });
 
@@ -1115,6 +1342,7 @@ function tickProps(lobby, now, dt) {
     if (p.stunnedUntil > now || p.out) continue;
     const dashing = p.dashUntil > now;
     for (const o of lobby.props) {
+      if (o.sunk) continue;
       const isTable = o.type === 'table';
       const dx = o.x - p.x, dz = o.z - p.z;
       if (Math.abs(dx) > 2 || Math.abs(dz) > 2) continue;
@@ -1152,7 +1380,7 @@ function tickProps(lobby, now, dt) {
   // bij De vloer is lava worden omgegooide tafels na twaalf seconden weer rechtgezet
   if (lobby.mode === 'lava') {
     for (const o of lobby.props) {
-      if (o.type === 'table' && o.tip && now - o.tippedAt > 12000 && Math.abs(o.vx) + Math.abs(o.vz) < 0.2) {
+      if (o.type === 'table' && o.tip && !o.sunk && now - o.tippedAt > 12000 && Math.abs(o.vx) + Math.abs(o.vz) < 0.2) {
         o.tip = 0;
         o.dir = 0;
         o.dirty = true;
@@ -1228,7 +1456,8 @@ function tickBrand(lobby, now, dt) {
 // ---------- De vloer is lava ----------
 // Een veilige plek om na het verbranden weer te beginnen: bovenop een rechtopstaande tafel waar niemand staat.
 function safeSpot(lobby) {
-  const tables = lobby.props.filter((o) => o.type === 'table' && !o.tip);
+  const tables = lobby.lava ? lavaSpots(lobby).map((s) => ({ x: s.x, z: s.z, y: s.top - MapData.PROP.table.h }))
+    : lobby.props.filter((o) => o.type === 'table' && !o.tip);
   const others = [...lobby.players.values()];
   const free = tables.map((t) => ({ t, near: Math.min(99, ...others.map((p) => Math.hypot(p.x - t.x, p.z - t.z))) }))
     .sort((a, b) => b.near - a.near);
@@ -1247,23 +1476,114 @@ function teleport(lobby, p, spot) {
     io.to(p.id).emit('teleport', spot);
   }
 }
+// De veilige plekken: rechtopstaande tafels ('t' + nummer) en kisten ('c' + nummer) die nog niet zijn weggesmolten.
+function lavaSpots(lobby) {
+  const spots = [];
+  lobby.props.forEach((o, i) => {
+    if (o.type === 'table' && !o.tip && !o.sunk) spots.push({ id: 't' + i, x: o.x, z: o.z, top: o.y + MapData.PROP.table.h, r: MapData.PROP.table.r });
+  });
+  lobby.lavaBlocks.forEach((b, i) => {
+    if (!lobby.lava.gone.includes(i)) spots.push({ id: 'c' + i, x: b[0], z: b[2], top: b[1] + b[4], half: b[3] / 2 });
+  });
+  return spots;
+}
+const onSpot = (p, s) => Math.abs(p.y - s.top) < 0.15 &&
+  (s.half ? Math.abs(p.x - s.x) <= s.half + 0.2 && Math.abs(p.z - s.z) <= s.half + 0.2 : Math.hypot(p.x - s.x, p.z - s.z) <= s.r + 0.2);
+
+function burn(lobby, p, now, why) {
+  p.burns++;
+  p.score = Math.max(0, p.score - 3);
+  p.lavaSafeUntil = now + 2500;
+  p.heat = 0;
+  stun(lobby, p, 0, 0, now, 900, 0, 7);
+  teleport(lobby, p, safeSpot(lobby));
+  emit(lobby, { type: 'burn', id: p.id, why });
+}
+
 function tickLava(lobby, now, dt) {
   if (now < lobby.lavaAt) return;
+  const L = lobby.lava;
+  const spots = lavaSpots(lobby);
+  // 2. het gouden eiland springt elke vijftien seconden naar een andere plek
+  if (now >= L.islandAt || !spots.some((s) => s.id === L.island)) {
+    const options = spots.filter((s) => s.id !== L.island && !L.melting[s.id]);
+    const pick = options[Math.floor(Math.random() * options.length)];
+    L.island = pick ? pick.id : null;
+    L.islandAt = now + 15000;
+    if (pick) emit(lobby, { type: 'island' });
+  }
+  const island = spots.find((s) => s.id === L.island);
+  // 1. smeltende plekken: een paar tafels en kisten gloeien rood en zakken daarna weg
+  if (now >= L.meltAt && spots.length > Math.max(4, lobby.players.size + 1)) {
+    L.meltAt = now + 12000 + Math.random() * 3000;
+    const count = Math.min(3, spots.length - Math.max(4, lobby.players.size + 1));
+    spots.filter((s) => s.id !== L.island && !L.melting[s.id]).sort(() => Math.random() - 0.5).slice(0, count)
+      .forEach((s) => { L.melting[s.id] = now + 3000; });
+    emit(lobby, { type: 'melt' });
+  }
+  for (const [id, at] of Object.entries(L.melting)) {
+    if (now < at) continue;
+    delete L.melting[id];
+    const i = Number(id.slice(1));
+    if (id[0] === 't') {
+      const o = lobby.props[i];
+      Object.assign(o, { sunk: true, tip: 1, y: o.y - 1.6, vx: 0, vz: 0, dirty: true });
+    } else {
+      L.gone.push(i);
+    }
+    refreshDynamic(lobby);
+    MapData.dynamic = lobby.dynamic;
+    emit(lobby, { type: 'sink', id });
+  }
+  // 4. lavaballen: een schaduw waarschuwt, anderhalve seconde later knalt er een vuurbal uit de vloer
+  if (now >= L.ballAt) {
+    L.ballAt = now + 3500 + Math.random() * 3000;
+    const targets = [...lobby.players.values()].filter((p) => !p.out && p.lavaSafeUntil < now);
+    const t = targets[Math.floor(Math.random() * targets.length)];
+    if (t) L.balls.push({ id: nextId++, x: t.x + (Math.random() - 0.5) * 1.5, y: t.y, z: t.z + (Math.random() - 0.5) * 1.5, at: now + 1600 });
+  }
+  L.balls = L.balls.filter((ball) => {
+    if (now < ball.at) return true;
+    for (const p of lobby.players.values()) {
+      const d = Math.hypot(p.x - ball.x, p.z - ball.z);
+      if (d > 2.3 || Math.abs(p.y - ball.y) > 2 || p.lavaSafeUntil > now) continue;
+      stun(lobby, p, p.x - ball.x, p.z - ball.z, now, 700, 10, 8);
+    }
+    emit(lobby, { type: 'lavaball', x: ball.x, y: ball.y, z: ball.z });
+    return false;
+  });
+  // 5. vlotten (borden die op de lava drijven) verdwijnen na vijf seconden
+  const before = L.rafts.length;
+  L.rafts = L.rafts.filter((r) => r.until > now);
+  if (L.rafts.length !== before) refreshDynamic(lobby);
+  MapData.dynamic = lobby.dynamic;
+
   for (const p of lobby.players.values()) {
     if (p.lavaSafeUntil > now) continue;
-    if (!MapData.onFloor(p.x, p.z, p.y)) {
-      p.score += dt;
-      p.lavaSeconds += dt;
+    if (MapData.onFloor(p.x, p.z, p.y)) {
+      burn(lobby, p, now, 'lava');
       continue;
     }
-    // verbrand: terug naar een tafel, drie punten kwijt
-    p.burns++;
-    p.score = Math.max(0, p.score - 3);
-    p.lavaSafeUntil = now + 2500;
-    stun(lobby, p, 0, 0, now, 900, 0, 7);
-    teleport(lobby, p, safeSpot(lobby));
-    emit(lobby, { type: 'burn', id: p.id });
+    // punten: 1 per seconde, 3 op het gouden eiland
+    const gold = island && onSpot(p, island);
+    p.score += dt * (gold ? 3 : 1);
+    p.lavaSeconds += dt;
+    // 3. hete voeten: wie zes seconden op dezelfde plek blijft staan, verbrandt alsnog
+    if (Math.hypot(p.x - p.heatX, p.z - p.heatZ) > 0.9 || Math.abs(p.y - p.heatY) > 0.3) {
+      Object.assign(p, { heat: 0, heatX: p.x, heatY: p.y, heatZ: p.z });
+    } else if ((p.heat += dt) > 6) {
+      burn(lobby, p, now, 'heet');
+    }
   }
+}
+// een bord dat op de lava landt, blijft vijf seconden drijven als vlot
+function addRaft(lobby, x, y, z) {
+  const floor = MapData.groundAt(x, z, y + 0.5);
+  if (!MapData.onFloor(x, z, floor)) return;
+  lobby.lava.rafts.push({ id: nextId++, x, y: floor, z, until: Date.now() + 5000 });
+  if (lobby.lava.rafts.length > 8) lobby.lava.rafts.shift();
+  refreshDynamic(lobby);
+  MapData.dynamic = lobby.dynamic;
 }
 
 // ---------- Verstoppertje ----------
@@ -1358,6 +1678,45 @@ function tickChairs(lobby, now) {
   emit(lobby, { type: 'musicStart' });
 }
 
+// ---------- Wachtruimte: tussen de potjes door rondlopen en met spullen gooien ----------
+const WARM_MAP = 'plein';
+function startWarm(lobby) {
+  if (lobby.playing || lobby.busy) return;
+  lobby.warm = true;
+  lobby.warmMap = WARM_MAP;
+  MapData.use(WARM_MAP);
+  resetProps(lobby);
+  lobby.lava = null;
+  lobby.lavaBlocks = [];
+  lobby.itemSpots = MapData.ITEM_SPAWNS;
+  lobby.items = lobby.itemSpots.map(() => ({ kind: randomKind(lobby), availableAt: 0 }));
+  lobby.vending = MapData.VENDING.map(() => 0);
+  lobby.vehicles = MapData.VEHICLES.map(() => ({ rider: null, availableAt: 0 }));
+  Object.assign(lobby, { projectiles: [], traps: [], puddles: [], decoy: null, zone: false, goAt: 0, duration: 0, event: { type: '', until: 0 }, double: false });
+  resetBroodje(lobby);
+  for (const p of lobby.players.values()) placeWarm(lobby, p);
+}
+function placeWarm(lobby, p) {
+  const s = MapData.maps[WARM_MAP].SPAWNS[Math.floor(Math.random() * MapData.maps[WARM_MAP].SPAWNS.length)];
+  Object.assign(p, { x: s.x + (Math.random() - 0.5) * 2, y: s.y, z: s.z + (Math.random() - 0.5) * 2, item: 0, gadget: 0, stunnedUntil: 0, vehicle: 0, out: false, team: 0, disguise: 0, frozenUntil: 0 });
+  if (!p.isBot) {
+    io.to(p.id).emit('warmStart', {
+      map: WARM_MAP, spawn: { x: p.x, y: p.y, z: p.z },
+      props: lobby.props.map((o, i) => [i, r2(o.x), r2(o.y), r2(o.z), o.tip, r2(o.dir)])
+    });
+  }
+}
+function tickWarm(lobby, now) {
+  const dt = Math.min(0.1, (now - (lobby.lastTick || now)) / 1000);
+  lobby.lastTick = now;
+  MapData.use(WARM_MAP);
+  MapData.dynamic = lobby.dynamic;
+  tickItems(lobby, now);
+  tickProjectiles(lobby, now, dt);
+  tickProps(lobby, now, dt);
+  sendState(lobby, now, 0, 'wstate');
+}
+
 // ---------- Game ----------
 // Begint een nieuw potje (of toernooi of pauzefeest): ronde 1, daarna draait de map-roulette.
 function startGame(lobby) {
@@ -1365,6 +1724,12 @@ function startGame(lobby) {
   // openbare lobby's worden met bots aangevuld (ranked niet)
   if (lobby.public && !lobby.ranked) {
     while (lobby.players.size < FILL_TO) addBot(lobby);
+    // bots op het niveau van de spelers: wie vaak verliest krijgt makkelijke bots, goede spelers moeilijke
+    const known = humans(lobby).filter((p) => p.games >= 3);
+    if (known.length) {
+      const rate = known.reduce((a, p) => a + p.winRate, 0) / known.length;
+      lobby.opts.botLevel = rate < 0.12 ? 0 : rate > 0.4 ? 2 : 1;
+    }
   }
   lobby.round = 1;
   lobby.totals = new Map();
@@ -1376,6 +1741,7 @@ function startGame(lobby) {
 // Kiest twee maps die deze reeks nog niet zijn geweest en laat de spelers stemmen.
 function pickMap(lobby) {
   lobby.busy = true;
+  lobby.warm = false;
   lobby.autoStartAt = null;
   if (lobby.party) {
     lobby.mode = PARTY[lobby.round - 1].mode;
@@ -1388,13 +1754,10 @@ function pickMap(lobby) {
   let pool = fits.filter((id) => !lobby.usedMaps.includes(id) && id !== lobby.lastMap);
   if (pool.length < 2) pool = fits.filter((id) => id !== lobby.lastMap);
   if (pool.length < 2) pool = fits.slice();
-  const options = pool.sort(() => Math.random() - 0.5).slice(0, 2);
-  if (options.length < 2) options.push(options[0]);
+  // geen stemmen meer: het rad kiest, uit alle maps die bij deze modus passen
+  const map = pool[Math.floor(Math.random() * pool.length)];
   sendLobby(lobby);
-  if (lobby.practice) return announceMap(lobby, options[0], options); // oefenen: meteen door
-  lobby.vote = { options, votes: new Map(), done: false };
-  io.to(lobby.code).emit('mapVote', { options, seconds: VOTE_MS / 1000, round: lobby.round, rounds: lobby.rounds, party: lobby.party, mode: lobby.mode });
-  lobby.voteTimer = setTimeout(() => closeVote(lobby), VOTE_MS);
+  announceMap(lobby, map, fits);
 }
 
 function closeVote(lobby) {
@@ -1445,13 +1808,23 @@ function beginRound(lobby) {
       bounty: !p.isBot && p.winRun >= BOUNTY_WINS && !lobby.practice ? Math.min(100, 30 + 20 * (p.winRun - BOUNTY_WINS)) : 0
     });
   });
+  // aftellen: pas na 3, 2, 1 begint het echt
+  lobby.goAt = now + GO_MS;
+  lobby.duration = duration;
+  for (const p of lobby.players.values()) {
+    p.lastActive = lobby.goAt;
+    if (p.frozenUntil) p.frozenUntil += GO_MS;
+  }
   lobby.btype = 0;
-  lobby.typeAt = now + TYPE_MS / 2; // het eerste andere broodje komt al na twintig seconden
+  lobby.typeAt = lobby.goAt + TYPE_MS / 2; // het eerste andere broodje komt al na twintig seconden
   lobby.decoy = null;
   resetBroodje(lobby);
   resetProps(lobby);
   // lava: de spullen liggen op de tafels en kratten in plaats van op de vloer
   lobby.lavaBlocks = lobby.mode === 'lava' ? lavaBlocks(lobby.map) : [];
+  lobby.lava = lobby.mode === 'lava'
+    ? { island: null, islandAt: 0, melting: {}, gone: [], meltAt: now + GO_MS + LAVA_WARMUP_MS + 10000, ballAt: now + GO_MS + LAVA_WARMUP_MS + 5000, balls: [], rafts: [] }
+    : null;
   MapData.use(lobby.map);
   refreshDynamic(lobby);
   lobby.itemSpots = lobby.mode === 'lava'
@@ -1468,10 +1841,10 @@ function beginRound(lobby) {
   lobby.vehicles = MapData.VEHICLES.map(() => ({ rider: null, availableAt: 0 }));
   lobby.highlight = { score: 0 };
   lobby.remaining = duration;
-  lobby.lavaAt = now + LAVA_WARMUP_MS;
-  lobby.hideUntil = now + HIDE_MS;
+  lobby.lavaAt = lobby.goAt + LAVA_WARMUP_MS;
+  lobby.hideUntil = lobby.goAt + HIDE_MS;
   lobby.chairs = null;
-  if (lobby.mode === 'stoelen') markChairs(lobby, now);
+  if (lobby.mode === 'stoelen') markChairs(lobby, lobby.goAt);
   for (const p of lobby.players.values()) if (p.isBot) bots.resetBot(p, lobby.opts.botLevel);
   lobby.event = { type: '', until: 0 };
   lobby.double = false;
@@ -1488,7 +1861,7 @@ function beginRound(lobby) {
   if (lobby.mode === 'stoelen') lobby.schedule = [];
   lobby.playing = true;
   lobby.autoStartAt = null;
-  lobby.endsAt = now + duration * 1000;
+  lobby.endsAt = lobby.goAt + duration * 1000;
   lobby.lastTick = now;
   sendLobby(lobby);
   const teams = {};
@@ -1497,7 +1870,7 @@ function beginRound(lobby) {
     io.to(p.id).emit('gameStart', {
       duration, mode: lobby.mode, teams, map: lobby.map, round: lobby.round, rounds: lobby.rounds, party: lobby.party,
       rules: lobby.opts.rules, weekly: lobby.weekly, bounty: p.bounty, spawn: { x: p.x, y: p.y, z: p.z },
-      lavaBlocks: lobby.lavaBlocks, itemSpots: lobby.mode === 'lava' ? lobby.itemSpots : null
+      lavaBlocks: lobby.lavaBlocks, itemSpots: lobby.mode === 'lava' ? lobby.itemSpots : null, countdown: GO_MS / 1000
     });
   }
 }
@@ -1564,7 +1937,15 @@ function endGame(lobby) {
     const rv = a.rv[b.key] || (a.rv[b.key] = { name: b.name, by: 0, you: 0, h2h: 0 });
     rv.h2h = i < j ? 1 : -1;
   }));
+  // na het laatste potje: twintig seconden stemmen op de speler van het potje
+  const mvp = final && !lobby.practice && people.length >= 2;
+  if (mvp) {
+    const ids = people.map((p) => p.id);
+    lobby.mvp = { votes: new Map(), until: Date.now() + MVP_MS, voters: ids, candidates: ids };
+    setTimeout(() => closeMvp(lobby), MVP_MS);
+  }
   io.to(lobby.code).emit('gameOver', {
+    mvp: mvp ? MVP_MS / 1000 : 0,
     ranking, mode: lobby.mode, teamScores: teams, map: lobby.map, ranked: lobby.ranked, party: lobby.party,
     winners: [...winners], hidersWon,
     highlight: lobby.highlight.score ? lobby.highlight : null,
@@ -1588,6 +1969,7 @@ function endGame(lobby) {
     }
     lobby.mode = lobby.baseMode;
     sendLobby(lobby);
+    startWarm(lobby);
     return;
   }
   // toernooi of pauzefeest: na de tussenstand begint vanzelf de volgende ronde
@@ -1599,6 +1981,23 @@ function endGame(lobby) {
     lobby.busy = false;
     if (lobby.players.size) pickMap(lobby);
   }, BETWEEN_MS);
+}
+
+function closeMvp(lobby) {
+  const m = lobby.mvp;
+  lobby.mvp = null;
+  if (!m || lobbies.get(lobby.code) !== lobby) return;
+  const counts = {};
+  for (const v of m.votes.values()) counts[v] = (counts[v] || 0) + 1;
+  const best = Math.max(0, ...Object.values(counts));
+  const top = Object.keys(counts).filter((id) => counts[id] === best);
+  if (!best || top.length !== 1) return io.to(lobby.code).emit('mvpResult', null);
+  const p = lobby.players.get(top[0]);
+  io.to(lobby.code).emit('mvpResult', { id: top[0], name: p ? p.name : '?', votes: best });
+  if (p && p.username) {
+    // erepunt voor een ingelogde speler; gasten tellen het zelf
+    awardPlayer(p, { score: 0, won: false, final: false, factor: 0, deltas: { honors: 1 }, maxes: {} });
+  }
 }
 
 // Alles wat de server in dit potje van een speler heeft gezien, voor munten, XP en prestaties.
@@ -1673,6 +2072,7 @@ function addBot(lobby) {
   if (lobby.players.size + lobby.waiting.size >= MAX_PLAYERS) return;
   const bot = bots.makeBot(lobby, newPlayer({ id: '' }, { name: 'Bot' }, lobby));
   lobby.players.set(bot.id, bot);
+  if (lobby.warm) placeWarm(lobby, bot);
 }
 function removeBot(lobby) {
   const bot = [...lobby.players.values()].reverse().find((p) => p.isBot);
@@ -1685,7 +2085,14 @@ const r2 = (n) => Math.round(n * 100) / 100;
 // extra informatie per modus voor de HUD
 function modeState(lobby, now) {
   if (lobby.mode === 'broodjes') return { bt: lobby.btype, bn: Math.max(0, Math.ceil((lobby.typeAt - now) / 1000)) };
-  if (lobby.mode === 'lava') return { lv: Math.ceil((lobby.lavaAt - now) / 1000) };
+  if (lobby.mode === 'lava') {
+    const L = lobby.lava;
+    return {
+      lv: Math.ceil((lobby.lavaAt - now) / 1000), is: L.island, isn: Math.max(0, Math.ceil((L.islandAt - now) / 1000)),
+      mt: Object.keys(L.melting), gn: L.gone, bl: L.balls.map((b) => [b.id, r2(b.x), r2(b.y), r2(b.z), Math.max(0, b.at - now)]),
+      rf: L.rafts.map((r) => [r.id, r2(r.x), r2(r.y), r2(r.z)])
+    };
+  }
   if (lobby.mode === 'prophunt') {
     return { hd: Math.max(0, Math.ceil((lobby.hideUntil - now) / 1000)), hl: [...lobby.players.values()].filter((p) => p.team === 0).length };
   }
@@ -1712,18 +2119,22 @@ function tick(lobby, now) {
     p.lastX = p.x;
     p.lastZ = p.z;
   }
-  bots.tickBots(lobby, now, dt, botApi);
-
-  // eindsprint: wie buiten de zone staat verliest punten (niet in de modi met eigen regels)
-  if (remaining <= ZONE_SECONDS && !['lava', 'prophunt', 'stoelen'].includes(lobby.mode)) {
-    if (!lobby.zone) {
-      lobby.zone = true;
-      emit(lobby, { type: 'gameEvent', name: 'zone' });
-    }
-    for (const p of lobby.players.values()) {
-      if (!inZone(p)) p.score = Math.max(0, p.score - 3 * dt);
+  // aftellen: iedereen staat stil, er gebeurt nog niets
+  const live = now >= lobby.goAt;
+  if (live) bots.tickBots(lobby, now, dt, botApi);
+  // anti-AFK: in een openbaar potje wie een minuut niets doet eruit (na 45 seconden een waarschuwing)
+  if (live && lobby.public) {
+    for (const p of humans(lobby)) {
+      if (p.gone || p.out || p.frozenUntil > now) continue;
+      const idle = now - p.lastActive;
+      if (idle > AFK_MS) kick(lobby, p.id, 'Je deed een minuut niets, dus je bent uit het potje gezet.');
+      else if (idle > AFK_MS - 15000 && !p.afkWarned) {
+        p.afkWarned = true;
+        io.to(p.id).emit('afk', { seconds: Math.ceil((AFK_MS - idle) / 1000) });
+      }
     }
   }
+  if (!live) return sendState(lobby, now, remaining);
 
   tickEvents(lobby, now, remaining);
   if (!NO_BROODJE.includes(lobby.mode)) tickBroodje(lobby, now, dt);
@@ -1734,7 +2145,11 @@ function tick(lobby, now) {
   tickProjectiles(lobby, now, dt);
   tickProps(lobby, now, dt);
   tickBrand(lobby, now, dt);
+  sendState(lobby, now, remaining);
+  if (remaining <= 0) endGame(lobby);
+}
 
+function sendState(lobby, now, remaining, channel = 'state') {
   const b = lobby.broodje;
   const changed = [];
   lobby.props.forEach((o, i) => {
@@ -1743,8 +2158,9 @@ function tick(lobby, now) {
     changed.push([i, r2(o.x), r2(o.y), r2(o.z), o.tip, r2(o.dir)]);
   });
   const d = lobby.decoy;
-  io.to(lobby.code).emit('state', {
-    t: remaining,
+  io.to(lobby.code).emit(channel, {
+    t: Math.min(remaining, lobby.duration || 0),
+    cd: now < lobby.goAt ? Math.ceil((lobby.goAt - now) / 1000) : 0,
     // [id, x, y, z, kijkrichting, punten, vlaggen, voorwerp in de hand, val op zak, pizza's in de doos, voertuig, vermomming, team]
     // vlaggen: 1 = dash, 2 = knock-out, 4 = energiedrank, 8 = schild, 16 = friet in je gezicht, 32 = hap nemen,
     // 64 = plakband, 128 = premie, 256 = eruit (stoelendans), 512 = tellen (verstoppertje), 1024 = nat
@@ -1752,13 +2168,13 @@ function tick(lobby, now) {
       p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.ry), Math.floor(p.score),
       (p.dashUntil > now ? 1 : 0) | (p.stunnedUntil > now ? 2 : 0) | (p.boostUntil > now ? 4 : 0) | (p.shield ? 8 : 0) | (p.blindUntil > now ? 16 : 0) |
       (p.biteUntil > now ? 32 : 0) | (p.stickyUntil > now ? 64 : 0) | (p.bounty > 0 ? 128 : 0) | (p.out ? 256 : 0) | (p.frozenUntil > now ? 512 : 0) |
-      (p.wetUntil > now ? 1024 : 0),
+      (p.wetUntil > now ? 1024 : 0) | (p.heat > 3 ? 2048 : 0) | (p.heat > 4.8 ? 4096 : 0),
       p.item, p.gadget, p.ammo, p.vehicle, p.disguise, p.team
     ]),
-    b: NO_BROODJE.includes(lobby.mode) ? null
+    b: NO_BROODJE.includes(lobby.mode) || channel !== 'state' ? null
       : { x: r2(b.x), y: r2(b.y), z: r2(b.z), h: b.holder, s: r2(1 - Math.min(1, b.eaten / Math.min(broodjeLife(lobby), 60))), k: b.k, hid: b.hiddenUntil > now ? 1 : 0 },
     dc: d ? [r2(d.x), r2(d.y), r2(d.z)] : null,
-    x: modeState(lobby, now),
+    x: channel === 'state' ? modeState(lobby, now) : null,
     i: lobby.items.map((it) => (it.availableAt <= now ? it.kind : 0)),
     j: lobby.projectiles.map((pr) => [pr.id, pr.kind, r2(pr.x), r2(pr.y), r2(pr.z)]),
     n: lobby.traps.map((t) => [t.id, r2(t.x), r2(t.y), r2(t.z), t.kind, r2(t.ry)]),
@@ -1768,10 +2184,9 @@ function tick(lobby, now) {
     v: lobby.vending.map((readyAt) => (readyAt <= now ? 1 : 0)),
     e: lobby.event.type,
     d: lobby.double ? 1 : 0,
-    ts: TEAM_MODES.includes(lobby.mode) && lobby.mode !== 'prophunt' ? teamScores(lobby) : null,
+    ts: channel === 'state' && TEAM_MODES.includes(lobby.mode) && lobby.mode !== 'prophunt' ? teamScores(lobby) : null,
     o: changed
   });
-  if (remaining <= 0) endGame(lobby);
 }
 
 setInterval(() => {
@@ -1779,7 +2194,10 @@ setInterval(() => {
   for (const lobby of lobbies.values()) {
     if (lobby.playing) {
       tick(lobby, now);
-    } else if (lobby.public && !lobby.busy) {
+    } else if (lobby.warm && !lobby.busy) {
+      tickWarm(lobby, now);
+    }
+    if (!lobby.playing && lobby.public && !lobby.busy) {
       // openbare lobby: telt tien seconden af zodra genoeg spelers ready zijn
       if (!canStart(lobby)) {
         if (lobby.autoStartAt) {
@@ -1801,12 +2219,15 @@ function leaveLobby(socket) {
   const lobby = lobbies.get(socket.data.code);
   socket.data.code = null;
   if (!lobby) return;
-  if (lobby.playing && lobby.broodje && lobby.broodje.holder === socket.id) dropBroodje(lobby, Math.random() - 0.5, Math.random() - 0.5);
-  const leaver = lobby.players.get(socket.id);
-  if (leaver && lobby.playing) dismount(lobby, leaver, Date.now());
-  lobby.players.delete(socket.id);
-  lobby.waiting.delete(socket.id);
   socket.leave(lobby.code);
+  leaveById(lobby, socket.id);
+}
+function leaveById(lobby, id) {
+  if (lobby.playing && lobby.broodje && lobby.broodje.holder === id) dropBroodje(lobby, Math.random() - 0.5, Math.random() - 0.5);
+  const leaver = lobby.players.get(id);
+  if (leaver && lobby.playing) dismount(lobby, leaver, Date.now());
+  lobby.players.delete(id);
+  lobby.waiting.delete(id);
   if (humans(lobby).length === 0) {
     for (const p of [...lobby.players.values()]) lobby.players.delete(p.id); // alleen bots over
     // niemand speelt meer: meekijkers nemen de lobby over, anders verdwijnt hij
@@ -1819,8 +2240,18 @@ function leaveLobby(socket) {
     lobby.playing = false;
     lobby.busy = false;
   }
-  if (lobby.hostId === socket.id) lobby.hostId = humans(lobby)[0].id;
+  if (lobby.hostId === id) lobby.hostId = humans(lobby)[0].id;
   sendLobby(lobby);
+}
+// iemand uit de lobby zetten (anti-AFK of beheerder)
+function kick(lobby, id, text) {
+  const sock = io.sockets.sockets.get(id);
+  if (sock) {
+    sock.emit('kicked', { text });
+    leaveLobby(sock);
+  } else {
+    leaveById(lobby, id);
+  }
 }
 
 let nextId = 1;
@@ -1856,7 +2287,7 @@ function slap(lobby, p, dirX, dirZ) {
     target = o;
     best = d;
   }
-  if (target && lobby.mode === 'prophunt') {
+  if (target && lobby.mode === 'prophunt' && lobby.playing) {
     if (p.team === 1 && target.team === 0 && now >= lobby.hideUntil) find(lobby, p, target, now);
   } else if (target && !sameTeam(lobby, p, target)) {
     knock(lobby, target, fx, fz, 9, 4);
@@ -1904,16 +2335,73 @@ function feint(lobby, p, x, z) {
   emit(lobby, { type: 'feint', id: p.id });
 }
 const botApi = {
-  sameTeam, inZone, throwItem, slap, bite, feint, NO_BROODJE,
+  sameTeam, inZone, throwItem, slap, bite, feint, NO_BROODJE, lavaSpots, onSpot,
   speedOf: (lobby) => rule(lobby, 'speed'), gravOf: (lobby) => rule(lobby, 'grav')
 };
 
+// ---------- Groepjes: samen met vrienden in dezelfde lobby ----------
+const parties = new Map(); // code -> { code, leader, members: [socket-id] }
+const joinFns = new Map(); // socket-id -> functie om die speler in een lobby te zetten
+function partyInfo(party) {
+  return {
+    code: party.code, leader: party.leader,
+    members: party.members.map((id) => {
+      const sock = io.sockets.sockets.get(id);
+      const look = (sock && sock.data.look) || {};
+      return { id, name: look.name || 'Speler', skin: look.skin || 'leerling', acc: look.acc || 'skin.geen.rugzak', pr: look.pr || 0, ps: look.ps || 0 };
+    })
+  };
+}
+function sendParty(party) {
+  const info = partyInfo(party);
+  for (const id of party.members) io.to(id).emit('party', info);
+}
+function leaveParty(id) {
+  const sock = io.sockets.sockets.get(id);
+  const code = sock ? sock.data.party : [...parties.values()].find((p) => p.members.includes(id))?.code;
+  const party = parties.get(code);
+  if (sock) sock.data.party = null;
+  if (!party) return;
+  party.members = party.members.filter((m) => m !== id);
+  if (sock) sock.emit('party', null);
+  if (!party.members.length) return parties.delete(code);
+  if (party.leader === id) party.leader = party.members[0];
+  sendParty(party);
+}
+// de leider zit in een lobby: de rest van de groep komt erbij
+function pullParty(socket) {
+  const party = parties.get(socket.data.party);
+  if (!party || party.leader !== socket.id || !socket.data.code) return;
+  for (const id of party.members) {
+    if (id === socket.id) continue;
+    const sock = io.sockets.sockets.get(id);
+    const join = joinFns.get(id);
+    if (!sock || !join || sock.data.code === socket.data.code) continue;
+    join(socket.data.code, (res) => sock.emit('partyPulled', res));
+  }
+}
+
 io.on('connection', (socket) => {
   const reply = (cb, data) => typeof cb === 'function' && cb(data);
+  // na een korte onderbreking weer verbonden: gewoon verder in hetzelfde potje
+  if (socket.recovered) {
+    const lobby = lobbies.get(socket.data.code);
+    const p = lobby && (lobby.players.get(socket.id) || lobby.waiting.get(socket.id));
+    if (p) p.gone = false;
+    if (socket.data.username) presence.set(socket.data.username, socket);
+  }
+  joinFns.set(socket.id, (code, cb) => joinLobby(code, socket.data.join || {}, cb));
+  // alles wat je doet telt als actief (anti-AFK); lopen alleen als je echt beweegt
+  socket.onAny((event) => {
+    if (event === 'move' || event === 'clientStats') return;
+    const lobby = lobbies.get(socket.data.code);
+    const p = lobby && lobby.players.get(socket.id);
+    if (p) Object.assign(p, { lastActive: Date.now(), afkWarned: false });
+  });
   // speler in een lopende game die niet knock-out, af of aan het tellen is, of null
   const activePlayer = (allowStunned) => {
     const lobby = lobbies.get(socket.data.code);
-    const p = lobby && lobby.playing && lobby.players.get(socket.id);
+    const p = lobby && (lobby.playing || lobby.warm) && lobby.players.get(socket.id);
     const now = Date.now();
     if (!p || p.out || (!allowStunned && (p.stunnedUntil > now || p.frozenUntil > now))) return null;
     return { lobby, p };
@@ -1928,6 +2416,7 @@ io.on('connection', (socket) => {
       Object.assign(player, {
         accountId: account.id, username: account.username, name: account.display, rp: account.rank_points, banned: account.banned,
         key: account.username, lvl: Catalog.careerOf(p.careerXp).level, pr: p.prestige, ps: p.passPrestige, winRun: p.winRun,
+        games: (account.stats || {}).games || 0, winRate: ((account.stats || {}).wins || 0) / Math.max(1, (account.stats || {}).games || 0),
         nemesis: nem ? nem.key : ''
       });
       socket.data.username = account.username;
@@ -1937,6 +2426,7 @@ io.on('connection', (socket) => {
   }
 
   async function createLobby(data, cb, isPublic, ranked, weekly) {
+    socket.data.join = data;
     leaveLobby(socket);
     const code = makeCode();
     const lobby = {
@@ -1944,7 +2434,7 @@ io.on('connection', (socket) => {
       opts: { duration: 180, events: true, extras: true, botLevel: 1, rules: weekly ? weekly.rules : Catalog.defaultRules() },
       autoStartAt: null, busy: false, vehicles: [], highlight: { score: 0 }, remaining: 0,
       map: 'kantine', lastMap: null, usedMaps: [], rounds: 1, round: 1, totals: new Map(), baseMode: weekly ? weekly.mode : 'klassiek',
-      puddles: [], traps: [], zone: false, lavaBlocks: [], itemSpots: [], decoy: null, btype: 0, typeAt: 0, lavaAt: 0, hideUntil: 0, chairs: null,
+      puddles: [], traps: [], zone: false, lavaBlocks: [], itemSpots: [], lava: null, decoy: null, btype: 0, typeAt: 0, lavaAt: 0, hideUntil: 0, chairs: null,
       code, hostId: socket.id, players: new Map(), waiting: new Map(), playing: false, mode: weekly ? weekly.mode : 'klassiek', endsAt: 0, lastTick: 0,
       broodje: null, items: [], vending: [], projectiles: [], props: [], panels: [], dynamic: [],
       event: { type: '', until: 0 }, double: false, schedule: []
@@ -1959,6 +2449,8 @@ io.on('connection', (socket) => {
     socket.join(code);
     reply(cb, { ok: true });
     sendLobby(lobby);
+    startWarm(lobby);
+    pullParty(socket);
   }
   socket.on('createLobby', (data, cb) => createLobby(data, cb, false));
 
@@ -2047,8 +2539,10 @@ io.on('connection', (socket) => {
       weekly = Catalog.weeklyFor(null, WEEKLY_OPEN);
       if (!weekly.open) return reply(cb, { ok: false, error: 'De modus van de week is alleen in het weekend open.' });
     }
+    const party = parties.get(socket.data.party);
+    const size = party && party.leader === socket.id ? party.members.length : 1;
     const open = [...lobbies.values()].filter((l) => l.public && l.ranked === ranked && l.weekly === (weekly ? weekly.key : null) &&
-      l.code !== socket.data.code && humans(l).length + l.waiting.size < MAX_PLAYERS);
+      l.code !== socket.data.code && humans(l).length + l.waiting.size + size <= MAX_PLAYERS);
     const lobby = open.find((l) => !l.playing) || open[0];
     if (lobby) joinLobby(lobby.code, data, cb);
     else createLobby(data, cb, true, ranked, weekly);
@@ -2056,6 +2550,7 @@ io.on('connection', (socket) => {
 
   socket.on('joinLobby', (data, cb) => joinLobby(String((data && data.code) || '').toUpperCase().trim(), data, cb));
   async function joinLobby(code, data, cb) {
+    socket.data.join = data;
     const lobby = lobbies.get(code);
     if (!lobby) return reply(cb, { ok: false, error: 'Lobby niet gevonden.' });
     // een bot maakt plaats voor een echte speler
@@ -2077,6 +2572,7 @@ io.on('connection', (socket) => {
       sendLobby(lobby);
       const teams = {};
       for (const p of lobby.players.values()) teams[p.id] = p.team;
+      pullParty(socket);
       socket.emit('spectate', {
         mode: lobby.mode, teams, map: lobby.map, rules: lobby.opts.rules,
         lavaBlocks: lobby.lavaBlocks, itemSpots: lobby.mode === 'lava' ? lobby.itemSpots : null,
@@ -2087,9 +2583,18 @@ io.on('connection', (socket) => {
     }
     lobby.players.set(socket.id, player);
     sendLobby(lobby);
+    if (lobby.warm) placeWarm(lobby, player);
+    else if (!lobby.busy) startWarm(lobby);
+    pullParty(socket);
   }
 
   socket.on('leaveLobby', () => leaveLobby(socket));
+  // terug in de lobby (na het eindscherm): opnieuw in de wachtruimte zetten
+  socket.on('warmAgain', () => {
+    const lobby = lobbies.get(socket.data.code);
+    const p = lobby && lobby.players.get(socket.id);
+    if (p && lobby.warm && !lobby.playing) placeWarm(lobby, p);
+  });
 
   // uiterlijk aanpassen in de lobby (niet tijdens je eigen potje)
   const lobbyMe = () => {
@@ -2175,7 +2680,8 @@ io.on('connection', (socket) => {
   socket.on('move', (m) => {
     const a = activePlayer(true);
     if (!a || !m || ![m.x, m.y, m.z, m.ry].every(Number.isFinite)) return;
-    const B = MapData.use(a.lobby.map).BOUNDS;
+    const B = MapData.use(a.lobby.playing ? a.lobby.map : WARM_MAP).BOUNDS;
+    if (Math.hypot(m.x - a.p.x, m.z - a.p.z) > 0.05 || Math.abs(m.ry - a.p.ry) > 0.05) Object.assign(a.p, { lastActive: Date.now(), afkWarned: false });
     a.p.x = Math.max(B.minX, Math.min(B.maxX, m.x));
     a.p.y = Math.max(B.minY - 2, Math.min(B.maxY + 4, m.y));
     a.p.z = Math.max(B.minZ, Math.min(B.maxZ, m.z));
@@ -2295,9 +2801,93 @@ io.on('connection', (socket) => {
     emit(a.lobby, { type: 'say', id: socket.id, i });
   });
 
-  socket.on('disconnect', () => {
+  // ---------- groepjes ----------
+  const cleanLook = (d) => ({
+    name: cleanName(d && d.name), skin: cleanSkin(d && d.skin), acc: cleanAcc(d && d.acc), pr: cleanInt(d && d.pr, 99), ps: cleanInt(d && d.ps, 99)
+  });
+  socket.on('partyLook', (data) => {
+    socket.data.look = cleanLook(data);
+    socket.data.join = data;
+    const party = parties.get(socket.data.party);
+    if (party) sendParty(party);
+  });
+  socket.on('partyCreate', (data, cb) => {
+    leaveParty(socket.id);
+    let code;
+    do code = 'G' + Math.random().toString(36).slice(2, 6).toUpperCase(); while (parties.has(code));
+    parties.set(code, { code, leader: socket.id, members: [socket.id] });
+    socket.data.party = code;
+    socket.data.look = cleanLook(data);
+    socket.data.join = data;
+    reply(cb, { ok: true, code });
+    sendParty(parties.get(code));
+  });
+  socket.on('partyJoin', (data, cb) => {
+    const party = parties.get(String((data && data.code) || '').toUpperCase().trim());
+    if (!party) return reply(cb, { ok: false, error: 'Deze groep bestaat niet (meer).' });
+    if (party.members.includes(socket.id)) return reply(cb, { ok: true, code: party.code });
+    if (party.members.length >= MAX_PARTY) return reply(cb, { ok: false, error: 'Deze groep is vol (maximaal vier).' });
+    leaveParty(socket.id);
+    party.members.push(socket.id);
+    socket.data.party = party.code;
+    socket.data.look = cleanLook(data);
+    socket.data.join = data;
+    reply(cb, { ok: true, code: party.code });
+    sendParty(party);
+    // zit de leider al in een lobby, dan ga je meteen mee
+    const leader = io.sockets.sockets.get(party.leader);
+    if (leader && leader.data.code) joinFns.get(socket.id)(leader.data.code, (res) => socket.emit('partyPulled', res));
+  });
+  socket.on('partyLeave', () => leaveParty(socket.id));
+  // vriend uitnodigen: hij krijgt een melding met een knop om mee te doen
+  socket.on('partyInvite', (name) => {
+    const party = parties.get(socket.data.party);
+    const friend = presence.get(String(name || '').trim().toLowerCase());
+    if (!party || !friend || !socket.data.username) return;
+    friend.emit('partyInvite', { from: (socket.data.look || {}).name || 'Een vriend', code: party.code });
+  });
+
+  // ---------- pingen: een markering voor jezelf en je teamgenoten ----------
+  socket.on('mark', (d) => {
+    const a = activePlayer(true);
+    const now = Date.now();
+    if (!a || !d || ![d.x, d.y, d.z].every(Number.isFinite) || now - (a.p.lastMark || 0) < 800) return;
+    a.p.lastMark = now;
+    for (const p of a.lobby.players.values()) {
+      if (p.isBot || (p !== a.p && !sameTeam(a.lobby, p, a.p))) continue;
+      io.to(p.id).emit('event', { type: 'mark', id: a.p.id, x: d.x, y: d.y, z: d.z });
+    }
+  });
+
+  // ---------- speler van het potje ----------
+  socket.on('mvpVote', (id) => {
+    const lobby = lobbies.get(socket.data.code);
+    const m = lobby && lobby.mvp;
+    if (!m || Date.now() > m.until || !m.voters.includes(socket.id) || !m.candidates.includes(id) || id === socket.id) return;
+    m.votes.set(socket.id, id);
+    const counts = {};
+    for (const v of m.votes.values()) counts[v] = (counts[v] || 0) + 1;
+    io.to(lobby.code).emit('mvpCount', counts);
+  });
+
+  socket.on('disconnect', (reason) => {
     if (presence.get(socket.data.username) === socket) presence.delete(socket.data.username);
-    leaveLobby(socket);
+    joinFns.delete(socket.id);
+    const lobby = lobbies.get(socket.data.code);
+    const p = lobby && (lobby.players.get(socket.id) || lobby.waiting.get(socket.id));
+    // zelf weggegaan (tab dicht of eruit gezet): meteen weg. Verbinding kwijt: dertig seconden wachten.
+    if (!p || reason === 'client namespace disconnect' || reason === 'server namespace disconnect') {
+      leaveParty(socket.id);
+      return leaveLobby(socket);
+    }
+    p.gone = true;
+    const id = socket.id, code = socket.data.code;
+    setTimeout(() => {
+      if (io.sockets.sockets.get(id)) return; // is teruggekomen
+      leaveParty(id);
+      const l = lobbies.get(code);
+      if (l && (l.players.get(id) || l.waiting.get(id))) leaveById(l, id);
+    }, RECONNECT_MS);
   });
 });
 
