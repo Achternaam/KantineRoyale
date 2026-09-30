@@ -44,7 +44,14 @@ const ICONS = {
   bomb: 'M11 8a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M13 5h3v3h-3z M17 4l3-2 1 1.500-3 2z',
   heart: 'M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1.500A5 5 0 0 1 22 8c0 4-3 7-10 13z',
   crown: 'M3 18h18v2.500H3z M3 16L2 7l5.500 4L12 4l4.500 7L22 7l-1 9z',
-  broodje: 'M3 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z M1 10.500h22v3H1z'
+  broodje: 'M3 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z M1 10.500h22v3H1z',
+  up: 'M12 3l9 9h-5v9H8v-9H3z',
+  magnet: 'M4 3h5v9a3 3 0 0 0 6 0V3h5v9a8 8 0 0 1-16 0z M4 3h5v3.500H4z M15 3h5v3.500h-5z',
+  user: 'M12 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M3 22a9 9 0 0 1 18 0z',
+  robot: 'M11 2h2v3h5a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5z M8.500 9a1.700 1.700 0 1 0 0 3.400 1.700 1.700 0 0 0 0-3.400z M15.500 9a1.700 1.700 0 1 0 0 3.400 1.700 1.700 0 0 0 0-3.400z M8 14.500h8V16H8z M7 19h10v3H7z',
+  glasses: 'M2 9h8v2h4V9h8v5a4 4 0 0 1-8 0v-1h-4v1a4 4 0 0 1-8 0z M4 11v3a2 2 0 0 0 4 0v-3z M16 11v3a2 2 0 0 0 4 0v-3z',
+  skate: 'M2 11h20a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z M6.500 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4z M17.500 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  link: 'M10 6h4a6 6 0 0 1 0 12h-4v-2.500h4a3.500 3.500 0 0 0 0-7h-4z M14 18h-4a6 6 0 0 1 0-12h1v2.500h-1a3.500 3.500 0 0 0 0 7h4z M8 10.750h8v2.500H8z'
 };
 const icon = (name) => `<svg class="ico" viewBox="0 0 24 24"><path fill-rule="evenodd" d="${ICONS[name] || ICONS.star}"/></svg>`;
 document.querySelectorAll('[data-ico]').forEach((el) => { el.innerHTML = icon(el.dataset.ico); });
@@ -65,8 +72,18 @@ const PLAYER_HEIGHT = 1.8;
 const EYE_HEIGHT = 1.6;
 const SEND_MS = 40;
 const EMOTE_MS = 3500;
-const ITEM_NAMES = ['', 'de pizza', 'het bord', 'de plant'];
-const ITEM_COLORS = [0, 0xf4c430, 0xf2f0ea, 0x4caf50];
+const ITEM_NAMES = ['', 'de pizza', 'het bord', 'de plant', 'het pak melk', 'de friet', 'het blikje'];
+const ITEM_WHAT = ['', 'een pizza', 'een bord', 'een plant', 'een pak melk', 'een bak friet', 'een blikje'];
+const ITEM_COLORS = [0, 0xf4c430, 0xf2f0ea, 0x4caf50, 0xffffff, 0xf4c430, 0xe23b2e];
+// Klassen: allrounder is gratis, de rest speel je vrij in de battlepass.
+const CLASSES = [
+  { id: 'allrounder', name: 'Allrounder', icon: 'star', desc: 'Geen extra\'s en geen nadelen.' },
+  { id: 'sprinter', name: 'Sprinter', icon: 'bolt', desc: 'Je dash is na 1,3 seconde weer klaar in plaats van 2.' },
+  { id: 'werper', name: 'Werper', icon: 'rocket', desc: 'Gooit 35% harder en raakt makkelijker.' },
+  { id: 'tank', name: 'Tank', icon: 'shield', desc: 'De eerste tackle kost je het broodje niet. Je rent wel 8% trager.' },
+  { id: 'springer', name: 'Springer', icon: 'up', desc: 'Springt hoger en kan in de lucht nog een keer springen.' },
+  { id: 'magneet', name: 'Magneet', icon: 'magnet', desc: 'Pakt het broodje en spullen van verder af.' }
+];
 const TEAM_COLORS = [0xf26a1b, 0x7a3fb8];
 const TEAM_NAMES = ['Oranje', 'Paars'];
 const MODE_INFO = {
@@ -78,7 +95,8 @@ const EVENT_TEXT = {
   donker: 'Stroomstoring! Het licht is uit',
   goud: 'Gouden broodje! Punten ×3',
   regen: 'Pizzaregen! Alles ligt weer klaar',
-  dubbel: 'De bel gaat! Laatste minuut telt dubbel',
+  dubbel: 'De bel gaat! Vanaf nu telt alles dubbel',
+  zone: 'Eindsprint! Kom binnen de rode ring',
   brand: 'Brandalarm! Binnen 10 seconden naar buiten'
 };
 const CHAT = ['Hier!', 'Pak hem!', 'Help!', 'GG'];
@@ -93,11 +111,16 @@ function load(key, fallback) {
     return fallback;
   }
 }
-const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+const save = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value));
+  scheduleSync();
+};
+let account = null; // { name, rp } als je bent ingelogd
+let syncTimer = 0;
 
 const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, sharp: false, bob: true, names: true });
 const stats = load('kr-stats', { pickups: 0, tackles: 0, hits: 0, holdSeconds: 0, wins: 0, games: 0, jumps: 0 });
-const progress = load('kr-progress', { unlocked: [], skin: 'leerling', coins: 0, owned: [], stamp: 'naam', custom: null, xp: 0, bpTier: 0, loadout: [1, 2, 3] });
+const progress = load('kr-progress', { unlocked: [], skin: 'leerling', coins: 0, owned: [], stamp: 'naam', custom: null, xp: 0, bpTier: 0, loadout: [1, 2, 3], cls: 'allrounder', season: 0, title: '', acc: { hat: 'skin', face: 'geen', back: 'rugzak' } });
 
 const SKINS = [
   { id: 'leerling', name: 'Leerling', shirt: 0x2f6fde, pants: 0x3b3d44, tone: 0xf0c39a, hair: 0x5a3a22 },
@@ -131,8 +154,98 @@ SKINS.push(
   { id: 'schaduw', name: 'Schaduw', shirt: 0x16161a, pants: 0x16161a, tone: 0x2a2a30, hair: 0x16161a, hat: 'beanie', hatColor: 0x16161a },
   { id: 'diamant', name: 'Diamant', shirt: 0x7fe3ff, pants: 0x4fb8e8, tone: 0xcff6ff, hair: 0xffffff, hat: 'crown', hatColor: 0xffffff }
 );
-const PASS_SKINS = SKINS.slice(-12);
-PASS_SKINS.forEach((k) => { k.pass = true; });
+SKINS.slice(-12).forEach((k) => { k.pass = true; k.season = 0; });
+// de skins van de andere thema's: [id, naam, jas, broek, huid, haar, hoed, hoedkleur]
+[
+  [['pompoen', 'Pompoen', 0xf26a1b, 0x3c8f40, 0xf5a54a, 0x3c8f40], ['spook', 'Spook', 0xf2f0ea, 0xf2f0ea, 0xffffff, 0xf2f0ea],
+    ['vampier', 'Vampier', 0x1a1a1a, 0x1a1a1a, 0xe8e0e0, 0x1a1a1a, 'band', 0xa3201c], ['heks', 'Heks', 0x4a3a78, 0x1f2024, 0x9ccf8a, 0x3aa655, 'beanie', 0x1f2024],
+    ['skelet', 'Skelet', 0x26262b, 0x26262b, 0xf2f0ea, 0x26262b], ['mummie', 'Mummie', 0xe2d6b8, 0xe2d6b8, 0xcfc29e, 0xe2d6b8, 'band', 0xe2d6b8],
+    ['weerwolf', 'Weerwolf', 0x6e4a2e, 0x3b3d44, 0x8a5a3c, 0x4a2f1a], ['vleermuis', 'Vleermuis', 0x2a2038, 0x2a2038, 0x6b5a8a, 0x2a2038],
+    ['kat', 'Zwarte kat', 0x1f2024, 0x1f2024, 0x1f2024, 0x1f2024, 'band', 0xf4c430], ['slijm', 'Slijm', 0x62c25c, 0x3c8f40, 0x9be38f, 0x3c8f40],
+    ['spin', 'Spin', 0x3b1f4a, 0x1f2024, 0x8a5a3c, 0x1f2024, 'antenna', 0xa3201c], ['geest', 'Pompoenkoning', 0xf26a1b, 0x1f2024, 0xf5a54a, 0xf26a1b, 'crown', 0x3c8f40]],
+  [['sneeuwpop', 'Sneeuwpop', 0xffffff, 0xffffff, 0xffffff, 0xffffff, 'beanie', 0x1f2024], ['rendier', 'Rendier', 0x8a5a3c, 0x6e3a1c, 0xa5703f, 0x6e3a1c, 'antenna', 0xe23b2e],
+    ['elf', 'Elf', 0x3aa655, 0xe23b2e, 0xf0c39a, 0xd9b35c, 'beanie', 0x3aa655], ['kerstman', 'Kerstman', 0xe23b2e, 0xe23b2e, 0xf0c39a, 0xffffff, 'beanie', 0xe23b2e],
+    ['pinguin', 'Pinguïn', 0x1f2024, 0xf4c430, 0xffffff, 0x1f2024], ['ijs', 'IJskoningin', 0xbfe6ff, 0x7fc4ee, 0xe8f6ff, 0xffffff, 'crown', 0xbfe6ff],
+    ['skier', 'Skiër', 0x3d8bd9, 0x1f2024, 0xf0c39a, 0x5a3a22, 'beanie', 0xf4c430], ['peperkoek', 'Peperkoek', 0xa5703f, 0xa5703f, 0xc98d5e, 0xa5703f, 'band', 0xffffff],
+    ['kerstboom', 'Kerstboom', 0x2c7a3a, 0x6e3a1c, 0x3aa655, 0x2c7a3a, 'antenna', 0xf4c430], ['yeti', 'Yeti', 0xe8f6ff, 0xe8f6ff, 0x9fd4f5, 0xffffff],
+    ['cadeau', 'Cadeau', 0xe23b2e, 0xf4c430, 0xf0c39a, 0x5a3a22, 'band', 0xf4c430], ['noorderlicht', 'Noorderlicht', 0x19b5b0, 0x5b3fa8, 0x8a5a3c, 0x62c25c, 'crown', 0x19b5b0]],
+  [['blokker', 'Blokker', 0xf2f0ea, 0x3b3d44, 0xf0c39a, 0x5a3a22, 'band', 0xe23b2e], ['markeerstift', 'Markeerstift', 0xfff200, 0xfff200, 0xf0c39a, 0x1f2024, 'cap', 0xfff200],
+    ['slaper', 'Slaapkop', 0x9fd4f5, 0x9fd4f5, 0xf0c39a, 0x8a5a3c, 'beanie', 0x9fd4f5], ['docent', 'Docent', 0x6b4a2e, 0x3b3d44, 0xe8b88f, 0x777777],
+    ['spieker', 'Spieker', 0x3b3d44, 0x1f2024, 0xc98d5e, 0x1f2024, 'cap', 0x3b3d44], ['koffie', 'Koffie', 0x6e3a1c, 0x3b2214, 0xf0c39a, 0x3b2214],
+    ['rekenmachine', 'Rekenmachine', 0x55565c, 0x3b3d44, 0xc5ccd3, 0x55565c, 'antenna', 0x3aa655], ['tien', 'Tien met een griffel', 0xf5c542, 0x3aa655, 0xf0c39a, 0xd9b35c, 'crown', 0xf5c542],
+    ['herkanser', 'Herkanser', 0xe23b2e, 0x3b3d44, 0x8a5a3c, 0x1a1a1a, 'band', 0xffffff], ['inkt', 'Inktvlek', 0x1d2f6b, 0x1d2f6b, 0xf0c39a, 0x1d2f6b],
+    ['geslaagd', 'Geslaagd', 0x1f2024, 0x1f2024, 0xf0c39a, 0x5a3a22, 'cap', 0x1f2024], ['vlag', 'Vlag en tas', 0xe23b2e, 0x2f6fde, 0xf0c39a, 0xd9b35c, 'band', 0xffffff]]
+].forEach((set, i) => set.forEach(([id, name, shirt, pants, tone, hair, hat, hatColor]) =>
+  SKINS.push({ id, name, shirt, pants, tone, hair, hat, hatColor, pass: true, season: i + 1 })));
+const THEMES = ['Schoolstart', 'Halloween', 'Winter', 'Examenweek'];
+const SEASON_MS = 14 * 86400000;
+const SEASON_EPOCH = Date.UTC(2026, 8, 28); // maandag 28 september 2026
+const SEASON = Math.max(1, Math.floor((Date.now() - SEASON_EPOCH) / SEASON_MS) + 1);
+const THEME = (SEASON - 1) % THEMES.length;
+const seasonDaysLeft = () => Math.ceil((SEASON_EPOCH + SEASON * SEASON_MS - Date.now()) / 86400000);
+const PASS_SKINS = SKINS.filter((k) => k.pass && k.season === THEME);
+// nieuw seizoen: de battlepass begint opnieuw, alles wat je al had blijf je houden
+function checkSeason() {
+  if (progress.season === SEASON) return false;
+  const first = !progress.season;
+  progress.season = SEASON;
+  if (!first) {
+    progress.xp = 0;
+    progress.bpTier = 0;
+  }
+  return !first;
+}
+checkSeason();
+
+// ---------- Accessoires: los van je skin ----------
+const ACCESSORIES = {
+  hat: [
+    { id: 'skin', name: 'Van je skin' }, { id: 'geen', name: 'Niets' }, { id: 'pet', name: 'Pet' }, { id: 'muts', name: 'Muts' },
+    { id: 'koptelefoon', name: 'Koptelefoon', price: 80 }, { id: 'hoed', name: 'Hoge hoed', price: 100 }, { id: 'kroon', name: 'Kroon', price: 150 }
+  ],
+  face: [
+    { id: 'geen', name: 'Niets' }, { id: 'bril', name: 'Bril' }, { id: 'snor', name: 'Snor', price: 40 },
+    { id: 'zonnebril', name: 'Zonnebril', price: 60 }, { id: 'masker', name: 'Mondkapje', price: 80 }
+  ],
+  back: [
+    { id: 'rugzak', name: 'Rugzak' }, { id: 'geen', name: 'Niets' }, { id: 'cape', name: 'Cape', price: 100 },
+    { id: 'gitaar', name: 'Gitaar', price: 120 }, { id: 'vleugels', name: 'Vleugels', price: 150 }
+  ]
+};
+const SLOT_NAMES = { hat: 'Hoofd', face: 'Gezicht', back: 'Rug' };
+if (!progress.acc || !progress.acc.hat) progress.acc = { hat: 'skin', face: 'geen', back: 'rugzak' };
+const accString = (acc = progress.acc) => `${acc.hat}.${acc.face}.${acc.back}`;
+
+// ---------- Titels: verdien je met je statistieken ----------
+const TITLES = [
+  { id: '', name: 'Geen titel', stat: 'games', goal: 0 },
+  { id: 'nieuwkomer', name: 'Nieuwkomer', stat: 'games', goal: 1, how: 'Speel een potje' },
+  { id: 'vasteklant', name: 'Vaste klant', stat: 'games', goal: 50, how: 'Speel 50 potjes' },
+  { id: 'scherpschutter', name: 'Scherpschutter', stat: 'hits', goal: 50, how: 'Raak 50 keer iemand' },
+  { id: 'broodjesdief', name: 'Broodjesdief', stat: 'tackles', goal: 50, how: 'Tackel 50 keer de drager' },
+  { id: 'veelvraat', name: 'Veelvraat', stat: 'holdSeconds', goal: 600, how: 'Houd het broodje 600 seconden vast' },
+  { id: 'sloper', name: 'Sloper', stat: 'tables', goal: 100, how: 'Gooi 100 tafels om' },
+  { id: 'kangoeroe', name: 'Kangoeroe', stat: 'jumps', goal: 1000, how: 'Spring 1000 keer' },
+  { id: 'kampioen', name: 'Kampioen', stat: 'wins', goal: 25, how: 'Win 25 potjes' },
+  { id: 'kunstenaar', name: 'Kunstenaar', stat: 'sprays', goal: 50, how: 'Zet 50 stempels' }
+];
+const titleOpen = (t) => (stats[t.stat] || 0) >= t.goal;
+const titleName = (id) => (TITLES.find((t) => t.id === id) || TITLES[0]).name;
+
+// ---------- Ranked: achttien rangen, zelfde grenzen als op de server ----------
+const RANK_STEPS = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2200];
+const RANK_NAMES = ['Brons I', 'Brons II', 'Brons III', 'Zilver I', 'Zilver II', 'Zilver III', 'Goud I', 'Goud II', 'Goud III',
+  'Platina I', 'Platina II', 'Platina III', 'Diamant I', 'Diamant II', 'Diamant III', 'Elite', 'Kampioen', 'Legende'];
+const RANK_COLORS = [0xc98d5e, 0xbfc5cc, 0xf5c542, 0x7fe3d0, 0x7fc4ee, 0xe23b2e, 0xf26a1b, 0x9b6bd1];
+function rankOf(rp) {
+  const index = RANK_STEPS.reduce((best, need, i) => (rp >= need ? i : best), 0);
+  const next = RANK_STEPS[index + 1];
+  return {
+    index, name: RANK_NAMES[index], color: RANK_COLORS[index < 15 ? Math.floor(index / 3) : index - 10],
+    share: next ? (rp - RANK_STEPS[index]) / (next - RANK_STEPS[index]) : 1,
+    toGo: next ? next - rp : 0
+  };
+}
 if (!Array.isArray(progress.loadout)) progress.loadout = [1, 2, 3];
 const EMOTE_NAMES = ['', 'Take the L', 'Dab', 'Zwaai', 'Dans', 'Floss', 'Facepalm', 'Jumping jacks', 'Buiging', 'Helikopter', 'Saluut'];
 const EMOTE_SOURCE = (n) => (n <= 4 ? '' : n <= 6 ? 'Winkel' : 'Battlepass');
@@ -142,14 +255,18 @@ const STAMP_NAMES = ['Ster', 'Vuur', 'Schedel', 'Pizza', 'Controller', 'Oog', 'R
 const STAMP_ICON = { kroon: 'crown', broodje: 'broodje', hart: 'heart', bliksem: 'bolt' };
 STAMP_ICONS.forEach((name, i) => { STAMP_ICON['e' + i] = name; });
 const XP_PER_TIER = 100;
-// 50 treden: 12 skins, 4 emotes, 14 stempels en 20 keer munten
+// 50 treden: 12 skins, 5 klassen, 4 emotes, 14 stempels en 15 keer munten
 const BATTLEPASS = [];
 {
   const skinTiers = [5, 10, 15, 20, 23, 25, 30, 35, 37, 40, 45, 50];
   const emoteTiers = [8, 18, 28, 38];
   const stampTiers = [2, 4, 7, 12, 14, 17, 22, 24, 27, 32, 34, 42, 44, 47];
+  const classTiers = { 3: 'sprinter', 9: 'werper', 16: 'tank', 26: 'springer', 33: 'magneet' };
   for (let t = 1; t <= 50; t++) {
-    if (skinTiers.includes(t)) {
+    if (classTiers[t]) {
+      const c = CLASSES.find((k) => k.id === classTiers[t]);
+      BATTLEPASS.push({ type: 'class', id: 'class:' + c.id, name: c.name, label: 'Klasse ' + c.name });
+    } else if (skinTiers.includes(t)) {
       const k = PASS_SKINS[skinTiers.indexOf(t)];
       BATTLEPASS.push({ type: 'skin', id: 'skin:' + k.id, name: k.name, label: 'Skin ' + k.name });
     } else if (emoteTiers.includes(t)) {
@@ -253,6 +370,12 @@ function addXp(n) {
     else if (!owns(reward.id)) progress.owned.push(reward.id);
     got.push(reward.label);
   }
+  // wie een trede al voorbij was toen er iets nieuws op kwam te staan, krijgt dat alsnog
+  for (let t = 0; t < progress.bpTier; t++) {
+    const id = BATTLEPASS[t].id;
+    if (id && !owns(id)) progress.owned.push(id);
+  }
+  if (!CLASSES.some((c) => c.id === progress.cls && (c.id === 'allrounder' || owns('class:' + c.id)))) progress.cls = 'allrounder';
   addCoins(0);
   if (got.length) {
     banner(`Battlepass trede ${progress.bpTier}: ${got.join(', ')}`, 5000);
@@ -260,8 +383,41 @@ function addXp(n) {
   }
 }
 
+// ---------- Account ----------
+const getToken = () => localStorage.getItem('kr-token');
+async function api(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (getToken()) headers.Authorization = 'Bearer ' + getToken();
+  const res = await fetch(path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Er ging iets mis.');
+  return data;
+}
+// voortgang een paar seconden na de laatste wijziging naar de server sturen
+function scheduleSync() {
+  if (!account) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => api('/api/save', { progress, stats, daily }).catch(() => {}), 2500);
+}
+// Na het inloggen: wat op het account staat is leidend. Een nieuw account krijgt wat je hier al had gespeeld.
+function adopt(data) {
+  account = { name: data.name, rp: data.rp };
+  if (data.progress && Object.keys(data.progress).length) {
+    Object.assign(progress, data.progress);
+    Object.assign(stats, data.stats || {});
+    if (data.daily && data.daily.date === today) Object.assign(daily, data.daily);
+    localStorage.setItem('kr-progress', JSON.stringify(progress));
+    localStorage.setItem('kr-stats', JSON.stringify(stats));
+    localStorage.setItem('kr-daily', JSON.stringify(daily));
+  }
+  checkSeason();
+  scheduleSync();
+  refreshAccountUi();
+}
+
 // ---------- Geluid (klein synthesizertje, geen bestanden nodig) ----------
 let audio = null;
+let output = null; // eindpunt voor alle geluiden: volume-begrenzer voor de uitgang
 function tone(f0, f1, dur, type, vol, delay = 0, master = settings.vol) {
   const t = audio.currentTime + delay;
   const osc = audio.createOscillator();
@@ -271,7 +427,7 @@ function tone(f0, f1, dur, type, vol, delay = 0, master = settings.vol) {
   osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
   gain.gain.setValueAtTime(vol * master, t);
   gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  osc.connect(gain).connect(audio.destination);
+  osc.connect(gain).connect(output);
   osc.start(t);
   osc.stop(t + dur);
 }
@@ -286,7 +442,7 @@ function noise(dur, vol, freq, delay = 0, master = settings.vol) {
   filter.type = 'bandpass';
   filter.frequency.value = freq;
   gain.gain.value = vol * master;
-  src.connect(filter).connect(gain).connect(audio.destination);
+  src.connect(filter).connect(gain).connect(output);
   src.start(audio.currentTime + delay);
 }
 function sfx(name) {
@@ -308,10 +464,17 @@ function sfx(name) {
   else if (name === 'siren') tone(650, 1000, 0.45, 'sawtooth', 0.12);
   else if (name === 'good') [523, 784, 1047].forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.3, i * 0.06));
   else if (name === 'bad') tone(330, 110, 0.4, 'sawtooth', 0.25);
+  else if (name === 'tick') tone(1500, 1200, 0.03, 'square', 0.08);
   else if (name === 'unlock') [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.25, i * 0.1));
 }
 window.addEventListener('pointerdown', () => {
-  if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audio) {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    output = audio.createDynamicsCompressor();
+    output.threshold.value = -18;
+    output.ratio.value = 6;
+    output.connect(audio.destination);
+  }
   if (audio.state === 'suspended') audio.resume();
 });
 
@@ -322,17 +485,22 @@ const LEAD = [440, 523, 659, 523, 587, 523, 440, 392, 440, 659, 784, 659, 587, 4
 let musicStep = 0;
 let musicNext = 0;
 setInterval(() => {
-  if (!audio || !playing || settings.mus <= 0) return;
-  const stepDur = 60 / (lastState && lastState.d ? 140 : 120) / 4;
-  if (musicNext < audio.currentTime) musicNext = audio.currentTime + 0.05;
-  while (musicNext < audio.currentTime + 0.2) {
-    const d = musicNext - audio.currentTime;
+  if (!audio || settings.mus <= 0 || audio.state !== 'running') return;
+  // in het menu een rustige versie zonder drums, in het potje het volle nummer
+  const bpm = !playing ? 92 : lastState && lastState.d ? 140 : 120;
+  const stepDur = 60 / bpm / 4;
+  // na een hapering (tabblad op de achtergrond) opnieuw inhaken in plaats van alles in één keer in te halen
+  if (musicNext < audio.currentTime - 0.05) musicNext = audio.currentTime + 0.05;
+  while (musicNext < audio.currentTime + 0.3) {
+    const d = Math.max(0, musicNext - audio.currentTime);
     const step = musicStep % 16;
     const bar = Math.floor(musicStep / 16);
-    const m = settings.mus;
-    if (step % 4 === 0) tone(130, 45, 0.13, 'sine', 0.5, d, m);
-    if (step % 4 === 2) noise(0.05, 0.18, 7000, d, m);
-    if (step === 4 || step === 12) noise(0.12, 0.3, 1800, d, m);
+    const m = settings.mus * (playing ? 1 : 0.6);
+    if (playing) {
+      if (step % 4 === 0) tone(130, 45, 0.13, 'sine', 0.5, d, m);
+      if (step % 4 === 2) noise(0.05, 0.18, 7000, d, m);
+      if (step === 4 || step === 12) noise(0.12, 0.3, 1800, d, m);
+    }
     if ([0, 3, 6, 8, 11, 14].includes(step)) {
       const f = BASS[bar % 4];
       tone(f, f, stepDur * 1.6, 'square', 0.1, d, m);
@@ -344,7 +512,7 @@ setInterval(() => {
     musicNext += stepDur;
     musicStep++;
   }
-}, 60);
+}, 50);
 
 // ---------- Renderer, scene, licht ----------
 const canvas = $('scene');
@@ -465,34 +633,38 @@ function drawTree(parent, x, y, z, s, rnd) {
   mesh(leafGeo, mat(GREENS[Math.floor(rnd() * 3)]), parent, x + 0.8 * s, y + 5.6 * s, z - 0.4 * s).scale.setScalar(1.4 * s);
 }
 
-// ---------- Kantine bouwen uit mapdata ----------
+// ---------- De map bouwen uit mapdata ----------
 const wallMeshes = [];   // waar je op kunt spuiten
 const panelMeshes = [];  // breekbare glasplaten
-const lampMats = [];     // plafondlampen en plafond, gaan uit bij een stroomstoring
-const indoorLights = [];
+const lampMats = [];     // plafonds, lampen en wolken: gaan uit bij een stroomstoring
 function lamp(color) {
   const m = new THREE.MeshBasicMaterial({ color, fog: false });
   m.userData.on = new THREE.Color(color);
   lampMats.push(m);
   return m;
 }
+const ceilMat = lamp(0xdedad1);
+const panelMat = lamp(0xffffff);
+const beamMat = lamp(0xbdb8ad);
+const cloudMat = lamp(0xffffff);
+const panelGeo = new THREE.PlaneGeometry(1.8, 1.8);
+let mapRoot = new THREE.Group(); // alles wat bij de geladen map hoort
+scene.add(mapRoot);
+
 function buildMap() {
   const world = new THREE.Group();
   const rnd = seeded(3);
   for (const b of M.boxes) {
-    const m = mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mat(b.color, b.glass), world, b.x, b.y + b.h / 2, b.z, !b.glass);
-    if (!b.glass) wallMeshes.push(m);
+    mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mat(b.color, b.glass), world, b.x, b.y + b.h / 2, b.z, !b.glass);
   }
   for (const c of M.cyls) {
-    const m = mesh(cylGeo, mat(c.color), world, c.x, c.y + c.h / 2, c.z);
-    m.scale.set(c.r, c.h, c.r);
-    wallMeshes.push(m);
+    mesh(cylGeo, mat(c.color), world, c.x, c.y + c.h / 2, c.z).scale.set(c.r, c.h, c.r);
   }
   for (const g of M.panels) {
     const group = new THREE.Group();
     mesh(new THREE.BoxGeometry(g.w, g.h, g.d), mat(C.glass, true), group, g.x, g.y + g.h / 2, g.z, false);
     block(group, C.metal, g.w, 0.06, 0.2, g.x, g.y + g.h + 0.03, g.z);
-    scene.add(group);
+    mapRoot.add(group);
     panelMeshes.push(group);
   }
   for (const t of M.trees) drawTree(world, t.x, t.y, t.z, t.s, rnd);
@@ -505,7 +677,7 @@ function buildMap() {
     mesh(leafGeo, mat(0x3c8f40), world, p.x + 0.25, p.y + 2.1, p.z - 0.15).scale.setScalar(0.45);
   }
 
-  // Systeemplafond met lichtpanelen. De vlakken kijken naar beneden, dus van bovenaf
+  // Systeemplafonds met lichtpanelen. De vlakken kijken naar beneden, dus van bovenaf
   // (de rondvlucht achter het menu) kijk je er gewoon doorheen.
   const down = (geo, material, x, y, z) => {
     const m = new THREE.Mesh(geo, material);
@@ -513,81 +685,99 @@ function buildMap() {
     m.position.set(x, y, z);
     world.add(m);
   };
-  down(new THREE.PlaneGeometry(44, 32), lamp(0xdedad1), 0, M.CEILING, 4);
-  const panelGeo = new THREE.PlaneGeometry(1.8, 1.8);
-  const panelMat = lamp(0xffffff);
-  const beamMat = lamp(0xbdb8ad);
-  for (let x = -18; x <= 18; x += 6) {
-    for (let z = -9.5; z <= 18; z += 4.5) down(panelGeo, panelMat, x, M.CEILING - 0.02, z);
+  for (const c of M.ceilings) {
+    down(new THREE.PlaneGeometry(c.w, c.d), ceilMat, c.x, c.y, c.z);
+    for (let x = c.x - c.w / 2 + 4; x <= c.x + c.w / 2 - 3; x += 6) {
+      for (let z = c.z - c.d / 2 + 2.5; z <= c.z + c.d / 2 - 2; z += 4.5) down(panelGeo, panelMat, x, c.y - 0.02, z);
+    }
+    for (let z = c.z - c.d / 2 + 0.25; z <= c.z + c.d / 2; z += 4.5) down(new THREE.PlaneGeometry(c.w, 0.12), beamMat, c.x, c.y - 0.01, z);
   }
-  for (let z = -11.75; z <= 19; z += 4.5) down(new THREE.PlaneGeometry(44, 0.12), beamMat, 0, M.CEILING - 0.01, z);
-  // tl-bakken en licht in de kluisjesgang onder de kantine
-  for (const x of [-8, 0, 8]) down(new THREE.PlaneGeometry(3, 0.5), panelMat, x, -0.42, 4.4);
+  for (const l of M.lamps) down(new THREE.PlaneGeometry(l.w, l.d), panelMat, l.x, l.y, l.z);
   wallMeshes.length = 0;
   wallMeshes.push(...mergeStatic(world).filter((m) => !m.material.transparent));
-  scene.add(world);
+  mapRoot.add(world);
 }
 
-// ---------- Buitenruimte: plein, weg met bussen, bomen, gebouwen, wolken ----------
+// ---------- Buitenruimte: weg met bussen, bomen, gebouwen, wolken ----------
 const buses = [];
 const clouds = new THREE.Group();
 let cloudTime = 0;
 function buildOutside() {
   const out = new THREE.Group();
   const rnd = seeded(7);
-  const G = M.LOW; // maaiveld
+  const G = M.GROUND; // maaiveld
+  const F = M.FOOTPRINT;
+  const kantine = M.id === 'kantine';
   const flat = (color, w, d, x, z, lift) => {
     const m = block(out, color, w, 0.1, d, x, G - 0.1 + lift, z, false);
     m.receiveShadow = true;
     return m;
   };
   flat(0x7fb85a, 600, 600, 0, 0, 0);                 // gras
-  flat(0xcfc8ba, 70, 26, 0, -26, 0.02);              // schoolplein noord
-  flat(0xb9b2a4, 5, 22, 0, 48, 0.04);                // pad van de ingang naar de weg
   flat(0x3e3f45, 600, 9, 0, -46, 0.03);              // weg
   flat(0x3e3f45, 600, 9, 0, 62, 0.03);
   for (let x = -120; x <= 120; x += 8) {             // strepen op de weg
     flat(0xf2f0ea, 3, 0.25, x, -46, 0.05);
     flat(0xf2f0ea, 3, 0.25, x, 62, 0.05);
   }
-  for (let i = 0; i < 6; i++) {                      // zittrappen op het plein (zoals op de foto)
-    block(out, 0xdad4c8, 26 - i * 1.2, 0.35, 1.2, -14, G + 0.17 + i * 0.35, -20 - i * 1.2);
+  if (kantine) {
+    flat(0xcfc8ba, 70, 26, 0, -26, 0.02);            // schoolplein noord
+    flat(0xb9b2a4, 5, 22, 0, 48, 0.04);              // pad van de ingang naar de weg
+    for (let i = 0; i < 6; i++) {                    // zittrappen op het plein (zoals op de foto)
+      block(out, 0xdad4c8, 26 - i * 1.2, 0.35, 1.2, -14, G + 0.17 + i * 0.35, -20 - i * 1.2);
+    }
   }
 
-  function bus(x, z, color, stripe) {
-    const g = new THREE.Group();
-    block(g, color, 11, 2.6, 2.7, 0, 1.9, 0);
-    block(g, stripe, 11.05, 0.5, 2.75, 0, 1.1, 0);
-    block(g, 0x26262b, 10, 0.9, 2.76, -0.2, 2.5, 0);
-    for (const wx of [-3.6, 3.6]) {
-      for (const wz of [-1.2, 1.2]) {
-        const wheel = mesh(cylGeo, mat(0x1f2024), g, wx, 0.5, wz);
-        wheel.scale.set(0.5, 0.4, 0.5);
-        wheel.rotation.x = Math.PI / 2;
+  // bussen en wolken worden één keer gemaakt en blijven bij elke map staan
+  if (!buses.length) {
+    const bus = (x, z, color, stripe) => {
+      const g = new THREE.Group();
+      block(g, color, 11, 2.6, 2.7, 0, 1.9, 0);
+      block(g, stripe, 11.05, 0.5, 2.75, 0, 1.1, 0);
+      block(g, 0x26262b, 10, 0.9, 2.76, -0.2, 2.5, 0);
+      for (const wx of [-3.6, 3.6]) {
+        for (const wz of [-1.2, 1.2]) {
+          const wheel = mesh(cylGeo, mat(0x1f2024), g, wx, 0.5, wz);
+          wheel.scale.set(0.5, 0.4, 0.5);
+          wheel.rotation.x = Math.PI / 2;
+        }
       }
+      mergeStatic(g);
+      g.position.set(x, G, z);
+      scene.add(g);
+      return g;
+    };
+    buses.push({ g: bus(-20, -44, 0xf4c430, 0xe23b2e), speed: 7 });
+    buses.push({ g: bus(40, -48, 0xe23b2e, 0xf2f0ea), speed: -9 });
+    buses.push({ g: bus(10, 60, 0x3d8bd9, 0xf2f0ea), speed: 8 });
+    for (let i = 0; i < 22; i++) {
+      const g = new THREE.Group();
+      for (let j = 0; j < 4; j++) {
+        const puffMesh = new THREE.Mesh(boxGeo, cloudMat);
+        puffMesh.scale.set(8 + rnd() * 10, 3 + rnd() * 3, 6 + rnd() * 6);
+        puffMesh.position.set((j - 1.5) * 6 + rnd() * 3, rnd() * 2.5, rnd() * 4);
+        g.add(puffMesh);
+      }
+      g.position.set((rnd() - 0.5) * 420, 45 + rnd() * 35, (rnd() - 0.5) * 420);
+      clouds.add(g);
     }
-    mergeStatic(g);
-    g.position.set(x, G, z);
-    scene.add(g);
-    return g;
+    mergeStatic(clouds);
+    scene.add(clouds);
   }
-  buses.push({ g: bus(-20, -44, 0xf4c430, 0xe23b2e), speed: 7 });
-  buses.push({ g: bus(40, -48, 0xe23b2e, 0xf2f0ea), speed: -9 });
-  buses.push({ g: bus(10, 60, 0x3d8bd9, 0xf2f0ea), speed: 8 });
 
   for (let i = 0; i < 70; i++) {
     const x = (rnd() - 0.5) * 220, z = (rnd() - 0.5) * 220;
-    const inBuilding = Math.abs(x) < 27 && z > -17 && z < 41;
+    const inMap = x > F.minX && x < F.maxX && z > F.minZ && z < F.maxZ;
     const onRoad = Math.abs(z + 46) < 7 || Math.abs(z - 62) < 7;
-    const onPlaza = (Math.abs(x) < 36 && z < -12 && z > -40) || (Math.abs(x) < 6 && z > 20 && z < 60);
-    if (inBuilding || onRoad || onPlaza) continue;
+    const onPlaza = kantine && ((Math.abs(x) < 36 && z < -12 && z > -40) || (Math.abs(x) < 6 && z > 20 && z < 60));
+    if (inMap || onRoad || onPlaza) continue;
     drawTree(out, x, G, z, 1 + rnd() * 0.9, rnd);
   }
-  // rij bomen en lantaarnpalen langs het plein, goed zichtbaar door de ramen
+  // rij bomen en lantaarnpalen, goed zichtbaar door de ramen
   for (let x = -30; x <= 30; x += 10) {
-    drawTree(out, x + 3, G, -36, 1.5, rnd);
-    block(out, 0x55565c, 0.2, 6, 0.2, x, G + 3, -30);
-    block(out, 0xfff4c2, 0.9, 0.2, 0.4, x, G + 6, -29.7, false);
+    drawTree(out, x + 3, G, F.minZ - 19, 1.5, rnd);
+    block(out, 0x55565c, 0.2, 6, 0.2, x, G + 3, F.minZ - 13);
+    block(out, 0xfff4c2, 0.9, 0.2, 0.4, x, G + 6, F.minZ - 12.7, false);
   }
 
   // gebouwen in de verte
@@ -601,25 +791,9 @@ function buildOutside() {
     block(out, 0x55565c, w + 0.6, 0.6, d + 0.6, x, G + h + 0.3, z, false);
     for (let y = 3; y < h - 2; y += 4) block(out, 0x6f8aa3, w + 0.1, 1.2, d + 0.1, x, G + y, z, false);
   }
-
-  // wolken
-  const cloudMat = lamp(0xffffff);
-  for (let i = 0; i < 22; i++) {
-    const g = new THREE.Group();
-    for (let j = 0; j < 4; j++) {
-      const puffMesh = new THREE.Mesh(boxGeo, cloudMat);
-      puffMesh.scale.set(8 + rnd() * 10, 3 + rnd() * 3, 6 + rnd() * 6);
-      puffMesh.position.set((j - 1.5) * 6 + rnd() * 3, rnd() * 2.5, rnd() * 4);
-      g.add(puffMesh);
-    }
-    g.position.set((rnd() - 0.5) * 420, 45 + rnd() * 35, (rnd() - 0.5) * 420);
-    clouds.add(g);
-  }
-  mergeStatic(clouds);
-  scene.add(clouds);
   out.traverse((o) => { o.castShadow = false; });
   mergeStatic(out);
-  scene.add(out);
+  mapRoot.add(out);
 }
 function updateOutside(dt) {
   for (const b of buses) {
@@ -630,8 +804,6 @@ function updateOutside(dt) {
   cloudTime += dt;
   clouds.position.x = Math.sin(cloudTime * 0.015) * 60;
 }
-buildMap();
-buildOutside();
 
 // stroomstoring: alles dimt, alleen het broodje gloeit nog
 let darkness = 0;
@@ -644,12 +816,11 @@ function updateDarkness(dt) {
   scene.background.lerpColors(SKY, NIGHT, darkness);
   scene.fog.color.copy(scene.background);
   for (const m of lampMats) m.color.copy(m.userData.on).multiplyScalar(1 - darkness * 0.93);
-  for (const l of indoorLights) l.intensity = l.userData.on * (1 - darkness);
 }
 
 // ---------- Omduwbare meubels ----------
 const props = [];
-const broken = M.panels.map(() => false);
+let broken = [];
 function buildProps() {
   const topGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.08, 12);
   const baseGeo = new THREE.CylinderGeometry(0.14, 0.45, 0.74, 8);
@@ -677,7 +848,7 @@ function buildProps() {
       block(inner, C.white, 0.2, 0.04, 0.2, 0.12, 0.07, 0);
     }
     mergeStatic(inner);
-    scene.add(outer);
+    mapRoot.add(outer);
     props.push({ def, outer, inner, x: 0, y: 0, z: 0, tip: 0, dir: 0, tipAnim: 0 });
   });
   resetProps();
@@ -717,7 +888,6 @@ function updateProps(dt) {
     p.inner.rotation.y = p.def.rot - p.dir;
   }
 }
-buildProps();
 
 // ---------- Frikandelbroodje ----------
 function makeBroodje() {
@@ -755,12 +925,19 @@ function makeItem() {
   const plant = new THREE.Group();
   mesh(new THREE.CylinderGeometry(0.17, 0.12, 0.24, 8), mat(C.purple), plant, 0, -0.08, 0);
   mesh(leafGeo, mat(C.green), plant, 0, 0.2, 0).scale.setScalar(0.24);
-  g.add(pizza, plate, plant);
-  g.userData.setKind = (kind) => {
-    pizza.visible = kind === 1;
-    plate.visible = kind === 2;
-    plant.visible = kind === 3;
-  };
+  const milk = new THREE.Group();
+  block(milk, 0xffffff, 0.2, 0.34, 0.2, 0, 0, 0);
+  block(milk, C.blue, 0.21, 0.1, 0.21, 0, 0.04, 0);
+  block(milk, 0xffffff, 0.2, 0.06, 0.06, 0, 0.2, 0);
+  const fries = new THREE.Group();
+  block(fries, C.red, 0.26, 0.24, 0.16, 0, -0.04, 0);
+  [-0.09, -0.03, 0.03, 0.09].forEach((x, i) => block(fries, 0xf4c430, 0.04, 0.2 + (i % 2) * 0.06, 0.04, x, 0.14, (i % 2) * 0.05 - 0.02));
+  const can = new THREE.Group();
+  mesh(cylGeo, mat(C.red), can, 0, 0, 0).scale.set(0.11, 0.3, 0.11);
+  mesh(cylGeo, mat(C.metal), can, 0, 0.16, 0).scale.set(0.1, 0.03, 0.1);
+  const kinds = [pizza, plate, plant, milk, fries, can];
+  g.add(...kinds);
+  g.userData.setKind = (kind) => kinds.forEach((k, i) => { k.visible = kind === i + 1; });
   g.userData.setKind(0);
   return g;
 }
@@ -770,23 +947,78 @@ function ring(x, y, z, r, color) {
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 })
   );
   m.position.set(x, y + 0.03, z);
-  scene.add(m);
+  mapRoot.add(m);
   return m;
 }
 
-const itemPickups = M.ITEM_SPAWNS.map((s) => {
-  const g = makeItem();
-  g.scale.setScalar(1.5);
-  g.position.set(s.x, s.y + 0.9, s.z);
-  scene.add(g);
-  return { g, ring: ring(s.x, s.y, s.z, 0.55, 0x9b6bd1), kind: 0, base: s.y + 0.9 };
-});
-const vendingSpots = M.VENDING.map((s) => {
-  const cube = block(scene, 0xffd34d, 0.35, 0.35, 0.35, s.x, s.y + 1.1, s.z, false);
-  return { cube, ring: ring(s.x, s.y, s.z, 0.8, 0x3aa655), ready: false };
-});
-const baseRings = M.BASES.map((s, i) => ring(s.x, s.y, s.z, 2.2, TEAM_COLORS[i]));
+let itemPickups = [];
+let vendingSpots = [];
+let baseRings = [];
+let zoneRing = null; // rode ring van de eindsprint
+let vehicleSpots = [];
+function buildPickups() {
+  itemPickups = M.ITEM_SPAWNS.map((s) => {
+    const g = makeItem();
+    g.scale.setScalar(1.5);
+    g.position.set(s.x, s.y + 0.9, s.z);
+    mapRoot.add(g);
+    return { g, ring: ring(s.x, s.y, s.z, 0.55, 0x9b6bd1), kind: 0, base: s.y + 0.9 };
+  });
+  vendingSpots = M.VENDING.map((s) => {
+    const cube = block(mapRoot, 0xffd34d, 0.35, 0.35, 0.35, s.x, s.y + 1.1, s.z, false);
+    return { cube, ring: ring(s.x, s.y, s.z, 0.8, 0x3aa655), ready: false };
+  });
+  baseRings = M.BASES.map((s, i) => ring(s.x, s.y, s.z, 2.2, TEAM_COLORS[i]));
+  vehicleSpots = M.VEHICLES.map((s) => {
+    const g = makeBoard();
+    g.userData.setKind(s.kind);
+    g.position.set(s.x, s.y + 0.15, s.z);
+    mapRoot.add(g);
+    return { g, ring: ring(s.x, s.y, s.z, 0.7, 0x2f6fde), ready: false };
+  });
+  const Z = M.ZONE;
+  zoneRing = new THREE.Mesh(
+    new THREE.CylinderGeometry(Z.r, Z.r, 12, 48, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xe23b2e, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+  );
+  zoneRing.position.set(Z.x, (Z.minY === undefined ? M.GROUND : Z.minY) + 5.5, Z.z);
+  zoneRing.visible = false;
+  mapRoot.add(zoneRing);
+}
+// dezelfde regel als op de server: sta je binnen de ring van de eindsprint?
+function inZone() {
+  const Z = M.ZONE;
+  if (Z.minY !== undefined && me.y < Z.minY) return false;
+  if (Z.maxY !== undefined && me.y > Z.maxY) return false;
+  return Math.hypot(me.x - Z.x, me.z - Z.z) <= Z.r;
+}
 
+// Laadt een andere map: ruimt de oude op en bouwt wereld, meubels en voorwerpen opnieuw.
+let currentMap = null;
+function loadMap(id) {
+  if (currentMap === id) return;
+  currentMap = id;
+  M.use(id);
+  mapRoot.traverse((o) => {
+    if (o.isMesh && ![boxGeo, cylGeo, leafGeo, panelGeo].includes(o.geometry)) o.geometry.dispose();
+  });
+  scene.remove(mapRoot);
+  mapRoot = new THREE.Group();
+  scene.add(mapRoot);
+  panelMeshes.length = 0;
+  props.length = 0;
+  broken = M.panels.map(() => false);
+  buildMap();
+  buildOutside();
+  buildProps();
+  buildPickups();
+  for (const b of buses) b.g.position.y = M.GROUND;
+  sun.target.position.set(M.CENTER.x, 0, M.CENTER.z);
+  sun.position.set(M.CENTER.x + 16, 34, M.CENTER.z - 16);
+  sun.shadow.needsUpdate = true;
+}
+
+const puddles = new Map(); // id -> mesh (melkplassen)
 const bananas = new Map(); // id -> mesh
 function makeBanana() {
   const g = new THREE.Group();
@@ -795,6 +1027,8 @@ function makeBanana() {
   block(g, 0x7a5232, 0.08, 0.1, 0.08, 0, 0.09, 0);
   return g;
 }
+
+loadMap('kantine');
 
 const projectiles = new Map(); // id -> {g, x, y, z, kind}
 const particles = [];
@@ -936,6 +1170,27 @@ function makeNameSprite(name) {
   return sprite;
 }
 
+// Skateboard (1) en step (2) in één groep; setKind() laat er één zien.
+function makeBoard() {
+  const g = new THREE.Group();
+  const skate = new THREE.Group();
+  block(skate, C.blue, 0.3, 0.05, 0.95, 0, 0.1, 0);
+  const step = new THREE.Group();
+  block(step, C.red, 0.18, 0.05, 0.9, 0, 0.1, 0);
+  block(step, C.metal, 0.05, 1, 0.05, 0, 0.6, 0.42);
+  block(step, C.counterTop, 0.5, 0.05, 0.05, 0, 1.1, 0.42);
+  for (const part of [skate, step]) {
+    for (const z of [-0.34, 0.34]) block(part, 0x1f2024, part === skate ? 0.34 : 0.08, 0.08, 0.1, 0, 0.04, z);
+  }
+  g.add(skate, step);
+  g.userData.setKind = (kind) => {
+    skate.visible = kind === 1;
+    step.visible = kind === 2;
+  };
+  g.userData.setKind(0);
+  return g;
+}
+
 // Voorkant van het model is +z. Armen en benen hangen aan een draaipunt zodat ze kunnen zwaaien.
 function makePlayerModel(info) {
   const skin = skinById(info.skin);
@@ -988,12 +1243,47 @@ function makePlayerModel(info) {
     block(body, 0x26262b, 0.05, 0.07, 0.02, side * 0.1, 1.555, 0.232, false);
   }
   block(body, 0x8a3b2e, 0.12, 0.03, 0.02, 0, 1.42, 0.222, false);
-  // rugzak in spelers- of teamkleur, met voorvak en schouderbanden
-  block(body, info.color, 0.44, 0.5, 0.2, 0, 0.98, -0.25);
-  block(body, 0x55565c, 0.3, 0.2, 0.04, 0, 0.88, -0.36);
-  block(body, info.color, 0.06, 0.5, 0.02, -0.19, 1.0, 0.156, false);
-  block(body, info.color, 0.06, 0.5, 0.02, 0.19, 1.0, 0.156, false);
-  addHat(body, skin, 1.85);
+  const [hat, face, back] = (info.acc || 'skin.geen.rugzak').split('.');
+  // op de rug: rugzak in spelers- of teamkleur, of een accessoire
+  if (back === 'rugzak') {
+    block(body, info.color, 0.44, 0.5, 0.2, 0, 0.98, -0.25);
+    block(body, 0x55565c, 0.3, 0.2, 0.04, 0, 0.88, -0.36);
+    block(body, info.color, 0.06, 0.5, 0.02, -0.19, 1.0, 0.156, false);
+    block(body, info.color, 0.06, 0.5, 0.02, 0.19, 1.0, 0.156, false);
+  } else if (back === 'cape') {
+    block(body, C.red, 0.56, 0.9, 0.05, 0, 0.82, -0.19);
+    block(body, 0xf5c542, 0.3, 0.05, 0.34, 0, 1.27, 0);
+  } else if (back === 'gitaar') {
+    block(body, 0xa5623a, 0.34, 0.4, 0.1, 0.05, 0.85, -0.22).rotation.z = 0.5;
+    block(body, 0x3b2214, 0.08, 0.6, 0.06, -0.14, 1.2, -0.22).rotation.z = 0.5;
+  } else if (back === 'vleugels') {
+    for (const side of [-1, 1]) {
+      block(body, 0xffffff, 0.5, 0.7, 0.05, side * 0.36, 1.1, -0.2).rotation.set(0, side * -0.5, side * -0.35);
+    }
+  }
+  // op het hoofd: de hoed van de skin, of een eigen keuze
+  if (hat === 'skin') addHat(body, skin, 1.85);
+  else if (hat === 'pet') addHat(body, { hat: 'cap', hatColor: C.red }, 1.85);
+  else if (hat === 'muts') addHat(body, { hat: 'beanie', hatColor: C.blue }, 1.85);
+  else if (hat === 'kroon') addHat(body, { hat: 'crown', hatColor: 0xf5c542 }, 1.85);
+  else if (hat === 'hoed') {
+    block(body, 0x1f2024, 0.62, 0.04, 0.62, 0, 1.87, 0);
+    block(body, 0x1f2024, 0.4, 0.34, 0.4, 0, 2.06, 0);
+    block(body, C.red, 0.41, 0.06, 0.41, 0, 1.93, 0);
+  } else if (hat === 'koptelefoon') {
+    block(body, 0x1f2024, 0.54, 0.05, 0.08, 0, 1.88, 0);
+    for (const side of [-1, 1]) block(body, C.red, 0.08, 0.2, 0.2, side * 0.27, 1.6, 0);
+  }
+  // voor het gezicht
+  if (face === 'bril' || face === 'zonnebril') {
+    const dark = face === 'zonnebril';
+    for (const side of [-1, 1]) block(body, dark ? 0x1f2024 : 0x3b3d44, 0.16, dark ? 0.1 : 0.13, 0.02, side * 0.1, 1.56, 0.245, false);
+    block(body, 0x1f2024, 0.5, 0.03, 0.02, 0, 1.6, 0.236, false);
+  } else if (face === 'snor') {
+    block(body, 0x3b2214, 0.2, 0.05, 0.03, 0, 1.47, 0.235, false);
+  } else if (face === 'masker') {
+    block(body, 0x9fd4f5, 0.34, 0.16, 0.03, 0, 1.44, 0.235, false);
+  }
   mergeStatic(body);
   g.add(body);
   // de "L" op het voorhoofd voor Take the L
@@ -1004,12 +1294,14 @@ function makePlayerModel(info) {
   g.add(lSign);
   const shield = block(armL, C.blue, 0.06, 0.5, 0.66, -0.1, -0.35, 0.05); // dienblad als schild
   shield.visible = false;
+  const board = makeBoard(); // skateboard of step onder de voeten
+  g.add(board);
   const item = makeItem();
   item.position.set(0, -0.6, 0.12);
   armR.add(item);
   const label = makeNameSprite(info.name);
   g.add(label);
-  return { group: g, legL, legR, armL, armR, item, label, lSign, shield, walk: 0, emote: 0, emoteStart: 0, lean: 0 };
+  return { group: g, legL, legR, armL, armR, item, label, lSign, shield, board, walk: 0, emote: 0, emoteStart: 0, lean: 0 };
 }
 
 // Zet armen en benen in de juiste houding. Geeft terug hoeveel het hele model moet
@@ -1090,7 +1382,7 @@ const colorOf = (id) => (mode === 'teams' && teams[id] !== undefined
   : (roster.get(id) || { color: 0x999999 }).color);
 const modelInfo = (id) => {
   const info = roster.get(id) || { name: '?', skin: 'leerling' };
-  return { name: info.name, skin: info.skin, color: colorOf(id) };
+  return { name: info.name, skin: info.skin, acc: info.acc, color: colorOf(id) };
 };
 function clearRemotes() {
   for (const r of remotes.values()) scene.remove(r.group);
@@ -1105,7 +1397,7 @@ function updateRemotes(dt) {
     const mx = (r.tx - p.x) * k, mz = (r.tz - p.z) * k;
     p.x += mx;
     p.z += mz;
-    r.baseY += (r.ty + (r.stunned ? 0.25 : 0) - r.baseY) * k;
+    r.baseY += (r.ty + (r.stunned ? 0.25 : r.vehicle ? 0.14 : 0) - r.baseY) * k;
     let d = r.try - r.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     r.yaw += d * k;
@@ -1114,7 +1406,7 @@ function updateRemotes(dt) {
 
     const speed = Math.hypot(mx, mz) / Math.max(dt, 0.001);
     r.walk += Math.min(speed, 12) * dt * 1.6;
-    const swing = r.stunned ? 0 : Math.sin(r.walk) * Math.min(1, speed / 4) * 0.9;
+    const swing = r.stunned || r.vehicle ? 0 : Math.sin(r.walk) * Math.min(1, speed / 4) * 0.9;
     const emote = r.stunned ? 0 : activeEmote(r, now);
     const pose = poseModel(r, swing, r.itemKind, emote, (now - r.emoteStart) / 1000);
     p.y = r.baseY + pose.hop;
@@ -1210,6 +1502,11 @@ const joy = { x: 0, y: 0 };
 let liftTimer = 0;
 let liftArmed = true;
 let lossNote = null;    // reden waarom je het broodje kwijt bent, voor de grote melding
+let myClass = 'allrounder'; // de klasse waarmee je dit potje speelt
+let myVehicle = 0;          // 1 = skateboard, 2 = step
+let crashSent = false;
+let airJumps = 0;
+const dashCooldown = () => (myClass === 'sprinter' ? 1.3 : DASH_COOLDOWN);
 // op een telefoon is er geen muisvergrendeling: daar speel je zolang het pauzemenu dicht is
 const isActive = () => (touchMode ? !paused : controls.isLocked);
 const broodjeSize = () => (lastState && lastState.b ? 0.45 + 0.55 * lastState.b.s : 1);
@@ -1246,13 +1543,14 @@ function tryDash() {
   const w = wishDir(); // dash in je looprichting, of recht vooruit als je stilstaat
   dashDir.set(w ? w.x : fwd.x, 0, w ? w.z : fwd.z);
   dashLeft = DASH_TIME;
-  dashReadyAt = now + DASH_COOLDOWN;
+  dashReadyAt = now + dashCooldown();
   socket.emit('dash', { x: dashDir.x, z: dashDir.z });
   sfx('dash');
 }
 
 function tryThrow() {
   if (!canAct() || !myItem) return;
+  if (myVehicle) return toast('Op een board kun je niet gooien. Stap af met R');
   setEmote(0);
   camera.getWorldDirection(look);
   socket.emit('throw', { x: look.x, y: look.y, z: look.z });
@@ -1269,10 +1567,17 @@ window.addEventListener('keydown', (e) => {
   if (!playing) return;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   if (e.repeat) return;
+  // de springer mag in de lucht nog één keer afzetten
+  if (e.code === 'Space' && myClass === 'springer' && !me.onGround && airJumps < 1 && canAct()) {
+    airJumps++;
+    me.vy = JUMP_SPEED;
+    sfx('jump');
+  }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tryDash();
   if (e.code === 'KeyE' || e.code === 'KeyF') tryThrow();
   if (e.code === 'KeyQ' && canAct() && myGadget) socket.emit('gadget');
   if (e.code === 'KeyT') trySpray();
+  if (e.code === 'KeyR' && myVehicle && canAct()) socket.emit('dismount', false);
   if (/^Digit[123]$/.test(e.code) && canAct() && me.onGround) {
     const n = progress.loadout[Number(e.code[5]) - 1];
     if (n) setEmote(n);
@@ -1312,7 +1617,7 @@ function updateLocal(dt) {
   const active = isActive() && !stunned;
   const wish = wishDir();
   const boosted = myFlags & 4;
-  const max = RUN_SPEED * (holderId === socket.id ? HOLDER_SLOWDOWN : 1) * (boosted ? BOOST_SPEED : 1);
+  const max = RUN_SPEED * (holderId === socket.id ? HOLDER_SLOWDOWN : 1) * (boosted ? BOOST_SPEED : 1) * (myClass === 'tank' ? 0.92 : 1) * (myVehicle ? 1.45 : 1);
   if (myEmote && (stunned || now - myEmoteStart > EMOTE_MS || (active && (wish || keys.Space)))) setEmote(0);
 
   if (dashLeft > 0 && !stunned) {
@@ -1327,7 +1632,8 @@ function updateLocal(dt) {
     me.vz += ((active && wish ? wish.z * max : 0) - me.vz) * k;
   }
   if (keys.Space && me.onGround && active) {
-    me.vy = JUMP_SPEED;
+    me.vy = JUMP_SPEED * (myClass === 'springer' ? 1.18 : 1);
+    airJumps = 0;
     me.onGround = false;
     sfx('jump');
     addStat('jumps', 1);
@@ -1339,7 +1645,13 @@ function updateLocal(dt) {
   for (let i = 0; i < steps; i++) {
     me.x += (me.vx * dt) / steps;
     me.z += (me.vz * dt) / steps;
+    const bx = me.x, bz = me.z;
     M.resolve(me, PLAYER_RADIUS, me.y, PLAYER_HEIGHT);
+    // op een board ergens vol tegenaan rijden = eraf vallen
+    if (myVehicle && !crashSent && speed > 9 && Math.hypot(me.x - bx, me.z - bz) > 0.09) {
+      crashSent = true;
+      socket.emit('dismount', true);
+    }
   }
   me.x = THREE.MathUtils.clamp(me.x, M.BOUNDS.minX, M.BOUNDS.maxX);
   me.z = THREE.MathUtils.clamp(me.z, M.BOUNDS.minZ, M.BOUNDS.maxZ);
@@ -1406,7 +1718,7 @@ function updateLocal(dt) {
   }
 
   const cd = Math.max(0, dashReadyAt - now / 1000);
-  const fill = (1 - cd / DASH_COOLDOWN).toFixed(2);
+  const fill = (1 - cd / dashCooldown()).toFixed(2);
   if (fill !== lastFill) {
     lastFill = fill;
     dashFill.style.transform = `scaleX(${fill})`;
@@ -1416,11 +1728,11 @@ function updateLocal(dt) {
 
 function updateBroodje(dt, time) {
   const b = lastState && lastState.b;
-  const mine = b && b.h === socket.id && !myEmote;
+  const mine = b && b.h === socket.id && !myEmote && !replaying;
   broodje.visible = beacon.visible = !!b && !mine;
   if (!broodje.visible) return;
   const gold = lastState.e === 'goud';
-  if (b.h === socket.id) {
+  if (b.h === socket.id && !replaying) {
     broodje.position.set(me.x, me.y + 2.95, me.z);
   } else if (b.h && remotes.has(b.h)) {
     const p = remotes.get(b.h).group.position;
@@ -1437,7 +1749,7 @@ function updateBroodje(dt, time) {
   broodjeLight.color.set(gold ? 0xfff2a0 : 0xffa53a);
   broodjeLight.intensity = (gold ? 30 : 10) + Math.sin(time * 5) * 4;
   // de lichtzuil stopt onder het plafond (buiten gaat hij gewoon omhoog)
-  const top = Math.max(M.CEILING - 0.1, broodje.position.y + 1);
+  const top = M.CEILING === null ? broodje.position.y + 14 : Math.max(M.CEILING - 0.1, broodje.position.y + 1);
   beacon.scale.y = Math.max(0.05, (top - broodje.position.y) / 7);
   beacon.position.set(broodje.position.x, (top + broodje.position.y) / 2, broodje.position.z);
 }
@@ -1449,6 +1761,12 @@ function updateItems(dt, time) {
     it.g.rotation.x = 0.35;
     it.g.position.y = it.base + Math.sin(time * 2.5 + i) * 0.1;
   });
+  zoneRing.visible = !!(lastState && lastState.z);
+  vehicleSpots.forEach((v) => {
+    v.g.visible = v.ring.visible = v.ready;
+    v.g.rotation.y += dt * 1.5;
+  });
+  zoneRing.material.opacity = 0.24 + Math.sin(time * 4) * 0.08;
   vendingSpots.forEach((v) => {
     v.cube.visible = v.ring.visible = v.ready;
     v.cube.rotation.y += dt * 2;
@@ -1468,13 +1786,13 @@ function updateItems(dt, time) {
 let podium = null;
 function showPodium(ranking, winnerId) {
   clearPodium();
-  const base = M.BASES[0];
+  const P = M.PODIUM;
   const order = [ranking.find((p) => p.id === winnerId)].concat(ranking.filter((p) => p.id !== winnerId)).slice(0, 5);
   const offsets = [0, -1.5, 1.5, -2.9, 2.9];
   podium = order.map((p, i) => {
-    const m = makePlayerModel({ name: p.name, skin: p.skin, color: colorOf(p.id) });
-    m.group.position.set(base.x + offsets[i], base.y, base.z - (i ? 0 : 0.6));
-    m.group.rotation.y = Math.PI;
+    const m = makePlayerModel({ name: p.name, skin: p.skin, acc: p.acc, color: colorOf(p.id) });
+    m.group.position.set(P.x + offsets[i], P.y, P.z + (i ? 0 : P.dir * 0.6));
+    m.group.rotation.y = P.dir < 0 ? Math.PI : 0; // gezicht naar de camera
     m.winner = i === 0;
     scene.add(m.group);
     return m;
@@ -1485,9 +1803,9 @@ function clearPodium() {
   podium = null;
 }
 function updatePodium(time) {
-  const base = M.BASES[0];
-  camera.position.set(base.x + Math.sin(time * 0.4) * 1.2, base.y + 1.7, base.z - 5.6);
-  camera.lookAt(base.x, base.y + 1.1, base.z);
+  const P = M.PODIUM;
+  camera.position.set(P.x + Math.sin(time * 0.4) * 1.2, P.y + 1.7, P.z + P.dir * 5.6);
+  camera.lookAt(P.x, P.y + 1.1, P.z);
   podium.forEach((m) => {
     const pose = poseModel(m, 0, 0, m.winner ? 1 : 0, time);
     if (!m.winner) { // verliezers laten het hoofd hangen
@@ -1495,7 +1813,7 @@ function updatePodium(time) {
       m.armR.rotation.set(0.15, 0, 0);
       m.group.rotation.x = 0.18;
     }
-    m.group.position.y = base.y + pose.hop;
+    m.group.position.y = P.y + pose.hop;
     m.group.rotation.z = pose.roll;
   });
   const w = podium[0].group.position;
@@ -1543,6 +1861,7 @@ function visualFor(id) {
   if (id.startsWith('skin:')) return picture(thumb(id.slice(5)));
   if (id.startsWith('emote:')) return picture(thumb(progress.skin, Number(id.slice(6))));
   if (id.startsWith('stamp:')) return bigIcon(STAMP_ICON[id.slice(6)]);
+  if (id.startsWith('class:')) return bigIcon(CLASSES.find((c) => c.id === id.slice(6)).icon);
   return bigIcon('coin');
 }
 const kindOf = (id) => id.split(':')[0];
@@ -1552,7 +1871,8 @@ function renderSkins() {
     const open = isUnlocked(skin);
     let footer = skin.id === progress.skin ? 'Gekozen' : 'Kies';
     if (!open) {
-      footer = icon('lock') + (skin.pass ? `Battlepass trede ${BATTLEPASS.findIndex((r) => r.id === 'skin:' + skin.id) + 1}`
+      const tier = BATTLEPASS.findIndex((r) => r.id === 'skin:' + skin.id) + 1;
+      footer = icon('lock') + (skin.pass ? (tier ? `Battlepass trede ${tier}` : `Seizoen ${THEMES[skin.season]}`)
         : skin.price ? `${skin.price} in de winkel`
         : CHALLENGES.find((c) => c.skin === skin.id).title);
     }
@@ -1571,6 +1891,146 @@ function renderSkins() {
     return card;
   }));
 }
+
+// ---------- Klasse kiezen ----------
+function renderClasses() {
+  $('class-grid').replaceChildren(...CLASSES.map((c) => {
+    const open = c.id === 'allrounder' || owns('class:' + c.id);
+    const tier = BATTLEPASS.findIndex((r) => r.id === 'class:' + c.id) + 1;
+    const card = tile('class', bigIcon(c.icon), c.name,
+      open ? (c.id === progress.cls ? 'Gekozen' : 'Kies') : icon('lock') + `Battlepass trede ${tier}`);
+    card.querySelector('.bar2').insertAdjacentHTML('beforeend', '<p></p>');
+    card.querySelector('p').textContent = c.desc;
+    if (c.id === progress.cls) card.classList.add('selected');
+    if (!open) card.classList.add('locked');
+    card.addEventListener('click', () => {
+      if (!open) return;
+      progress.cls = c.id;
+      save('kr-progress', progress);
+      if (lobby) socket.emit('setClass', c.id);
+      renderClasses();
+    });
+    return card;
+  }));
+}
+
+// ---------- Accessoires ----------
+let confirmAcc = null;
+function renderAccessories() {
+  $('acc-rows').replaceChildren(...Object.keys(ACCESSORIES).map((slot) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `<p class="shop-title">${SLOT_NAMES[slot]}</p><div class="tiles"></div>`;
+    wrap.querySelector('.tiles').append(...ACCESSORIES[slot].map((a) => {
+      const id = `acc:${a.id}`;
+      const open = !a.price || owns(id);
+      const chosen = progress.acc[slot] === a.id;
+      const look = accString(Object.assign({}, progress.acc, { [slot]: a.id }));
+      let footer = chosen ? 'Gekozen' : open ? 'Kies' : icon('coin') + a.price;
+      if (confirmAcc === id) footer = 'Nog een keer klikken om te kopen';
+      const card = tile('skin', picture(thumb(progress.skin, 0, look, slot === 'back')), a.name, footer);
+      if (chosen) card.classList.add('selected');
+      if (!open && progress.coins < a.price) card.classList.add('poor');
+      card.addEventListener('click', () => {
+        if (!open) {
+          if (progress.coins < a.price) return;
+          if (confirmAcc !== id) {
+            confirmAcc = id;
+            return renderAccessories();
+          }
+          confirmAcc = null;
+          progress.owned.push(id);
+          addCoins(-a.price);
+          sfx('coin');
+        }
+        progress.acc[slot] = a.id;
+        save('kr-progress', progress);
+        buildPreview();
+        if (lobby) socket.emit('setLook', { acc: accString(), title: progress.title });
+        renderAccessories();
+      });
+      return card;
+    }));
+    return wrap;
+  }));
+}
+
+// ---------- Profiel: account, rang, titel en statistieken ----------
+function rankBadge(rp) {
+  const r = rankOf(rp);
+  return `<span class="rank" style="--rank:${hex(r.color)}">${icon('shield')}<b>${r.name}</b></span>`;
+}
+function refreshAccountUi() {
+  const name = $('name');
+  if (account) name.value = account.name;
+  name.disabled = !!account;
+  $('btn-profile').querySelector('span').textContent = account ? 'Profiel' : 'Inloggen';
+  $('rank-badge').innerHTML = account ? rankBadge(account.rp) + `<small>${titleName(progress.title)}</small>` : '<small>Niet ingelogd · voortgang staat alleen op dit apparaat</small>';
+  addXp(0);
+  buildArms(skinById(progress.skin));
+  buildPreview();
+  renderMenuSide();
+  if (!$('account').classList.contains('hidden')) renderProfile();
+}
+function renderProfile() {
+  $('acct-out').classList.toggle('hidden', !!account);
+  $('acct-in').classList.toggle('hidden', !account);
+  if (account) {
+    const r = rankOf(account.rp);
+    $('profile-head').innerHTML = `<b></b>${rankBadge(account.rp)}<span class="bar"><i style="width:${r.share * 100}%"></i></span>` +
+      `<small>${r.toGo ? `Nog ${r.toGo} rangpunten tot ${RANK_NAMES[r.index + 1]}` : 'Hoogste rang bereikt'}</small>`;
+    $('profile-head').querySelector('b').textContent = account.name;
+  }
+  $('title-grid').replaceChildren(...TITLES.map((t) => {
+    const chip = document.createElement('button');
+    const open = titleOpen(t);
+    chip.className = 'chip' + (progress.title === t.id ? ' active' : '') + (open ? '' : ' locked');
+    chip.textContent = t.name;
+    chip.title = open ? '' : t.how;
+    if (!open) chip.insertAdjacentHTML('beforeend', `<small>${t.how} (${Math.floor(stats[t.stat] || 0)}/${t.goal})</small>`);
+    chip.addEventListener('click', () => {
+      if (!open) return;
+      progress.title = t.id;
+      save('kr-progress', progress);
+      if (lobby) socket.emit('setLook', { acc: accString(), title: progress.title });
+      refreshAccountUi();
+      renderProfile();
+    });
+    return chip;
+  }));
+  const lines = [['Potjes gespeeld', 'games'], ['Gewonnen', 'wins'], ['Rake worpen', 'hits'], ['Tackles', 'tackles'],
+    ['Seconden met het broodje', 'holdSeconds'], ['Broodjes gepakt', 'pickups'], ['Sprongen', 'jumps'],
+    ['Tafels omgegooid', 'tables'], ['Emotes gedaan', 'emotes'], ['Stempels gezet', 'sprays']];
+  $('stat-list').replaceChildren(...lines.map(([label, key]) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<span></span><b></b>';
+    li.querySelector('span').textContent = label;
+    li.querySelector('b').textContent = Math.floor(stats[key] || 0);
+    return li;
+  }));
+}
+async function signIn(path) {
+  $('acct-error').textContent = '';
+  try {
+    const data = await api(path, { name: $('acct-name').value, password: $('acct-pass').value });
+    localStorage.setItem('kr-token', data.token);
+    $('acct-pass').value = '';
+    adopt(data.account);
+    renderProfile();
+  } catch (e) {
+    $('acct-error').textContent = e.message;
+  }
+}
+$('btn-login').addEventListener('click', () => signIn('/api/login'));
+$('btn-register').addEventListener('click', () => signIn('/api/register'));
+$('btn-logout').addEventListener('click', async () => {
+  clearTimeout(syncTimer);
+  await api('/api/save', { progress, stats, daily }).catch(() => {});
+  await api('/api/logout', {}).catch(() => {});
+  localStorage.removeItem('kr-token');
+  account = null;
+  refreshAccountUi();
+  renderProfile();
+});
 
 // ---------- Emotes kiezen: drie vakken voor de toetsen 1, 2 en 3 ----------
 let emoteSlot = 0;
@@ -1664,6 +2124,7 @@ function renderPass() {
   const pages = Math.ceil(total / PASS_PAGE);
   const into = tier >= total ? XP_PER_TIER : progress.xp % XP_PER_TIER;
   $('pass-tier').textContent = tier;
+  $('pass-season').textContent = `Seizoen ${SEASON} · ${THEMES[THEME]} · nog ${seasonDaysLeft()} dagen`;
   $('pass-bar').style.width = `${(into / XP_PER_TIER) * 100}%`;
   $('pass-xp').textContent = tier >= total ? 'Alles vrijgespeeld' : `${into} / ${XP_PER_TIER} XP tot trede ${tier + 1}`;
   $('pass-page').textContent = `Pagina ${passPage + 1} / ${pages}`;
@@ -1691,7 +2152,7 @@ function renderPass() {
   show.className = 'k-' + r.type;
   show.innerHTML = '<span class="art"></span><small></small><b></b><p></p>';
   show.querySelector('.art').append(r.type === 'coins' ? bigIcon('coin') : visualFor(r.id));
-  show.querySelector('small').textContent = `Trede ${passSel + 1} · ${{ skin: 'Skin', emote: 'Emote', stamp: 'Spuitbus-stempel', coins: 'Munten' }[r.type]}`;
+  show.querySelector('small').textContent = `Trede ${passSel + 1} · ${{ skin: 'Skin', emote: 'Emote', stamp: 'Spuitbus-stempel', coins: 'Munten', class: 'Klasse' }[r.type]}`;
   show.querySelector('b').textContent = r.name;
   show.querySelector('p').textContent = passSel < tier ? 'Vrijgespeeld'
     : `Nog ${(passSel + 1) * XP_PER_TIER - progress.xp} XP`;
@@ -1730,6 +2191,9 @@ document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('
   if (btn.dataset.open === 'draw') openDraw();
   if (btn.dataset.open === 'pass') { passPage = -1; renderPass(); }
   if (btn.dataset.open === 'emotes') renderEmotes();
+  if (btn.dataset.open === 'classes') renderClasses();
+  if (btn.dataset.open === 'accessories') renderAccessories();
+  if (btn.dataset.open === 'account') renderProfile();
   $(btn.dataset.open).classList.remove('hidden');
 }));
 document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => {
@@ -1746,6 +2210,9 @@ function playerName() {
 }
 $('name').value = localStorage.getItem('kr-name') || '';
 
+const joinData = () => ({
+  name: playerName(), skin: progress.skin, cls: progress.cls, acc: accString(), title: progress.title, token: getToken()
+});
 function onJoined(res) {
   if (!res.ok) $('menu-error').textContent = res.error;
   else {
@@ -1755,18 +2222,28 @@ function onJoined(res) {
 }
 $('btn-create').addEventListener('click', () => {
   if (!playerName()) return ($('menu-error').textContent = 'Vul eerst je naam in.');
-  socket.emit('createLobby', { name: playerName(), skin: progress.skin }, onJoined);
+  socket.emit('createLobby', joinData(), onJoined);
 });
 function join() {
   const code = $('code').value.trim().toUpperCase();
   if (!playerName()) return ($('menu-error').textContent = 'Vul eerst je naam in.');
   if (code.length !== 4) return ($('menu-error').textContent = 'Een lobbycode heeft 4 letters.');
-  socket.emit('joinLobby', { name: playerName(), code, skin: progress.skin }, onJoined);
+  socket.emit('joinLobby', Object.assign(joinData(), { code }), onJoined);
 }
 $('btn-join').addEventListener('click', join);
+$('btn-ranked').addEventListener('click', () => {
+  if (!account) {
+    $('acct-error').textContent = 'Log in of maak een account om ranked te spelen.';
+    return $('account').classList.remove('hidden');
+  }
+  socket.emit('quickJoin', Object.assign(joinData(), { ranked: true }), onJoined);
+});
+document.querySelectorAll('[data-bots]').forEach((btn) => btn.addEventListener('click', () => {
+  socket.emit('bots', Number(btn.dataset.bots));
+}));
 $('btn-public').addEventListener('click', () => {
   if (!playerName()) return ($('menu-error').textContent = 'Vul eerst je naam in.');
-  socket.emit('quickJoin', { name: playerName(), skin: progress.skin }, onJoined);
+  socket.emit('quickJoin', joinData(), onJoined);
 });
 // aftellen in een openbare lobby
 let lobbyStartAt = 0;
@@ -1780,6 +2257,19 @@ setInterval(() => {
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
 $('btn-start').addEventListener('click', () => {
   socket.emit('startGame', (res) => { $('lobby-note').textContent = res.ok ? '' : res.error; });
+});
+document.querySelectorAll('[data-rounds]').forEach((btn) => btn.addEventListener('click', () => {
+  socket.emit('setRounds', Number(btn.dataset.rounds));
+}));
+// uitnodigingslink: wie hem opent komt direct in deze lobby
+$('btn-invite').addEventListener('click', async () => {
+  const link = `${location.origin}/?lobby=${lobby.code}`;
+  try {
+    await navigator.clipboard.writeText(link);
+    $('lobby-note').textContent = 'Link gekopieerd. Stuur hem naar je vrienden.';
+  } catch (e) {
+    $('lobby-note').textContent = link;
+  }
 });
 $('btn-ready').addEventListener('click', () => {
   const mine = lobby && lobby.players.find((p) => p.id === socket.id);
@@ -1804,6 +2294,9 @@ function stopPlaying() {
   bananas.clear();
   for (const m of sprays.values()) scene.remove(m);
   sprays.clear();
+  for (const m of puddles.values()) scene.remove(m);
+  puddles.clear();
+  $('fries').classList.add('hidden');
   if (selfModel) scene.remove(selfModel.group);
   selfModel = null;
   myEmote = 0;
@@ -1855,12 +2348,16 @@ socket.on('lobby', (info) => {
   roster = new Map(info.players.map((p) => [p.id, p]));
   if (!info.playing) mode = info.mode;
   $('lobby-code').textContent = info.code;
-  $('lobby-kind').textContent = info.public ? 'Openbare lobby' : 'Privélobby';
+  $('lobby-kind').textContent = info.ranked ? 'Ranked' : info.public ? 'Openbare lobby' : 'Privélobby';
+  $('lobby-setup').classList.toggle('hidden', info.ranked);
+  $('bot-row').classList.toggle('hidden', info.hostId !== socket.id || info.public);
   $('lobby-auto').classList.toggle('hidden', !info.public);
   if (info.startIn !== null) lobbyStartAt = performance.now() + info.startIn * 1000;
   $('lobby-count').textContent = `(${info.players.length}/8)`;
   $('lobby-players').replaceChildren(...info.players.map((p) => {
-    const tags = [skinById(p.skin).name];
+    const tags = [p.bot ? 'bot' : (CLASSES.find((c) => c.id === p.cls) || CLASSES[0]).name];
+    if (p.title) tags.unshift(titleName(p.title));
+    if (info.ranked && p.rp !== null) tags.unshift(rankOf(p.rp).name);
     if (p.id === info.hostId) tags.push('host');
     if (p.id === socket.id) tags.push('jij');
     if (p.waiting) tags.push('kijkt mee');
@@ -1868,16 +2365,20 @@ socket.on('lobby', (info) => {
     const state = document.createElement('span');
     state.className = 'ready-mark' + (p.ready ? ' on' : '');
     state.innerHTML = p.ready ? icon('check') + 'Ready' : 'Niet ready';
-    if (!p.waiting) li.append(state);
+    if (!p.waiting && !p.bot) li.append(state);
     return li;
   }));
-  const active = info.players.filter((p) => !p.waiting);
+  const active = info.players.filter((p) => !p.waiting && !p.bot);
   const mine = active.find((p) => p.id === socket.id);
   $('ready-info').textContent = `${active.filter((p) => p.ready).length} van ${active.length} ready · ${info.need} nodig om te starten`;
   $('btn-ready').classList.toggle('on', !!(mine && mine.ready));
   $('btn-ready').classList.toggle('hidden', !mine || info.playing);
   $('btn-ready').querySelector('span').textContent = mine && mine.ready ? 'Je bent ready' : 'Ready';
   $('btn-start').classList.toggle('dim', !info.canStart);
+  document.querySelectorAll('[data-rounds]').forEach((btn) => {
+    btn.classList.toggle('active', Number(btn.dataset.rounds) === info.rounds);
+    btn.disabled = info.hostId !== socket.id;
+  });
   $('lobby-note').textContent = '';
   const isHost = info.hostId === socket.id;
   $('btn-start').classList.toggle('hidden', !isHost);
@@ -1889,9 +2390,53 @@ socket.on('lobby', (info) => {
   $('mode-desc').textContent = MODE_INFO[info.mode].desc + (isHost ? '' : ' (de host kiest)');
 });
 
+// Map-roulette: de kaarten schuiven voorbij en remmen af op de gekozen map.
+let overTimer = 0;
+socket.on('mapPick', (data) => {
+  clearInterval(overTimer);
+  stopReplay();
+  clearPodium();
+  document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
+  const ids = M.MAP_IDS;
+  const cards = [];
+  const target = 25;
+  for (let i = 0; i < 30; i++) {
+    // nooit twee keer dezelfde kaart naast elkaar
+    const options = ids.filter((id) => id !== cards[i - 1] && (i !== target - 1 || id !== data.map));
+    cards.push(i === target ? data.map : options[Math.floor(Math.random() * options.length)]);
+  }
+  if (cards[target + 1] === data.map) cards[target + 1] = ids.find((id) => id !== data.map && id !== cards[target + 2]);
+  const strip = $('roulette-strip');
+  strip.innerHTML = cards.map((id) => `<div class="map-card m-${id}">${icon(M.maps[id].icon)}<b>${M.maps[id].name}</b></div>`).join('');
+  $('roulette-sub').textContent = (data.rounds > 1 ? `Ronde ${data.round} van ${data.rounds} · ` : '') + MODE_INFO[data.mode].name;
+  $('roulette').classList.remove('hidden');
+  strip.style.transition = 'none';
+  strip.style.transform = 'translateX(0)';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    strip.style.transition = 'transform 3.3s cubic-bezier(0.1, 0.75, 0.18, 1)';
+    strip.style.transform = `translateX(${-target * 200}px)`;
+  }));
+  for (let t = 0, k = 0; t < 3100; t += 55 + k * 14, k++) setTimeout(() => sfx('tick'), t);
+  setTimeout(() => {
+    if (strip.children[target]) strip.children[target].classList.add('win');
+    sfx('unlock');
+  }, 3350);
+  // de map laden terwijl de roulette draait
+  setTimeout(() => loadMap(data.map), 900);
+});
+
 socket.on('gameStart', (data) => {
   stopPlaying();
   clearPodium();
+  clearInterval(overTimer);
+  loadMap(data.map);
+  $('roulette').classList.add('hidden');
+  myClass = progress.cls;
+  myVehicle = 0;
+  crashSent = false;
+  record = [];
+  glassLog = [];
+  stopReplay();
   document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
   if (document.activeElement) document.activeElement.blur(); // anders klikt spatie op de startknop
   mode = data.mode;
@@ -1916,30 +2461,40 @@ socket.on('gameStart', (data) => {
   camera.updateProjectionMatrix();
   camera.position.set(me.x, camY, me.z);
   camera.lookAt(M.BROODJE_SPAWN.x, camY, M.BROODJE_SPAWN.z);
-  broodje.position.set(M.BROODJE_SPAWN.x, 0.8, M.BROODJE_SPAWN.z);
+  broodje.position.set(M.BROODJE_SPAWN.x, M.BROODJE_SPAWN.y + 0.8, M.BROODJE_SPAWN.z);
   show('hud');
   $('pause').classList.add('hidden');
   $('clickstart').classList.toggle('hidden', touchMode);
   $('holding').classList.add('hidden');
   $('item-hint').classList.add('hidden');
-  banner(mode === 'teams' ? `Teams · jij speelt voor ${TEAM_NAMES[teams[socket.id]]}` : MODE_INFO[mode].name, 3500);
+  banner(`${M.name} · ` + (mode === 'teams' ? `jij speelt voor team ${TEAM_NAMES[teams[socket.id]]}` : MODE_INFO[mode].name), 3500);
   if (!touchMode) controls.lock(); // lukt direct bij de host (klik op Start); anderen klikken op "Verder spelen"
 });
 
 let scoreTick = 0;
 let prevScore = 0;
+let record = [];    // alle standen van dit potje, voor de herhaling van het beste moment
+let glassLog = [];  // gebroken glasplaten: [tijd op de klok, nummer]
+let replaying = false;
 socket.on('state', (s) => {
   if (!playing) return;
+  record.push(s);
+  onState(s, false);
+});
+
+// Verwerkt één stand van de server. Bij een herhaling (replay) wordt alleen de wereld bijgewerkt
+// en staat je eigen poppetje er gewoon tussen.
+function onState(s, replay) {
   lastState = s;
   const wasMine = holderId === socket.id;
   holderId = s.b ? s.b.h : null;
-  if (wasMine && holderId !== socket.id) {
+  if (!replay && wasMine && holderId !== socket.id) {
     big(lossNote ? lossNote.text : 'Broodje kwijt!', lossNote ? lossNote.kind : 'bad');
     lossNote = null;
   }
   const seen = new Set();
-  for (const [id, x, y, z, ry, score, flags, item, gadget, ammo] of s.p) {
-    if (id === socket.id) {
+  for (const [id, x, y, z, ry, score, flags, item, gadget, ammo, vehicle] of s.p) {
+    if (id === socket.id && !replay) {
       // alleen de gewone seconde-punten tellen mee voor de challenge, geen bonussen
       if (holderId === id && score > prevScore) addStat('holdSeconds', Math.min(score - prevScore, 1));
       prevScore = score;
@@ -1948,6 +2503,8 @@ socket.on('state', (s) => {
       myGadget = gadget;
       myAmmo = ammo;
       myFlags = flags;
+      myVehicle = vehicle;
+      if (!vehicle) crashSent = false;
       stunned = !!(flags & 2);
       continue;
     }
@@ -1967,6 +2524,10 @@ socket.on('state', (s) => {
     r.shield.visible = !!(flags & 8);
     r.itemKind = item;
     r.item.userData.setKind(item);
+    if (r.vehicle !== vehicle) {
+      r.vehicle = vehicle;
+      r.board.userData.setKind(vehicle);
+    }
   }
   for (const [id, r] of remotes) {
     if (!seen.has(id)) {
@@ -1975,13 +2536,14 @@ socket.on('state', (s) => {
     }
   }
 
-  // spullen op de grond en automaten
+  // spullen op de grond, automaten en voertuigen
   s.i.forEach((kind, i) => {
     if (itemPickups[i].kind === kind) return;
     itemPickups[i].kind = kind;
     itemPickups[i].g.userData.setKind(kind);
   });
   s.v.forEach((ready, i) => { vendingSpots[i].ready = !!ready; });
+  s.w.forEach((ready, i) => { vehicleSpots[i].ready = !!ready; });
   // rondvliegende spullen
   const flying = new Set();
   for (const [id, kind, x, y, z] of s.j) {
@@ -2017,12 +2579,28 @@ socket.on('state', (s) => {
     scene.remove(m);
     bananas.delete(id);
   }
+  // melkplassen
+  const wet = new Set();
+  for (const [id, x, y, z] of s.u) {
+    wet.add(id);
+    if (puddles.has(id)) continue;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.03, 18), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+    m.position.set(x, y + 0.03, z);
+    scene.add(m);
+    puddles.set(id, m);
+    puff(x, y + 0.2, z, 0xffffff, 8);
+  }
+  for (const [id, m] of puddles) {
+    if (wet.has(id)) continue;
+    scene.remove(m);
+    puddles.delete(id);
+  }
   // verschoven of omgevallen meubels
   let tablesMoved = false;
   for (const [i, x, y, z, tip, dir] of s.o) {
     const p = props[i];
     if (tip && !p.tip) {
-      if (Math.hypot(x - me.x, z - me.z) < 14) sfx('crash');
+      if (replay || Math.hypot(x - me.x, z - me.z) < 14) sfx('crash');
       if (p.def.type === 'table') puff(x, y + 0.8, z, 0xf2f0ea, 6);
       if (p.def.type === 'bin') puff(x, y + 0.6, z, 0x8a8f96, 10);
     }
@@ -2030,8 +2608,9 @@ socket.on('state', (s) => {
     if (p.def.type === 'table') tablesMoved = true;
   }
   if (tablesMoved) refreshDynamic();
-
   darkTarget = s.e === 'donker' ? 1 : 0;
+  if (replay) return;
+
   const secs = Math.ceil(s.t);
   $('timer').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${s.d ? ' ×2' : ''}`;
   $('timer').classList.toggle('low', secs <= 15);
@@ -2042,18 +2621,23 @@ socket.on('state', (s) => {
     $('item-hint').textContent = (touchMode ? 'Gooi-knop: ' : 'Klik of E: gooi ') +
       (myAmmo ? `pizza uit de doos (nog ${myAmmo})` : ITEM_NAMES[myItem]);
   }
-  // brandalarm: rode gloed en sirene, met uitleg waar je heen moet
-  const alarm = s.e === 'brand' && !spectating;
-  $('alarm').classList.toggle('hidden', !alarm);
+  $('fries').classList.toggle('hidden', !(myFlags & 16));
+  // brandalarm of eindsprint: rode gloed, met uitleg waar je heen moet
+  const fire = s.e === 'brand';
+  const alarm = (fire || s.z) && !spectating;
+  $('alarm').classList.toggle('hidden', !alarm || (!fire && inZone()));
   if (alarm) {
-    const inside = me.z < M.OUTSIDE_Z;
-    $('alarm').classList.toggle('safe', !inside);
-    $('alarm-text').textContent = inside ? 'Naar buiten! De deur is beneden in de hal' : 'Je staat veilig buiten';
-    if (scoreTick % 20 === 0) sfx('siren');
+    const safe = fire ? me.z >= M.OUTSIDE_Z : inZone();
+    $('alarm').classList.toggle('safe', safe);
+    $('alarm-text').textContent = fire
+      ? (safe ? 'Je staat veilig buiten' : 'Naar buiten! De deur is beneden in de hal')
+      : 'Buiten de ring verlies je 3 punten per seconde';
+    if (fire && scoreTick % 20 === 0) sfx('siren');
   }
   $('buff-boost').classList.toggle('hidden', !(myFlags & 4));
   $('buff-shield').classList.toggle('hidden', !(myFlags & 8));
   $('buff-banana').classList.toggle('hidden', !myGadget);
+  $('buff-vehicle').classList.toggle('hidden', !myVehicle);
 
   if (scoreTick++ % 4 === 0) {
     const rows = s.p.slice().sort((a, b) => b[5] - a[5]).map((p) => {
@@ -2072,7 +2656,100 @@ socket.on('state', (s) => {
     }
     $('scoreboard').replaceChildren(...rows);
   }
-});
+}
+
+// ---------- Herhaling van het beste moment ----------
+// De server wijst het moment aan; de client speelt de opgenomen standen rond dat moment
+// vertraagd af, inclusief meubels, glas en vliegende spullen, met een camera achter de dader.
+let replay = null;
+function startReplay(h, after) {
+  const from = h.rem + 3.2, to = h.rem - 2.4;
+  const frames = record.filter((s) => s.t <= from && s.t >= to);
+  if (frames.length < 25) return false;
+  // de wereld terugzetten naar hoe hij er vlak voor het moment uitzag
+  resetProps();
+  for (const s of record) {
+    if (s.t <= from) break;
+    for (const [i, x, y, z, tip, dir] of s.o) {
+      Object.assign(props[i], { x, y, z, tip, dir, tipAnim: tip });
+      props[i].outer.position.set(x, y, z);
+    }
+  }
+  for (const [rem, i] of glassLog) {
+    if (rem > from) {
+      broken[i] = true;
+      panelMeshes[i].visible = false;
+    }
+  }
+  refreshDynamic();
+  replay = { frames, i: 0, clock: 0, h, after, cam: new THREE.Vector3(), first: true };
+  replaying = true;
+  holderId = null;
+  const who = (id) => (roster.get(id) || { name: '?' }).name;
+  const text = { tackle: `${who(h.by)} tackelt ${who(h.victim)}`, hit: `${who(h.by)} raakt ${who(h.victim)}`,
+    streak: `Killstreak van ${who(h.by)}`, capture: `${who(h.by)} scoort` }[h.text] || '';
+  $('replay-text').textContent = text;
+  $('replay').classList.remove('hidden');
+  return true;
+}
+function stopReplay() {
+  if (!replaying) return;
+  replaying = false;
+  replay = null;
+  $('replay').classList.add('hidden');
+  clearRemotes();
+  for (const pr of projectiles.values()) scene.remove(pr.g);
+  projectiles.clear();
+  for (const m of puddles.values()) scene.remove(m);
+  puddles.clear();
+  for (const m of bananas.values()) scene.remove(m);
+  bananas.clear();
+  darkTarget = 0;
+  resetProps();
+}
+function finishReplay() {
+  const after = replay && replay.after;
+  stopReplay();
+  if (after) after();
+}
+$('replay').addEventListener('click', finishReplay);
+function updateReplay(dt, time) {
+  replay.clock += dt * 0.55; // vertraagd
+  while (replay.i < replay.frames.length && replay.clock >= replay.i * 0.05) {
+    const s = replay.frames[replay.i++];
+    for (const [rem, i] of glassLog) {
+      if (rem <= s.t + 0.05 && rem > s.t - 0.001 && !broken[i]) {
+        broken[i] = true;
+        panelMeshes[i].visible = false;
+        const g = M.panels[i];
+        for (let x = -g.w / 2; x <= g.w / 2; x += 0.6) puff(g.x + x, g.y + 0.6, g.z, 0xd6f0ff, 3);
+        sfx('glass');
+      }
+    }
+    onState(s, true);
+  }
+  if (replay.i >= replay.frames.length && replay.clock > replay.frames.length * 0.05 + 0.4) return finishReplay();
+  updateRemotes(dt * 0.55);
+  updateBroodje(dt, time);
+  updateItems(dt, time);
+  // camera: schuin achter de dader, kijkend naar het slachtoffer
+  const by = remotes.get(replay.h.by), victim = remotes.get(replay.h.victim) || by;
+  if (!by) return;
+  const a = by.group.position, b = victim.group.position;
+  let dx = a.x - b.x, dz = a.z - b.z;
+  const d = Math.hypot(dx, dz) || 1;
+  dx /= d;
+  dz /= d;
+  const want = new THREE.Vector3(a.x + dx * 3.2 - dz * 1.6, Math.max(a.y, b.y) + 2.3, a.z + dz * 3.2 + dx * 1.6);
+  // niet door een muur heen filmen: dichterbij komen als er iets tussen zit
+  const probe = { x: want.x, z: want.z };
+  if (M.resolve(probe, 0.3, want.y - 0.5, 0.6, 0)) want.set(a.x + dx * 1.2, want.y + 0.6, a.z + dz * 1.2);
+  if (replay.first) replay.cam.copy(want);
+  replay.first = false;
+  replay.cam.lerp(want, Math.min(1, dt * 3));
+  camera.position.copy(replay.cam);
+  camera.lookAt((a.x + b.x) / 2, (a.y + b.y) / 2 + 1.1, (a.z + b.z) / 2);
+}
 
 let toastTimer = 0;
 function toast(text, ms = 2200) {
@@ -2103,6 +2780,9 @@ socket.on('event', (e) => {
   } else if (e.type === 'eaten') {
     toast(`${nameOf(e.id)} ${mine ? 'hebt' : 'heeft'} het broodje op! Er ligt een nieuw in het midden`, 3000);
     if (mine) lossNote = { text: 'Broodje is op!', kind: 'good' };
+  } else if (e.type === 'armor') {
+    toast(`${nameOf(e.victim)} is een tank en vangt de tackle van ${victimName(e.by)} op!`, 3000);
+    sfx('crash');
   } else if (e.type === 'streak') {
     if (mine) banner('Killstreak! Pizzadoos met 10 pizza\'s', 3500);
     else toast(`${nameOf(e.id)} heeft een killstreak en een pizzadoos!`, 3000);
@@ -2115,15 +2795,14 @@ socket.on('event', (e) => {
     sfx(e.victim === socket.id ? 'bad' : 'crash');
     if (e.by === socket.id) addStat('tackles', 1);
   } else if (e.type === 'hit') {
-    const what = ['', 'een pizza', 'een bord', 'een plant'][e.kind];
-    toast(`${nameOf(e.by)} gooit ${what} tegen ${victimName(e.victim)}!`);
+    toast(`${nameOf(e.by)} gooit ${ITEM_WHAT[e.kind]} tegen ${victimName(e.victim)}!`);
     sfx('hit');
     if (e.by === socket.id) addStat('hits', 1);
   } else if (e.type === 'shield') {
     toast(`${nameOf(e.victim)} ${e.victim === socket.id ? 'vangt' : 'vangt'} de worp op met een dienblad!`);
     sfx('crash');
   } else if (e.type === 'slip') {
-    toast(`${nameOf(e.victim)} ${e.victim === socket.id ? 'glijdt' : 'glijdt'} uit over een bananenschil!`);
+    toast(`${nameOf(e.victim)} glijdt uit over ${e.milk ? 'een plas melk' : 'een bananenschil'}!`);
     sfx('slip');
   } else if (e.type === 'power') {
     if (mine) toast(`Uit de automaat: ${POWER_TEXT[e.kind]}`, 3000);
@@ -2136,7 +2815,17 @@ socket.on('event', (e) => {
   } else if (e.type === 'gameEvent') {
     banner(EVENT_TEXT[e.name], 4000);
     sfx('bell');
+  } else if (e.type === 'respawn') {
+    toast('Het broodje ligt weer in het midden');
+  } else if (e.type === 'mount') {
+    if (mine) toast(`${e.kind === 1 ? 'Skateboard' : 'Step'}! Sneller, maar niet gooien en niet botsen. R = afstappen`, 4000);
+  } else if (e.type === 'crash') {
+    toast(`${nameOf(e.id)} ${mine ? 'valt' : 'valt'} van het board!`);
+    sfx('crash');
+  } else if (e.type === 'tip') {
+    if (e.by === socket.id) addStat('tables', 1);
   } else if (e.type === 'glass') {
+    glassLog.push([lastState ? lastState.t : 0, e.i]);
     const g = M.panels[e.i];
     broken[e.i] = true;
     panelMeshes[e.i].visible = false;
@@ -2154,9 +2843,16 @@ socket.on('event', (e) => {
 socket.on('gameOver', (data) => {
   const watched = spectating;
   stopPlaying();
+  const multi = data.rounds > 1;
   const top = data.ranking[0];
-  let text, winnerId = top.id, won;
-  if (data.mode === 'teams') {
+  let text, winnerId = top.id, won = false;
+  if (!data.final) {
+    text = `${[...data.ranking].sort((a, b) => b.score - a.score)[0].name} wint ronde ${data.round}`;
+  } else if (multi) {
+    const tie = data.ranking.length > 1 && data.ranking[1].total === top.total;
+    text = tie ? 'Gelijkspel!' : `${top.name} wint het toernooi!`;
+    won = !tie && top.id === socket.id;
+  } else if (data.mode === 'teams') {
     const [a, b] = data.teamScores;
     const best = a >= b ? 0 : 1;
     text = a === b ? 'Gelijkspel!' : `Team ${TEAM_NAMES[best]} wint!`;
@@ -2167,13 +2863,57 @@ socket.on('gameOver', (data) => {
     text = tie ? 'Gelijkspel!' : `${top.name} wint!`;
     won = !tie && top.id === socket.id;
   }
+  $('over-title').textContent = !data.final ? `Tussenstand · ronde ${data.round} van ${data.rounds}`
+    : multi ? 'Eindstand toernooi' : 'Tijd is om!';
   $('winner').textContent = text;
-  $('ranking').replaceChildren(...data.ranking.map((p) => row(colorOf(p.id), p.name, badge(`${p.score} pt`, 'pts'))));
-  // eerst de podiumscène, daarna de uitslag
-  showPodium(data.ranking, winnerId);
-  show(null);
-  banner(text, 4500);
-  setTimeout(() => { if (podium && !playing) show('gameover'); }, 4500);
+
+  // scorebord met de cijfers van dit potje
+  const columns = ['Speler', 'Punten'].concat(multi ? ['Totaal'] : [], ['Raak', 'Tackles', 'Broodje']);
+  const table = $('ranking');
+  table.replaceChildren();
+  const head = table.createTHead().insertRow();
+  columns.forEach((c) => { head.insertCell().textContent = c; });
+  const body = table.createTBody();
+  data.ranking.forEach((p, i) => {
+    const tr = body.insertRow();
+    if (p.id === socket.id) tr.className = 'me';
+    const name = tr.insertCell();
+    name.append(row(colorOf(p.id), `${i + 1}. ${p.name}`).firstChild, ` ${i + 1}. ${p.name}`);
+    [p.score].concat(multi ? [p.total] : [], [p.hits, p.tackles, `${p.hold} s`]).forEach((v) => { tr.insertCell().textContent = v; });
+  });
+
+  $('over-buttons').classList.toggle('hidden', !data.final);
+  $('over-next').textContent = '';
+  clearInterval(overTimer);
+  const nextAt = performance.now() + data.nextIn * 1000;
+  const finish = () => {
+    if (!data.final) {
+      // toernooi: tussenstand, daarna start vanzelf de volgende ronde
+      const showLeft = () => { $('over-next').textContent = `Volgende ronde over ${Math.max(0, Math.ceil((nextAt - performance.now()) / 1000))} s`; };
+      showLeft();
+      overTimer = setInterval(showLeft, 500);
+      show('gameover');
+    } else {
+      // de podiumscène, daarna de uitslag
+      showPodium(data.ranking, winnerId);
+      show(null);
+      banner(text, 4500);
+      setTimeout(() => { if (podium && !playing) show('gameover'); }, 4500);
+    }
+  };
+  // eerst de herhaling van het beste moment, als die er is
+  if (data.highlight && startReplay(data.highlight, finish)) show(null);
+  else finish();
+
+  // ranked: je nieuwe rang
+  const me2 = data.ranking.find((p) => p.id === socket.id);
+  $('over-rank').textContent = '';
+  if (data.ranked && me2 && me2.rpDelta !== undefined && account) {
+    account.rp = me2.rp;
+    $('over-rank').textContent = `${me2.rpDelta >= 0 ? '+' : ''}${me2.rpDelta} rangpunten · ${rankOf(me2.rp).name}`;
+    refreshAccountUi();
+  }
+
   $('earned').textContent = '';
   if (watched) return;
   addStat('games', 1);
@@ -2186,11 +2926,22 @@ socket.on('gameOver', (data) => {
   addXp(xp);
   $('earned').textContent = `+${earned} munten · +${xp} XP`;
 });
+// "Nog een keer": je staat meteen ready; de host start direct opnieuw als genoeg spelers ready zijn
+$('btn-again').addEventListener('click', () => {
+  clearPodium();
+  show(lobby ? 'lobby' : 'menu');
+  if (!lobby) return;
+  socket.emit('setReady', true);
+  if (lobby.hostId === socket.id) {
+    socket.emit('startGame', (res) => { $('lobby-note').textContent = res.ok ? '' : res.error; });
+  }
+});
 
 // later binnengekomen: meekijken tot het volgende potje
 socket.on('spectate', (data) => {
   stopPlaying();
   clearPodium();
+  loadMap(data.map);
   mode = data.mode;
   teams = data.teams;
   lastState = null;
@@ -2357,6 +3108,9 @@ async function renderBoard() {
   try {
     const data = await (await fetch('/api/leaderboard')).json();
     $('board-week').textContent = data.top.length ? `Week ${data.week.split('-W')[1]}` : 'Nog niemand heeft deze week gespeeld.';
+    $('ranked-list').replaceChildren(...data.ranked.map((p, i) =>
+      row(rankOf(p.rank_points).color, `${i + 1}. ${p.display}`, badge(`${rankOf(p.rank_points).name} · ${p.rank_points}`, 'pts'))));
+    $('ranked-empty').classList.toggle('hidden', data.ranked.length > 0);
     $('board-list').replaceChildren(...data.top.map((p, i) =>
       row([0xf5c542, 0xbfc5cc, 0xc98d5e][i] || 0x55565c, `${i + 1}. ${p.name}`, badge(`${p.points} pt · ${p.wins} keer winst`, 'pts'))));
   } catch (e) {
@@ -2381,7 +3135,7 @@ preview.camera.position.set(0, 1.35, 5.4);
 preview.camera.lookAt(0, 1.05, 0);
 function buildPreview() {
   if (preview.model) preview.scene.remove(preview.model.group);
-  preview.model = makePlayerModel({ name: '', skin: progress.skin, color: 0x3aa655 });
+  preview.model = makePlayerModel({ name: '', skin: progress.skin, acc: accString(), color: 0x3aa655 });
   preview.model.label.visible = false;
   preview.scene.add(preview.model.group);
 }
@@ -2392,14 +3146,14 @@ function updatePreview(time) {
 }
 // Rendert een poppetje (eventueel in een emote-houding) naar een plaatje voor de tegels.
 const thumbCache = new Map();
-function thumb(skinId, emote = 0) {
-  const key = skinId + ':' + emote;
+function thumb(skinId, emote = 0, acc = 'skin.geen.rugzak', fromBehind = false) {
+  const key = `${skinId}:${emote}:${acc}:${fromBehind}`;
   if (!thumbCache.has(key)) {
-    const m = makePlayerModel({ name: '', skin: skinId, color: 0x3aa655 });
+    const m = makePlayerModel({ name: '', skin: skinId, acc, color: 0x3aa655 });
     m.label.visible = false;
     const pose = poseModel(m, 0, 0, emote, 0.55);
     m.group.position.y = pose.hop;
-    m.group.rotation.set(pose.lean || 0, 0.45, pose.roll);
+    m.group.rotation.set(pose.lean || 0, fromBehind ? 2.6 : 0.45, pose.roll);
     if (preview.model) preview.model.group.visible = false;
     preview.scene.add(m.group);
     preview.renderer.render(preview.scene, preview.camera);
@@ -2412,12 +3166,25 @@ function thumb(skinId, emote = 0) {
 buildPreview();
 renderMenuSide();
 
+// ---------- Uitnodigingslink: /?lobby=CODE ----------
+const invite = (new URLSearchParams(location.search).get('lobby') || '').toUpperCase().slice(0, 4);
+if (invite.length === 4) {
+  history.replaceState(null, '', location.pathname);
+  $('code').value = invite;
+  if (!$('name').value.trim()) $('menu-error').textContent = `Vul je naam in en klik op Join Lobby om mee te doen met ${invite}.`;
+  else if (socket.connected) join();
+  else socket.once('connect', join);
+}
+
 // ---------- Uitleg voor nieuwe spelers ----------
 if (!localStorage.getItem('kr-seen')) {
   localStorage.setItem('kr-seen', '1');
   $('howto').classList.remove('hidden');
 }
-addXp(0); // haalt beloningen op die nog niet waren uitgekeerd en ververst de munten
+refreshAccountUi(); // haalt ook beloningen op die nog niet waren uitgekeerd
+if (getToken()) {
+  api('/api/me').then((data) => adopt(data.account)).catch(() => localStorage.removeItem('kr-token'));
+}
 
 // ---------- Besturing op een telefoon ----------
 if (touchMode) {
@@ -2510,25 +3277,29 @@ function frame() {
     itemPickups.forEach((it) => { it.g.visible = it.ring.visible = false; });
     vendingSpots.forEach((v) => { v.cube.visible = v.ring.visible = false; });
     baseRings.forEach((r) => { r.visible = false; });
-    if (podium) {
+    zoneRing.visible = false;
+    vehicleSpots.forEach((v) => { v.g.visible = v.ring.visible = false; });
+    if (replaying) {
+      updateReplay(dt, time);
+    } else if (podium) {
       updatePodium(time);
     } else {
       // rustige rondvlucht boven de school achter de menu's
       const a = time * 0.1;
-      camera.position.set(Math.cos(a) * 40, 28, 10 + Math.sin(a) * 38);
-      camera.lookAt(0, -1, 10);
+      camera.position.set(M.CENTER.x + Math.cos(a) * M.VIEW, M.GROUND + 32, M.CENTER.z + Math.sin(a) * (M.VIEW - 2));
+      camera.lookAt(M.CENTER.x, M.GROUND + 3, M.CENTER.z);
       broodje.visible = beacon.visible = true;
-      broodje.position.set(M.BROODJE_SPAWN.x, 0.85 + Math.sin(time * 3) * 0.08, M.BROODJE_SPAWN.z);
+      broodje.position.set(M.BROODJE_SPAWN.x, M.BROODJE_SPAWN.y + 0.85 + Math.sin(time * 3) * 0.08, M.BROODJE_SPAWN.z);
       broodje.rotation.y += dt * 2;
       beacon.scale.y = 0.4;
-      beacon.position.set(broodje.position.x, 2.4, broodje.position.z);
+      beacon.position.set(broodje.position.x, M.BROODJE_SPAWN.y + 2.4, broodje.position.z);
     }
   }
 
   if (!menuEl.classList.contains('hidden')) updatePreview(time);
   renderer.clear();
   renderer.render(scene, camera);
-  if (playing && !spectating && !stunned && !myEmote) {
+  if (playing && !spectating && !stunned && !myEmote && !replaying) {
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }

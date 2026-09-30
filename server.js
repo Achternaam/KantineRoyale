@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { Server } = require('socket.io');
+const crypto = require('crypto');
 const MapData = require('./public/js/mapdata.js');
+const db = require('./db.js');
+const bots = require('./bots.js');
 
 const PORT = process.env.PORT || 3000;
 const TICK_MS = 50;
@@ -24,7 +27,23 @@ const READY_SHARE = 0.6;     // 6 op de 10 spelers ready is genoeg om te starten
 const PLAYER_RADIUS = 0.4;
 const BROODJE_RADIUS = 0.3;
 const BROODJE_REST = 0.4;     // hoogte boven de grond als het broodje stil ligt
-const ITEM_KINDS = 3;         // 1 = pizza, 2 = bord, 3 = plant
+// 1 = pizza, 2 = bord, 3 = plant, 4 = pak melk (laat een gladde plas achter),
+// 5 = bak friet (bedekt je zicht), 6 = blikje (stuitert)
+const ITEM_POOL = [1, 1, 2, 2, 3, 3, 4, 5, 6];
+const BLIND_MS = 4000;
+const PUDDLE_MS = 12000;
+const ROUND_SECONDS = Number(process.env.GAME_SECONDS) || 120; // een ronde in een toernooi
+const PICK_MS = 4500;         // de map-roulette voor elk potje
+const BETWEEN_MS = 12000;     // tussenstand tussen twee toernooirondes
+const ZONE_SECONDS = 20;      // eindsprint: het speelveld krimpt
+// allrounder is gratis, de rest speel je vrij in de battlepass
+const CLASSES = ['allrounder', 'sprinter', 'werper', 'tank', 'springer', 'magneet'];
+const VEHICLE_RESPAWN_MS = 5000;
+const FILL_TO = 4;            // een openbare lobby wordt met bots aangevuld tot vier spelers
+// Ranked: achttien rangen. Per potje verdien je punten met het broodje, rake worpen en tackles,
+// en betaal je inleg die hoger wordt naarmate je rang stijgt.
+const RANK_STEPS = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2200];
+const rankIndex = (rp) => RANK_STEPS.reduce((best, need, i) => (rp >= need ? i : best), 0);
 const ITEM_RESPAWN_MS = 7000;
 const THROW_SPEED = 24;
 const STUN_MS = 1600;
@@ -47,8 +66,7 @@ app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'th
 
 const lobbies = new Map(); // code -> lobby
 
-// ---------- Ranglijst van de week (bestand op de server) ----------
-const BOARD_FILE = path.join(__dirname, 'data', 'leaderboard.json');
+// ---------- Ranglijst van de week ----------
 function weekKey() {
   const d = new Date();
   const day = (d.getUTCDay() + 6) % 7; // maandag = 0
@@ -57,33 +75,106 @@ function weekKey() {
   const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
-let board = { week: weekKey(), players: {} };
-try {
-  board = JSON.parse(fs.readFileSync(BOARD_FILE, 'utf8'));
-} catch (e) { /* nog geen ranglijst */ }
-function currentBoard() {
-  if (board.week !== weekKey()) board = { week: weekKey(), players: {} };
-  return board;
-}
 function saveBoard(ranking, winners) {
-  const b = currentBoard();
-  for (const p of ranking) {
-    const row = b.players[p.name] || (b.players[p.name] = { points: 0, wins: 0, games: 0 });
-    row.points += p.score;
-    row.games += 1;
-    if (winners.has(p.id)) row.wins += 1;
-  }
-  fs.mkdir(path.dirname(BOARD_FILE), { recursive: true }, () => {
-    fs.writeFile(BOARD_FILE, JSON.stringify(b), () => {});
-  });
+  const entries = ranking.filter((p) => !p.isBot).map((p) => ({ name: p.name, points: p.score, wins: winners.has(p.id) ? 1 : 0 }));
+  db.boardAdd(weekKey(), entries).catch((e) => console.error('Ranglijst opslaan mislukt:', e.message));
 }
-app.get('/api/leaderboard', (req, res) => {
-  const b = currentBoard();
-  const top = Object.entries(b.players)
-    .map(([name, r]) => ({ name, points: r.points, wins: r.wins, games: r.games }))
-    .sort((x, y) => y.points - x.points)
-    .slice(0, 10);
-  res.json({ week: b.week, top });
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const [top, ranked] = await Promise.all([db.boardTop(weekKey()), db.topRanked()]);
+    res.json({ week: weekKey(), top, ranked });
+  } catch (e) {
+    res.status(503).json({ week: weekKey(), top: [], ranked: [], error: 'Ranglijst is even niet bereikbaar.' });
+  }
+});
+
+// ---------- Accounts: naam en wachtwoord, zonder e-mailadres ----------
+app.use(express.json({ limit: '150kb' }));
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const hashPass = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
+const publicAccount = (a) => ({ name: a.display, progress: a.progress, stats: a.stats, daily: a.daily, rp: a.rank_points });
+const attempts = new Map(); // ip -> aantal pogingen in de laatste minuut
+setInterval(() => attempts.clear(), 60000);
+function tooMany(req, res) {
+  const n = (attempts.get(req.ip) || 0) + 1;
+  attempts.set(req.ip, n);
+  if (n > 12) res.status(429).json({ error: 'Te veel pogingen. Wacht een minuut.' });
+  return n > 12;
+}
+async function newSession(account) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokens = (account.tokens || []).concat(hashToken(token)).slice(-5); // maximaal vijf apparaten
+  await db.updateAccount(account.id, { tokens });
+  return token;
+}
+async function accountFor(token) {
+  if (typeof token !== 'string' || token.length !== 64) return null;
+  try {
+    return await db.findByToken(hashToken(token));
+  } catch (e) {
+    console.error('Account opzoeken mislukt:', e.message);
+    return null;
+  }
+}
+const apiError = (res) => (e) => {
+  console.error('Database:', e.message);
+  res.status(503).json({ error: 'De database is even niet bereikbaar.' });
+};
+
+app.post('/api/register', (req, res) => {
+  if (tooMany(req, res)) return;
+  const name = cleanName(req.body.name);
+  const password = String(req.body.password || '');
+  if (!/^[\p{L}\p{N}_ ]{3,14}$/u.test(name)) return res.status(400).json({ error: 'Kies een naam van 3 tot 14 letters of cijfers.' });
+  if (password.length < 6 || password.length > 72) return res.status(400).json({ error: 'Kies een wachtwoord van minstens 6 tekens.' });
+  (async () => {
+    if (await db.findAccount(name.toLowerCase())) return res.status(409).json({ error: 'Deze naam is al bezet.' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    const account = await db.createAccount({ username: name.toLowerCase(), display: name, pass_salt: salt, pass_hash: hashPass(password, salt) });
+    res.json({ token: await newSession(account), account: publicAccount(account) });
+  })().catch(apiError(res));
+});
+
+app.post('/api/login', (req, res) => {
+  if (tooMany(req, res)) return;
+  (async () => {
+    const account = await db.findAccount(cleanName(req.body.name).toLowerCase());
+    const password = String(req.body.password || '');
+    const ok = account && crypto.timingSafeEqual(Buffer.from(hashPass(password, account.pass_salt)), Buffer.from(account.pass_hash));
+    if (!ok) return res.status(401).json({ error: 'Naam of wachtwoord klopt niet.' });
+    res.json({ token: await newSession(account), account: publicAccount(account) });
+  })().catch(apiError(res));
+});
+
+const bearer = (req) => String(req.headers.authorization || '').replace('Bearer ', '');
+app.get('/api/me', (req, res) => {
+  accountFor(bearer(req)).then((account) => {
+    if (!account) return res.status(401).json({ error: 'Niet ingelogd.' });
+    res.json({ account: publicAccount(account) });
+  });
+});
+
+// voortgang opslaan (munten, skins, battlepass, statistieken)
+app.post('/api/save', (req, res) => {
+  (async () => {
+    const account = await accountFor(bearer(req));
+    if (!account) return res.status(401).json({ error: 'Niet ingelogd.' });
+    const patch = {};
+    for (const key of ['progress', 'stats', 'daily']) {
+      if (req.body[key] && typeof req.body[key] === 'object') patch[key] = req.body[key];
+    }
+    await db.updateAccount(account.id, patch);
+    res.json({ ok: true });
+  })().catch(apiError(res));
+});
+
+app.post('/api/logout', (req, res) => {
+  (async () => {
+    const token = bearer(req);
+    const account = await accountFor(token);
+    if (account) await db.updateAccount(account.id, { tokens: account.tokens.filter((t) => t !== hashToken(token)) });
+    res.json({ ok: true });
+  })().catch(apiError(res));
 });
 
 function makeCode() {
@@ -100,6 +191,11 @@ function cleanName(name) {
   const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 14);
   return n || 'Speler';
 }
+const cleanClass = (cls) => (CLASSES.includes(cls) ? cls : 'allrounder');
+// uiterlijk dat de client doorgeeft: accessoires ("hoed.gezicht.rug") en een titel
+const cleanAcc = (acc) => (/^[a-z]{1,12}\.[a-z]{1,12}\.[a-z]{1,12}$/.test(String(acc)) ? String(acc) : 'skin.geen.rugzak');
+const cleanTitle = (title) => (/^[a-z]{0,16}$/.test(String(title || '')) ? String(title || '') : '');
+const humans = (lobby) => [...lobby.players.values()].filter((p) => !p.isBot);
 function cleanSkin(skin) {
   return /^[a-z]{1,16}$/.test(String(skin)) ? String(skin) : 'leerling';
 }
@@ -112,21 +208,28 @@ function freeColor(lobby) {
 function newPlayer(socket, data, lobby) {
   return {
     id: socket.id, name: cleanName(data && data.name), skin: cleanSkin(data && data.skin), color: freeColor(lobby),
+    cls: cleanClass(data && data.cls), acc: cleanAcc(data && data.acc), title: cleanTitle(data && data.title),
+    accountId: null, rp: null, safeUntil: 0, noMountUntil: 0, vehicle: 0, velX: 0, velZ: 0, lastX: 0, lastZ: 0, hits: 0, tackles: 0, hold: 0, blindUntil: 0, armor: false,
     ready: false, team: 0, x: 0, y: 0, z: 0, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
     lastDash: 0, dashUntil: 0, dashX: 0, dashZ: 1, lastSpray: 0, lastSay: 0, streak: 0, ammo: 0,
     noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0
   };
 }
 
-const readyNeeded = (lobby) => Math.ceil(lobby.players.size * READY_SHARE);
+// bots tellen niet mee voor de ready-check: het gaat om de echte spelers
+const readyNeeded = (lobby) => Math.ceil(humans(lobby).length * READY_SHARE);
 function canStart(lobby) {
-  const ready = [...lobby.players.values()].filter((p) => p.ready).length;
-  return lobby.players.size >= (lobby.public ? 2 : 1) && ready >= readyNeeded(lobby);
+  const ready = humans(lobby).filter((p) => p.ready).length;
+  if (lobby.ranked && humans(lobby).length < 2) return false; // ranked speel je tegen echte spelers
+  return !lobby.busy && lobby.players.size >= 1 && ready >= readyNeeded(lobby);
 }
 
 function lobbyInfo(lobby) {
   return {
     need: readyNeeded(lobby),
+    rounds: lobby.rounds,
+    ranked: lobby.ranked,
+    busy: lobby.busy,
     canStart: canStart(lobby),
     code: lobby.code,
     public: lobby.public,
@@ -134,8 +237,8 @@ function lobbyInfo(lobby) {
     hostId: lobby.hostId,
     playing: lobby.playing,
     mode: lobby.mode,
-    players: [...lobby.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, ready: p.ready }))
-      .concat([...lobby.waiting.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, waiting: true })))
+    players: [...lobby.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, cls: p.cls, acc: p.acc, title: p.title, rp: p.rp, bot: !!p.isBot, ready: p.ready }))
+      .concat([...lobby.waiting.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, cls: p.cls, acc: p.acc, title: p.title, rp: p.rp, waiting: true })))
   };
 }
 
@@ -143,6 +246,11 @@ function sendLobby(lobby) {
   io.to(lobby.code).emit('lobby', lobbyInfo(lobby));
 }
 const emit = (lobby, data) => io.to(lobby.code).emit('event', data);
+// Onthoudt het beste moment van het potje (hoogste score, bij gelijk het laatste) voor de herhaling.
+function note(lobby, score, text, by, victim) {
+  if (score < lobby.highlight.score) return;
+  lobby.highlight = { score, text, by, victim, rem: lobby.remaining };
+}
 
 // vriendelijk vuur staat uit in de teams-modus
 const sameTeam = (lobby, a, b) => lobby.mode === 'teams' && a.team === b.team;
@@ -179,7 +287,8 @@ function tickBroodje(lobby, now, dt) {
   const b = lobby.broodje;
   if (b.holder) {
     const holder = lobby.players.get(b.holder);
-    holder.score += dt * multiplier(lobby);
+    if (!lobby.zone || inZone(holder)) holder.score += dt * multiplier(lobby);
+    holder.hold += dt;
     b.x = holder.x; b.y = holder.y; b.z = holder.z;
     // het broodje wordt opgegeten: na 30 seconden vasthouden ligt er een nieuw in het midden
     b.eaten += dt;
@@ -193,6 +302,7 @@ function tickBroodje(lobby, now, dt) {
       const base = MapData.BASES[holder.team];
       if (Math.hypot(holder.x - base.x, holder.z - base.z) < CAPTURE_RADIUS && Math.abs(holder.y - base.y) < 1) {
         holder.score += CAPTURE_POINTS;
+        note(lobby, 5, 'capture', holder.id, null);
         resetBroodje(lobby);
         lobby.broodje.noPickupUntil = now + 1500;
         emit(lobby, { type: 'capture', id: holder.id, team: holder.team });
@@ -201,10 +311,19 @@ function tickBroodje(lobby, now, dt) {
     }
     // tackle: een dashende tegenstander raakt de drager
     for (const p of lobby.players.values()) {
-      if (p.id === holder.id || p.dashUntil < now || sameTeam(lobby, p, holder)) continue;
+      // wie het broodje net heeft gepakt is heel even onaantastbaar
+      if (p.id === holder.id || p.dashUntil < now || holder.safeUntil > now || sameTeam(lobby, p, holder)) continue;
       if (Math.hypot(p.x - holder.x, p.z - holder.z) < TACKLE_RADIUS && Math.abs(p.y - holder.y) < 1.5) {
-        dropBroodje(lobby, p.dashX, p.dashZ);
         p.dashUntil = 0;
+        if (holder.armor) { // de tank vangt de eerste tackle op
+          holder.armor = false;
+          emit(lobby, { type: 'armor', by: p.id, victim: holder.id });
+          break;
+        }
+        dropBroodje(lobby, p.dashX, p.dashZ);
+        p.tackles++;
+        dismount(lobby, holder, now);
+        note(lobby, 6, 'tackle', p.id, holder.id);
         emit(lobby, { type: 'tackle', by: p.id, victim: holder.id });
         break;
       }
@@ -235,11 +354,24 @@ function tickBroodje(lobby, now, dt) {
       }
     }
   }
+  // ligt het broodje te lang ergens waar niemand het pakt, dan komt het terug in het midden
+  b.idle = b.moving ? 0 : (b.idle || 0) + dt;
+  if (b.idle > 12) {
+    const s = MapData.BROODJE_SPAWN;
+    if (Math.hypot(b.x - s.x, b.z - s.z) > 1 || Math.abs(b.y - BROODJE_REST - s.y) > 0.5) {
+      resetBroodje(lobby);
+      emit(lobby, { type: 'respawn' });
+    }
+    lobby.broodje.idle = 0;
+    return;
+  }
   if (now < b.noPickupUntil) return;
   for (const p of lobby.players.values()) {
-    if (p.noPickupUntil > now || p.stunnedUntil > now) continue;
-    if (Math.hypot(p.x - b.x, p.z - b.z) < PICKUP_RADIUS && Math.abs(b.y - BROODJE_REST - p.y) < 1.4) {
+    if (p.noPickupUntil > now || p.stunnedUntil > now || p.vehicle) continue; // op een board pak je het broodje niet
+    if (Math.hypot(p.x - b.x, p.z - b.z) < PICKUP_RADIUS * reach(p) && Math.abs(b.y - BROODJE_REST - p.y) < 1.4) {
       b.holder = p.id;
+      p.safeUntil = now + 1200;
+      p.armor = p.cls === 'tank';
       b.moving = false;
       emit(lobby, { type: 'pickup', id: p.id });
       break;
@@ -248,7 +380,14 @@ function tickBroodje(lobby, now, dt) {
 }
 
 // ---------- Gooibare spullen, automaten en bananenschillen ----------
-const randomKind = () => 1 + Math.floor(Math.random() * ITEM_KINDS);
+const randomKind = () => ITEM_POOL[Math.floor(Math.random() * ITEM_POOL.length)];
+const reach = (p) => (p.cls === 'magneet' ? 1.6 : 1); // de magneet pakt van verder af
+function inZone(p) {
+  const z = MapData.ZONE;
+  if (z.minY !== undefined && p.y < z.minY) return false;
+  if (z.maxY !== undefined && p.y > z.maxY) return false;
+  return Math.hypot(p.x - z.x, p.z - z.z) <= z.r;
+}
 
 function tickItems(lobby, now) {
   const respawn = lobby.mode === 'voedsel' ? 2500 : ITEM_RESPAWN_MS;
@@ -257,7 +396,7 @@ function tickItems(lobby, now) {
     const s = MapData.ITEM_SPAWNS[i];
     for (const p of lobby.players.values()) {
       if (p.item || p.stunnedUntil > now) continue;
-      if (Math.hypot(p.x - s.x, p.z - s.z) < 1.2 && Math.abs(p.y - s.y) < 1.2) {
+      if (Math.hypot(p.x - s.x, p.z - s.z) < 1.2 * reach(p) && Math.abs(p.y - s.y) < 1.2) {
         p.item = item.kind;
         item.kind = randomKind();
         item.availableAt = now + respawn;
@@ -295,9 +434,46 @@ function tickItems(lobby, now) {
     }
     return true;
   });
+
+  // voertuigen: eroverheen lopen is opstappen (niet met het broodje in je hand)
+  lobby.vehicles.forEach((v, i) => {
+    if (v.rider || v.availableAt > now) return;
+    const s = MapData.VEHICLES[i];
+    for (const p of lobby.players.values()) {
+      if (p.isBot || p.vehicle || p.stunnedUntil > now || lobby.broodje.holder === p.id || p.noMountUntil > now) continue;
+      if (Math.hypot(p.x - s.x, p.z - s.z) > 1 || Math.abs(p.y - s.y) > 1) continue;
+      p.vehicle = s.kind;
+      v.rider = p.id;
+      emit(lobby, { type: 'mount', id: p.id, kind: s.kind });
+      break;
+    }
+  });
+
+  // melkplassen: glad zolang ze er liggen
+  lobby.puddles = lobby.puddles.filter((u) => u.until > now);
+  for (const u of lobby.puddles) {
+    for (const p of lobby.players.values()) {
+      if (p.stunImmuneUntil > now || Math.abs(p.y - u.y) > 0.6) continue;
+      if (Math.hypot(p.x - u.x, p.z - u.z) > 1.3) continue;
+      stun(lobby, p, Math.sin(p.ry), Math.cos(p.ry), now, SLIP_MS);
+      emit(lobby, { type: 'slip', victim: p.id, milk: true });
+    }
+  }
+}
+
+// van het skateboard of de step af: het voertuig staat even later weer op zijn plek
+function dismount(lobby, p, now) {
+  if (!p.vehicle) return;
+  const v = lobby.vehicles.find((x) => x.rider === p.id);
+  if (v) {
+    v.rider = null;
+    v.availableAt = now + VEHICLE_RESPAWN_MS;
+  }
+  p.vehicle = 0;
 }
 
 function stun(lobby, victim, dirX, dirZ, now, ms) {
+  dismount(lobby, victim, now);
   victim.stunnedUntil = now + ms;
   victim.stunImmuneUntil = now + ms + STUN_IMMUNE_MS - STUN_MS;
   victim.dashUntil = 0;
@@ -318,6 +494,14 @@ function tickProjectiles(lobby, now, dt) {
   const h = dt / SUB;
   lobby.projectiles = lobby.projectiles.filter((pr) => {
     const owner = lobby.players.get(pr.owner);
+    // een pak melk laat een plas achter waar het neerkomt
+    const die = () => {
+      if (pr.kind === 4) {
+        if (lobby.puddles.length >= 8) lobby.puddles.shift();
+        lobby.puddles.push({ id: nextId++, x: pr.x, z: pr.z, y: MapData.groundAt(pr.x, pr.z, pr.y + 0.5), until: now + PUDDLE_MS });
+      }
+      return false;
+    };
     for (let s = 0; s < SUB; s++) {
       const prevY = pr.y;
       pr.vy -= 12 * h;
@@ -327,13 +511,24 @@ function tickProjectiles(lobby, now, dt) {
       for (const p of lobby.players.values()) {
         if (p.id === pr.owner || p.stunImmuneUntil > now || (owner && sameTeam(lobby, owner, p))) continue;
         if (pr.y < p.y - 0.1 || pr.y > p.y + 1.95) continue;
-        if (Math.hypot(p.x - pr.x, p.z - pr.z) > 0.65) continue;
+        if (Math.hypot(p.x - pr.x, p.z - pr.z) > pr.r) continue;
         if (p.shield) { // het dienblad vangt één worp op
           p.shield = false;
           emit(lobby, { type: 'shield', victim: p.id });
-          return false;
+          return die();
         }
-        stun(lobby, p, pr.vx, pr.vz, now, STUN_MS);
+        if (pr.kind === 5) {
+          // friet: je gaat niet neer, maar ziet een paar seconden bijna niets
+          p.blindUntil = now + BLIND_MS;
+          p.stunImmuneUntil = now + 1500;
+        } else {
+          stun(lobby, p, pr.vx, pr.vz, now, STUN_MS);
+        }
+        if (owner) {
+          owner.hits++;
+          const far = Math.hypot(pr.x - pr.sx, pr.z - pr.sz);
+          note(lobby, (lobby.broodje.holder === null && pr.kind !== 5 ? 4 : 3) + far / 4, 'hit', owner.id, p.id);
+        }
         if (owner && lobby.mode === 'voedsel') owner.score += multiplier(lobby);
         emit(lobby, { type: 'hit', by: pr.owner, victim: p.id, kind: pr.kind });
         // killstreak: drie rake worpen op rij geeft een pizzadoos met tien pizza's
@@ -341,15 +536,16 @@ function tickProjectiles(lobby, now, dt) {
           owner.ammo = STREAK_AMMO;
           owner.item = 1;
           emit(lobby, { type: 'streak', id: owner.id });
+          note(lobby, 9, 'streak', owner.id, p.id);
         }
-        return false;
+        return die();
       }
       // stoelen, prullenbakken en dienbladen vliegen om als je ze raakt
       for (const o of lobby.props) {
         if (o.type === 'table' || o.tip) continue;
         if (pr.y < o.y - 0.2 || pr.y > o.y + 1 || Math.hypot(o.x - pr.x, o.z - pr.z) > 0.45) continue;
         tipProp(o, pr.vx, pr.vz, 4);
-        return false;
+        return die();
       }
       // glasplaten van de balustrade sneuvelen
       for (let i = 0; i < MapData.panels.length; i++) {
@@ -357,13 +553,28 @@ function tickProjectiles(lobby, now, dt) {
         if (lobby.panels[i] || pr.y < g.y || pr.y > g.y + g.h) continue;
         if (Math.abs(pr.x - g.x) > g.w / 2 || Math.abs(pr.z - g.z) > 0.35) continue;
         breakPanel(lobby, i);
-        return false;
+        return die();
       }
+      // muur of vloer: een blikje stuitert een paar keer door, de rest spat uiteen
       const pos = { x: pr.x, z: pr.z };
-      if (MapData.resolve(pos, 0.15, pr.y - 0.1, 0.2, 0)) return false;
-      if (pr.y <= MapData.groundAt(pr.x, pr.z, prevY + 0.1) + 0.1) return false;
+      if (MapData.resolve(pos, 0.15, pr.y - 0.1, 0.2, 0)) {
+        if (pr.kind !== 6 || pr.bounces-- <= 0) return die();
+        pr.x = pos.x;
+        pr.z = pos.z;
+        pr.vx *= -0.6;
+        pr.vz *= -0.6;
+        continue;
+      }
+      const floor = MapData.groundAt(pr.x, pr.z, prevY + 0.1) + 0.1;
+      if (pr.y <= floor) {
+        if (pr.kind !== 6 || pr.bounces-- <= 0 || Math.abs(pr.vy) < 2) return die();
+        pr.y = floor;
+        pr.vy = -pr.vy * 0.6;
+        pr.vx *= 0.8;
+        pr.vz *= 0.8;
+      }
     }
-    return now - pr.born < 3000;
+    return now - pr.born < 3000 || die();
   });
 }
 
@@ -417,6 +628,7 @@ function tickProps(lobby, now, dt) {
         if (dashing && d < MapData.PROP.table.r + PLAYER_RADIUS + 0.3) {
           tipProp(o, dx, dz, 5);
           tablesChanged = true;
+          emit(lobby, { type: 'tip', by: p.id });
         }
         continue;
       }
@@ -488,20 +700,59 @@ function tickEvents(lobby, now, remaining) {
 
 // brandalarm: na tien seconden verliest iedereen die nog binnen is 2 punten per seconde
 function tickBrand(lobby, now, dt) {
-  if (lobby.event.type !== 'brand' || lobby.event.until - now > EVENT_MS.brand - BRAND_GRACE_MS) return;
+  if (MapData.OUTSIDE_Z === null || lobby.event.type !== 'brand' || lobby.event.until - now > EVENT_MS.brand - BRAND_GRACE_MS) return;
   for (const p of lobby.players.values()) {
     if (p.z < MapData.OUTSIDE_Z) p.score = Math.max(0, p.score - 2 * dt);
   }
 }
 
 // ---------- Game ----------
+// Begint een nieuw potje (of toernooi): ronde 1, daarna draait de map-roulette.
 function startGame(lobby) {
+  if (lobby.busy || lobby.playing) return;
+  // openbare lobby's worden met bots aangevuld (ranked niet)
+  if (lobby.public && !lobby.ranked) {
+    while (lobby.players.size < FILL_TO) addBot(lobby);
+  }
+  lobby.round = 1;
+  lobby.totals = new Map();
+  lobby.baseMode = lobby.mode;
+  lobby.usedMaps = [];
+  pickMap(lobby);
+}
+
+// Kiest een willekeurige map die deze reeks nog niet is geweest en laat iedereen de roulette zien.
+function pickMap(lobby) {
+  lobby.busy = true;
+  lobby.autoStartAt = null;
+  let pool = MapData.MAP_IDS.filter((id) => !lobby.usedMaps.includes(id) && id !== lobby.lastMap);
+  if (!pool.length) pool = MapData.MAP_IDS.filter((id) => id !== lobby.lastMap);
+  lobby.map = lobby.lastMap = pool[Math.floor(Math.random() * pool.length)];
+  lobby.usedMaps.push(lobby.map);
+  if (lobby.rounds > 1) {
+    // in een toernooi wisselt ook de spelmodus per ronde
+    const modes = lobby.players.size >= 4 ? ['klassiek', 'voedsel', 'teams'] : ['klassiek', 'voedsel', 'klassiek'];
+    lobby.mode = modes[(lobby.round - 1) % modes.length];
+  }
+  sendLobby(lobby);
+  io.to(lobby.code).emit('mapPick', { map: lobby.map, round: lobby.round, rounds: lobby.rounds, mode: lobby.mode });
+  setTimeout(() => {
+    if (lobbies.get(lobby.code) !== lobby) return;
+    lobby.busy = false;
+    if (lobby.players.size) beginRound(lobby);
+  }, PICK_MS);
+}
+
+function beginRound(lobby) {
+  MapData.use(lobby.map);
+  const duration = lobby.rounds > 1 ? ROUND_SECONDS : GAME_SECONDS;
   const spawns = MapData.SPAWNS.slice().sort(() => Math.random() - 0.5);
   const order = [...lobby.players.values()].sort(() => Math.random() - 0.5);
   order.forEach((p, i) => {
     const s = spawns[i % spawns.length];
     Object.assign(p, {
       team: i % 2, x: s.x, y: s.y, z: s.z, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0, streak: 0, ammo: 0,
+      hits: 0, tackles: 0, hold: 0, blindUntil: 0, armor: false, vehicle: 0, noMountUntil: 0, velX: 0, velZ: 0, lastX: s.x, lastZ: s.z,
       lastDash: 0, dashUntil: 0, noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0
     });
   });
@@ -511,20 +762,34 @@ function startGame(lobby) {
   lobby.vending = MapData.VENDING.map(() => 0);
   lobby.projectiles = [];
   lobby.bananas = [];
+  lobby.puddles = [];
+  lobby.zone = false;
+  lobby.vehicles = MapData.VEHICLES.map(() => ({ rider: null, availableAt: 0 }));
+  lobby.highlight = { score: 0 };
+  lobby.remaining = duration;
+  for (const p of lobby.players.values()) if (p.isBot) bots.resetBot(p);
   lobby.event = { type: '', until: 0 };
   lobby.double = false;
-  const pool = lobby.mode === 'voedsel' ? ['donker', 'regen', 'brand'] : ['donker', 'goud', 'regen', 'brand'];
+  const pool = ['donker', 'regen'];
+  if (lobby.mode !== 'voedsel') pool.push('goud');
+  if (MapData.OUTSIDE_Z !== null) pool.push('brand'); // alleen waar je naar buiten kunt
   const pick = () => pool[Math.floor(Math.random() * pool.length)];
-  lobby.schedule = [{ at: 140, type: pick() }, { at: 100, type: pick() }, { at: 60, type: 'dubbel' }, { at: 30, type: pick() }];
+  lobby.schedule = [
+    { at: duration * 0.78, type: pick() }, { at: duration * 0.55, type: pick() },
+    { at: duration / 3, type: 'dubbel' }, { at: duration * 0.2, type: pick() }
+  ];
   lobby.playing = true;
   lobby.autoStartAt = null;
-  lobby.endsAt = Date.now() + GAME_SECONDS * 1000;
+  lobby.endsAt = Date.now() + duration * 1000;
   lobby.lastTick = Date.now();
   sendLobby(lobby);
   const teams = {};
   for (const p of lobby.players.values()) teams[p.id] = p.team;
   for (const p of lobby.players.values()) {
-    io.to(p.id).emit('gameStart', { duration: GAME_SECONDS, mode: lobby.mode, teams, spawn: { x: p.x, y: p.y, z: p.z } });
+    io.to(p.id).emit('gameStart', {
+      duration, mode: lobby.mode, teams, map: lobby.map, round: lobby.round, rounds: lobby.rounds,
+      spawn: { x: p.x, y: p.y, z: p.z }
+    });
   }
 }
 
@@ -536,25 +801,84 @@ function teamScores(lobby) {
 
 function endGame(lobby) {
   lobby.playing = false;
-  const ranking = [...lobby.players.values()]
-    .map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, team: p.team, score: Math.floor(p.score) }))
-    .sort((a, b) => b.score - a.score);
-  const totals = teamScores(lobby);
-  const winners = new Set();
-  if (ranking.length > 1) {
-    if (lobby.mode === 'teams') {
-      if (totals[0] !== totals[1]) ranking.filter((p) => p.team === (totals[0] > totals[1] ? 0 : 1)).forEach((p) => winners.add(p.id));
-    } else if (ranking[0].score > ranking[1].score) {
-      winners.add(ranking[0].id);
-    }
+  const multi = lobby.rounds > 1;
+  const final = lobby.round >= lobby.rounds;
+  for (const p of lobby.players.values()) {
+    lobby.totals.set(p.id, (lobby.totals.get(p.id) || 0) + Math.floor(p.score));
   }
-  saveBoard(ranking, winners);
-  io.to(lobby.code).emit('gameOver', { ranking, mode: lobby.mode, teamScores: totals });
-  // wie meekeek doet het volgende potje mee
+  // in een toernooi telt de optelsom van alle rondes voor de volgorde
+  const ranking = [...lobby.players.values()]
+    .map((p) => ({
+      id: p.id, name: p.name, color: p.color, skin: p.skin, acc: p.acc, team: p.team, isBot: !!p.isBot,
+      score: Math.floor(p.score), total: lobby.totals.get(p.id),
+      hits: p.hits, tackles: p.tackles, hold: Math.round(p.hold)
+    }))
+    .sort((a, b) => (multi ? b.total - a.total : b.score - a.score));
+  const teams = teamScores(lobby);
+  if (final) {
+    const winners = new Set();
+    if (ranking.length > 1) {
+      if (multi) {
+        if (ranking[0].total > ranking[1].total) winners.add(ranking[0].id);
+      } else if (lobby.mode === 'teams') {
+        if (teams[0] !== teams[1]) ranking.filter((p) => p.team === (teams[0] > teams[1] ? 0 : 1)).forEach((p) => winners.add(p.id));
+      } else if (ranking[0].score > ranking[1].score) {
+        winners.add(ranking[0].id);
+      }
+    }
+    saveBoard(ranking.map((r) => ({ id: r.id, name: r.name, isBot: r.isBot, score: multi ? r.total : r.score })), winners);
+    if (lobby.ranked) rankUp(lobby, ranking);
+  }
+  io.to(lobby.code).emit('gameOver', {
+    ranking, mode: lobby.mode, teamScores: teams, map: lobby.map, ranked: lobby.ranked,
+    highlight: lobby.highlight.score ? lobby.highlight : null,
+    round: lobby.round, rounds: lobby.rounds, final, nextIn: final ? 0 : BETWEEN_MS / 1000
+  });
+  // wie meekeek doet vanaf nu mee
   for (const [id, p] of lobby.waiting) lobby.players.set(id, p);
   lobby.waiting.clear();
-  for (const p of lobby.players.values()) p.ready = false;
+  if (final) {
+    for (const p of lobby.players.values()) p.ready = !!p.isBot;
+    lobby.mode = lobby.baseMode;
+    sendLobby(lobby);
+    return;
+  }
+  // toernooi: na de tussenstand begint vanzelf de volgende ronde
+  lobby.busy = true;
+  lobby.round++;
   sendLobby(lobby);
+  setTimeout(() => {
+    if (lobbies.get(lobby.code) !== lobby) return;
+    lobby.busy = false;
+    if (lobby.players.size) pickMap(lobby);
+  }, BETWEEN_MS);
+}
+
+// Ranked: prestatie min inleg. De inleg groeit met je rang, dus hoe hoger je staat, hoe beter je moet spelen.
+function rankUp(lobby, ranking) {
+  ranking.forEach((r, place) => {
+    const p = lobby.players.get(r.id);
+    if (!p || !p.accountId) return;
+    const bonus = [25, 12, 5][place] || 0;
+    const performance = r.hold + r.hits * 6 + r.tackles * 5 + bonus;
+    const delta = Math.max(-40, Math.min(90, Math.round(performance - (12 + rankIndex(p.rp) * 5))));
+    r.rpDelta = Math.max(-p.rp, delta);
+    p.rp += r.rpDelta;
+    r.rp = p.rp;
+    db.updateAccount(p.accountId, { rank_points: p.rp }).catch((e) => console.error('Rang opslaan mislukt:', e.message));
+  });
+}
+
+// ---------- Bots in de lobby ----------
+function addBot(lobby) {
+  if (lobby.players.size + lobby.waiting.size >= MAX_PLAYERS) return;
+  const bot = bots.makeBot(lobby, newPlayer({ id: '' }, { name: 'Bot' }, lobby));
+  lobby.players.set(bot.id, bot);
+}
+function removeBot(lobby) {
+  const bot = [...lobby.players.values()].reverse().find((p) => p.isBot);
+  if (bot) lobby.players.delete(bot.id);
+  return !!bot;
 }
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -562,8 +886,31 @@ const r2 = (n) => Math.round(n * 100) / 100;
 function tick(lobby, now) {
   const dt = Math.min(0.1, (now - lobby.lastTick) / 1000);
   lobby.lastTick = now;
+  MapData.use(lobby.map);
   MapData.dynamic = lobby.dynamic;
   const remaining = Math.max(0, (lobby.endsAt - now) / 1000);
+  lobby.remaining = remaining;
+  // snelheid van iedereen bijhouden, zodat bots kunnen mikken op waar iemand heen loopt
+  for (const p of lobby.players.values()) {
+    if (dt > 0) {
+      p.velX += ((p.x - p.lastX) / dt - p.velX) * 0.5;
+      p.velZ += ((p.z - p.lastZ) / dt - p.velZ) * 0.5;
+    }
+    p.lastX = p.x;
+    p.lastZ = p.z;
+  }
+  bots.tickBots(lobby, now, dt, botApi);
+
+  // eindsprint: wie buiten de zone staat verliest punten
+  if (remaining <= ZONE_SECONDS) {
+    if (!lobby.zone) {
+      lobby.zone = true;
+      emit(lobby, { type: 'gameEvent', name: 'zone' });
+    }
+    for (const p of lobby.players.values()) {
+      if (!inZone(p)) p.score = Math.max(0, p.score - 3 * dt);
+    }
+  }
 
   tickEvents(lobby, now, remaining);
   if (lobby.mode !== 'voedsel') tickBroodje(lobby, now, dt);
@@ -581,17 +928,20 @@ function tick(lobby, now) {
   });
   io.to(lobby.code).emit('state', {
     t: remaining,
-    // [id, x, y, z, kijkrichting, punten, vlaggen, voorwerp in de hand, bananenschil op zak, pizza's in de doos]
-    // vlaggen: 1 = dash, 2 = knock-out, 4 = energiedrank, 8 = schild
+    // [id, x, y, z, kijkrichting, punten, vlaggen, voorwerp in de hand, bananenschil op zak, pizza's in de doos, voertuig]
+    // vlaggen: 1 = dash, 2 = knock-out, 4 = energiedrank, 8 = schild, 16 = friet in je gezicht
     p: [...lobby.players.values()].map((p) => [
       p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.ry), Math.floor(p.score),
-      (p.dashUntil > now ? 1 : 0) | (p.stunnedUntil > now ? 2 : 0) | (p.boostUntil > now ? 4 : 0) | (p.shield ? 8 : 0),
-      p.item, p.gadget, p.ammo
+      (p.dashUntil > now ? 1 : 0) | (p.stunnedUntil > now ? 2 : 0) | (p.boostUntil > now ? 4 : 0) | (p.shield ? 8 : 0) | (p.blindUntil > now ? 16 : 0),
+      p.item, p.gadget, p.ammo, p.vehicle
     ]),
     b: lobby.mode === 'voedsel' ? null : { x: r2(b.x), y: r2(b.y), z: r2(b.z), h: b.holder, s: r2(1 - b.eaten / BROODJE_LIFE) },
     i: lobby.items.map((it) => (it.availableAt <= now ? it.kind : 0)),
     j: lobby.projectiles.map((pr) => [pr.id, pr.kind, r2(pr.x), r2(pr.y), r2(pr.z)]),
     n: lobby.bananas.map((bn) => [bn.id, r2(bn.x), r2(bn.y), r2(bn.z)]),
+    u: lobby.puddles.map((u) => [u.id, r2(u.x), r2(u.y), r2(u.z)]),
+    z: lobby.zone ? 1 : 0,
+    w: lobby.vehicles.map((v) => (!v.rider && v.availableAt <= now ? 1 : 0)),
     v: lobby.vending.map((readyAt) => (readyAt <= now ? 1 : 0)),
     e: lobby.event.type,
     d: lobby.double ? 1 : 0,
@@ -606,7 +956,7 @@ setInterval(() => {
   for (const lobby of lobbies.values()) {
     if (lobby.playing) {
       tick(lobby, now);
-    } else if (lobby.public) {
+    } else if (lobby.public && !lobby.busy) {
       // openbare lobby: telt tien seconden af zodra genoeg spelers ready zijn
       if (!canStart(lobby)) {
         if (lobby.autoStartAt) {
@@ -629,10 +979,13 @@ function leaveLobby(socket) {
   socket.data.code = null;
   if (!lobby) return;
   if (lobby.playing && lobby.broodje.holder === socket.id) dropBroodje(lobby, Math.random() - 0.5, Math.random() - 0.5);
+  const leaver = lobby.players.get(socket.id);
+  if (leaver && lobby.playing) dismount(lobby, leaver, Date.now());
   lobby.players.delete(socket.id);
   lobby.waiting.delete(socket.id);
   socket.leave(lobby.code);
-  if (lobby.players.size === 0) {
+  if (humans(lobby).length === 0) {
+    for (const p of [...lobby.players.values()]) lobby.players.delete(p.id); // alleen bots over
     // niemand speelt meer: meekijkers nemen de lobby over, anders verdwijnt hij
     if (lobby.waiting.size === 0) {
       lobbies.delete(lobby.code);
@@ -641,12 +994,27 @@ function leaveLobby(socket) {
     for (const [id, p] of lobby.waiting) lobby.players.set(id, p);
     lobby.waiting.clear();
     lobby.playing = false;
+    lobby.busy = false;
   }
-  if (lobby.hostId === socket.id) lobby.hostId = lobby.players.keys().next().value;
+  if (lobby.hostId === socket.id) lobby.hostId = humans(lobby)[0].id;
   sendLobby(lobby);
 }
 
 let nextId = 1;
+
+function throwItem(lobby, p, x, y, z) {
+  const len = Math.hypot(x, y, z) || 1;
+  const dx = x / len, dy = y / len, dz = z / len;
+  const speed = THROW_SPEED * (p.cls === 'werper' ? 1.35 : 1); // de werper gooit harder en raakt makkelijker
+  lobby.projectiles.push({
+    id: nextId++, kind: p.item, owner: p.id, born: Date.now(), bounces: 3, r: p.cls === 'werper' ? 0.9 : 0.65,
+    x: p.x + dx * 0.5, y: p.y + 1.45 + dy * 0.5, z: p.z + dz * 0.5, sx: p.x, sz: p.z,
+    vx: dx * speed, vy: dy * speed + 2, vz: dz * speed
+  });
+  if (p.ammo > 0) p.ammo--;
+  p.item = p.ammo > 0 ? 1 : 0;
+}
+const botApi = { sameTeam, inZone, throwItem };
 
 io.on('connection', (socket) => {
   const reply = (cb, data) => typeof cb === 'function' && cb(data);
@@ -658,17 +1026,29 @@ io.on('connection', (socket) => {
     return { lobby, p };
   };
 
-  function createLobby(data, cb, isPublic) {
+  // koppelt een ingelogd account aan de speler: de naam staat dan vast en de rang telt mee
+  async function withAccount(player, data) {
+    const account = await accountFor(data && data.token);
+    if (account) Object.assign(player, { accountId: account.id, name: account.display, rp: account.rank_points });
+    return player;
+  }
+
+  async function createLobby(data, cb, isPublic, ranked) {
     leaveLobby(socket);
     const code = makeCode();
     const lobby = {
-      public: isPublic, autoStartAt: null,
+      public: isPublic, ranked: !!ranked, autoStartAt: null, busy: false, vehicles: [], highlight: { score: 0 }, remaining: 0,
+      map: 'kantine', lastMap: null, usedMaps: [], rounds: 1, round: 1, totals: new Map(), baseMode: 'klassiek',
+      puddles: [], zone: false,
       code, hostId: socket.id, players: new Map(), waiting: new Map(), playing: false, mode: 'klassiek', endsAt: 0, lastTick: 0,
       broodje: null, items: [], vending: [], projectiles: [], bananas: [], props: [], panels: [], dynamic: [],
       event: { type: '', until: 0 }, double: false, schedule: []
     };
+    const player = await withAccount(newPlayer(socket, data, lobby), data);
+    if (ranked && !player.accountId) return reply(cb, { ok: false, error: 'Log in om ranked te spelen.' });
+    if (socket.data.code || !socket.connected) return; // intussen ergens anders binnengekomen
     lobbies.set(code, lobby);
-    lobby.players.set(socket.id, newPlayer(socket, data, lobby));
+    lobby.players.set(socket.id, player);
     socket.data.code = code;
     socket.join(code);
     reply(cb, { ok: true });
@@ -678,20 +1058,27 @@ io.on('connection', (socket) => {
 
   // openbare lobby: schuif aan bij een bestaande, of maak een nieuwe
   socket.on('quickJoin', (data, cb) => {
-    const open = [...lobbies.values()].filter((l) => l.public && l.code !== socket.data.code && l.players.size + l.waiting.size < MAX_PLAYERS);
+    const ranked = !!(data && data.ranked);
+    const open = [...lobbies.values()].filter((l) => l.public && l.ranked === ranked && l.code !== socket.data.code &&
+      humans(l).length + l.waiting.size < MAX_PLAYERS);
     const lobby = open.find((l) => !l.playing) || open[0];
     if (lobby) joinLobby(lobby.code, data, cb);
-    else createLobby(data, cb, true);
+    else createLobby(data, cb, true, ranked);
   });
 
   socket.on('joinLobby', (data, cb) => joinLobby(String((data && data.code) || '').toUpperCase().trim(), data, cb));
-  function joinLobby(code, data, cb) {
+  async function joinLobby(code, data, cb) {
     const lobby = lobbies.get(code);
     if (!lobby) return reply(cb, { ok: false, error: 'Lobby niet gevonden.' });
-    if (lobby.players.size + lobby.waiting.size >= MAX_PLAYERS) return reply(cb, { ok: false, error: 'Lobby zit vol.' });
+    // een bot maakt plaats voor een echte speler
+    if (lobby.players.size + lobby.waiting.size >= MAX_PLAYERS && !(!lobby.playing && !lobby.busy && removeBot(lobby))) {
+      return reply(cb, { ok: false, error: 'Lobby zit vol.' });
+    }
     leaveLobby(socket);
     if (!lobbies.has(code)) return reply(cb, { ok: false, error: 'Lobby niet gevonden.' });
-    const player = newPlayer(socket, data, lobby);
+    const player = await withAccount(newPlayer(socket, data, lobby), data);
+    if (lobby.ranked && !player.accountId) return reply(cb, { ok: false, error: 'Log in om ranked te spelen.' });
+    if (socket.data.code || !socket.connected || lobbies.get(code) !== lobby) return;
     socket.data.code = code;
     socket.join(code);
     reply(cb, { ok: true });
@@ -702,7 +1089,7 @@ io.on('connection', (socket) => {
       const teams = {};
       for (const p of lobby.players.values()) teams[p.id] = p.team;
       socket.emit('spectate', {
-        mode: lobby.mode, teams,
+        mode: lobby.mode, teams, map: lobby.map,
         props: lobby.props.map((o, i) => [i, r2(o.x), r2(o.y), r2(o.z), o.tip, r2(o.dir)]),
         panels: lobby.panels
       });
@@ -722,10 +1109,45 @@ io.on('connection', (socket) => {
     sendLobby(lobby);
   });
 
+  // accessoires en titel aanpassen in de lobby
+  socket.on('setLook', (look) => {
+    const lobby = lobbies.get(socket.data.code);
+    const p = lobby && (lobby.players.get(socket.id) || lobby.waiting.get(socket.id));
+    if (!p || !look || (lobby.playing && !lobby.waiting.has(socket.id))) return;
+    p.acc = cleanAcc(look.acc);
+    p.title = cleanTitle(look.title);
+    sendLobby(lobby);
+  });
+
+  // de host van een privélobby kan bots toevoegen en weghalen
+  socket.on('bots', (delta) => {
+    const lobby = lobbies.get(socket.data.code);
+    if (!lobby || lobby.hostId !== socket.id || lobby.playing || lobby.busy || lobby.ranked) return;
+    if (delta > 0) addBot(lobby);
+    else removeBot(lobby);
+    sendLobby(lobby);
+  });
+
   socket.on('setMode', (mode) => {
     const lobby = lobbies.get(socket.data.code);
-    if (!lobby || lobby.hostId !== socket.id || lobby.playing || !MODES.includes(mode)) return;
+    if (!lobby || lobby.hostId !== socket.id || lobby.playing || lobby.ranked || !MODES.includes(mode)) return;
     lobby.mode = mode;
+    sendLobby(lobby);
+  });
+
+  // toernooi: drie rondes achter elkaar met wisselende map en modus
+  socket.on('setRounds', (rounds) => {
+    const lobby = lobbies.get(socket.data.code);
+    if (!lobby || lobby.hostId !== socket.id || lobby.playing || lobby.busy || lobby.ranked) return;
+    lobby.rounds = rounds === 3 ? 3 : 1;
+    sendLobby(lobby);
+  });
+
+  socket.on('setClass', (cls) => {
+    const lobby = lobbies.get(socket.data.code);
+    const p = lobby && (lobby.players.get(socket.id) || lobby.waiting.get(socket.id));
+    if (!p || (lobby.playing && !lobby.waiting.has(socket.id))) return;
+    p.cls = cleanClass(cls);
     sendLobby(lobby);
   });
 
@@ -740,13 +1162,13 @@ io.on('connection', (socket) => {
   // De host start. In een privélobby begint het potje meteen, in een openbare na tien seconden.
   socket.on('startGame', (cb) => {
     const lobby = lobbies.get(socket.data.code);
-    if (!lobby || lobby.hostId !== socket.id || lobby.playing) return;
+    if (!lobby || lobby.hostId !== socket.id || lobby.playing || lobby.busy) return;
     lobby.players.get(socket.id).ready = true;
     if (!canStart(lobby)) {
       sendLobby(lobby);
       return reply(cb, {
         ok: false,
-        error: lobby.public && lobby.players.size < 2 ? 'Wacht op een tweede speler.' : 'Nog niet genoeg spelers zijn ready.'
+        error: lobby.ranked && humans(lobby).length < 2 ? 'Ranked begint zodra er een tweede speler is.' : 'Nog niet genoeg spelers zijn ready.'
       });
     }
     reply(cb, { ok: true });
@@ -758,7 +1180,7 @@ io.on('connection', (socket) => {
   socket.on('move', (m) => {
     const a = activePlayer(true);
     if (!a || !m || ![m.x, m.y, m.z, m.ry].every(Number.isFinite)) return;
-    const B = MapData.BOUNDS;
+    const B = MapData.use(a.lobby.map).BOUNDS;
     a.p.x = Math.max(B.minX, Math.min(B.maxX, m.x));
     a.p.y = Math.max(B.minY, Math.min(B.maxY, m.y));
     a.p.z = Math.max(B.minZ, Math.min(B.maxZ, m.z));
@@ -769,7 +1191,8 @@ io.on('connection', (socket) => {
     const a = activePlayer();
     const now = Date.now();
     if (!a || !d || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return;
-    if (now - a.p.lastDash < DASH_COOLDOWN_MS - 100) return;
+    if (now - a.p.lastDash < (a.p.cls === 'sprinter' ? 1300 : DASH_COOLDOWN_MS) - 100) return;
+    dismount(a.lobby, a.p, now); // dashen doe je te voet
     a.p.lastDash = now;
     a.p.dashUntil = now + DASH_ACTIVE_MS;
     a.p.dashX = d.x;
@@ -778,17 +1201,22 @@ io.on('connection', (socket) => {
 
   socket.on('throw', (d) => {
     const a = activePlayer();
-    if (!a || !d || ![d.x, d.y, d.z].every(Number.isFinite) || !a.p.item) return;
-    const p = a.p;
-    const len = Math.hypot(d.x, d.y, d.z) || 1;
-    const dx = d.x / len, dy = d.y / len, dz = d.z / len;
-    a.lobby.projectiles.push({
-      id: nextId++, kind: p.item, owner: p.id, born: Date.now(),
-      x: p.x + dx * 0.5, y: p.y + 1.45 + dy * 0.5, z: p.z + dz * 0.5,
-      vx: dx * THROW_SPEED, vy: dy * THROW_SPEED + 2, vz: dz * THROW_SPEED
-    });
-    if (p.ammo > 0) p.ammo--;
-    p.item = p.ammo > 0 ? 1 : 0;
+    if (!a || !d || ![d.x, d.y, d.z].every(Number.isFinite) || !a.p.item || a.p.vehicle) return;
+    throwItem(a.lobby, a.p, d.x, d.y, d.z);
+  });
+
+  // van het board af stappen, of eraf vallen na een botsing
+  socket.on('dismount', (crash) => {
+    const a = activePlayer();
+    if (!a || !a.p.vehicle) return;
+    const now = Date.now();
+    a.p.noMountUntil = now + 1500;
+    if (crash) {
+      stun(a.lobby, a.p, Math.sin(a.p.ry), Math.cos(a.p.ry), now, 900);
+      emit(a.lobby, { type: 'crash', id: socket.id });
+    } else {
+      dismount(a.lobby, a.p, now);
+    }
   });
 
   // bananenschil neerleggen

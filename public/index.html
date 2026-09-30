@@ -26,9 +26,15 @@
         <canvas id="preview" width="220" height="250"></canvas>
         <label for="name">Naam</label>
         <input id="name" type="text" maxlength="14" placeholder="Naam" autocomplete="off">
-        <button class="btn" data-open="skins"><i data-ico="shirt"></i>Skins</button>
-        <button class="btn" data-open="emotes"><i data-ico="emote"></i>Emotes</button>
-        <button class="btn" data-open="settings"><i data-ico="gear"></i>Settings</button>
+        <div id="rank-badge"></div>
+        <div class="btn-grid">
+          <button class="btn small" data-open="skins"><i data-ico="shirt"></i>Skins</button>
+          <button class="btn small" data-open="accessories"><i data-ico="glasses"></i>Accessoires</button>
+          <button class="btn small" data-open="classes"><i data-ico="shield"></i>Klasse</button>
+          <button class="btn small" data-open="emotes"><i data-ico="emote"></i>Emotes</button>
+          <button id="btn-profile" class="btn small" data-open="account"><i data-ico="user"></i><span>Inloggen</span></button>
+          <button class="btn small" data-open="settings"><i data-ico="gear"></i>Settings</button>
+        </div>
       </div>
 
       <!-- midden: spelen -->
@@ -39,7 +45,8 @@
           <span class="stamp-small">pak het frikandelbroodje</span>
         </div>
         <button id="btn-public" class="btn primary big"><i data-ico="play"></i>Public Lobby</button>
-        <p class="hint">Speel meteen mee met wie er online is.</p>
+        <p class="hint">Speel meteen mee. Bots vullen de lobby aan tot vier spelers.</p>
+        <button id="btn-ranked" class="btn ranked"><i data-ico="trophy"></i>Ranked</button>
         <button id="btn-create" class="btn"><i data-ico="plus"></i>Create Lobby</button>
         <div class="divider"><span>of</span></div>
         <div class="join-row">
@@ -79,6 +86,7 @@
           <p id="ready-info" class="hint"></p>
         </div>
         <div class="col">
+          <div id="lobby-setup" class="col">
           <p class="label">Spelmodus</p>
           <div class="tab-row">
             <button class="btn small mode" data-mode="klassiek">Klassiek</button>
@@ -86,6 +94,16 @@
             <button class="btn small mode" data-mode="voedsel">Voedsel&shy;gevecht</button>
           </div>
           <p id="mode-desc" class="hint"></p>
+          <div class="tab-row">
+            <button class="btn small mode" data-rounds="1">Los potje</button>
+            <button class="btn small mode" data-rounds="3">Toernooi · 3 rondes</button>
+          </div>
+          <p class="hint">De map wordt voor elk potje geloot. In een toernooi wisselen map en modus per ronde.</p>
+          <div id="bot-row" class="tab-row">
+            <button class="btn small" data-bots="1"><i data-ico="robot"></i>Bot erbij</button>
+            <button class="btn small" data-bots="-1">Bot weg</button>
+          </div>
+          </div>
           <button id="btn-ready" class="btn big ready"><i data-ico="check"></i><span>Ready</span></button>
           <button id="btn-start" class="btn primary"><i data-ico="play"></i>Start Game</button>
           <p id="lobby-auto" class="hint hidden"></p>
@@ -93,9 +111,10 @@
           <p id="lobby-wait" class="hint">De host kan starten zodra 6 op de 10 spelers ready zijn.</p>
           <div class="tab-row">
             <button class="btn small" data-open="skins">Skins</button>
+            <button class="btn small" data-open="classes">Klasse</button>
             <button class="btn small" data-open="emotes">Emotes</button>
-            <button class="btn small" data-open="howto">Uitleg</button>
           </div>
+          <button id="btn-invite" class="btn small"><i data-ico="link"></i>Kopieer uitnodigingslink</button>
           <button id="btn-leave" class="btn ghost">Lobby verlaten</button>
         </div>
       </div>
@@ -113,6 +132,7 @@
       <span id="buff-boost" class="hidden"><i data-ico="bolt"></i>Energie</span>
       <span id="buff-shield" class="hidden"><i data-ico="shield"></i>Dienblad</span>
       <span id="buff-banana" class="hidden"><i data-ico="banana"></i>Q: neerleggen</span>
+      <span id="buff-vehicle" class="hidden"><i data-ico="skate"></i>R: afstappen</span>
     </div>
     <div id="emote-hint">1 2 3 Emotes · T Spuitbus · Z X C V Berichten</div>
     <ul id="feed"></ul>
@@ -132,9 +152,20 @@
       <div id="dash-fill"></div>
       <span>SHIFT · DASH</span>
     </div>
+    <div id="fries" class="hidden"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><span>Friet in je gezicht!</span></div>
     <div id="stun" class="hidden"><span>KNOCK-OUT!</span></div>
     <div id="clickstart" class="hidden">Klik om te beginnen</div>
   </section>
+
+  <!-- Map-roulette voor elk potje -->
+  <section id="roulette" class="hidden">
+    <p class="roulette-title">Welke map wordt het?</p>
+    <div class="roulette-window"><div id="roulette-strip"></div><span class="roulette-mark"></span></div>
+    <p id="roulette-sub"></p>
+  </section>
+
+  <!-- Herhaling van het beste moment -->
+  <div id="replay" class="hidden"><span>Beste moment</span><b id="replay-text"></b><small>Klik om over te slaan</small></div>
 
   <div id="banner"></div>
   <div id="big"></div>
@@ -153,12 +184,17 @@
 
   <!-- Eindscherm -->
   <section id="gameover" class="screen hidden">
-    <div class="card panel">
-      <header class="panel-head"><i data-ico="trophy"></i><span>Tijd is om!</span></header>
+    <div class="card panel wide">
+      <header class="panel-head"><i data-ico="trophy"></i><span id="over-title">Tijd is om!</span></header>
       <h2 id="winner"></h2>
-      <ol id="ranking"></ol>
+      <div class="rank-wrap"><table id="ranking"></table></div>
+      <p id="over-rank" class="over-rank"></p>
       <p id="earned" class="hint"></p>
-      <button id="btn-back" class="btn primary">Terug naar lobby</button>
+      <p id="over-next" class="hint"></p>
+      <div id="over-buttons" class="tab-row">
+        <button id="btn-again" class="btn primary"><i data-ico="play"></i>Nog een keer</button>
+        <button id="btn-back" class="btn">Terug naar lobby</button>
+      </div>
     </div>
   </section>
 
@@ -167,6 +203,47 @@
     <div class="card panel xwide">
       <header class="panel-head"><i data-ico="shirt"></i><span>Skins</span><button class="x" data-close><i data-ico="close"></i></button></header>
       <div id="skin-grid" class="tiles"></div>
+    </div>
+  </section>
+
+  <section id="accessories" class="screen modal hidden">
+    <div class="card panel xwide">
+      <header class="panel-head"><i data-ico="glasses"></i><span>Accessoires</span><span class="head-coins"><i data-ico="coin"></i><b class="coins">0</b></span><button class="x" data-close><i data-ico="close"></i></button></header>
+      <div id="acc-rows" class="shop-scroll"></div>
+    </div>
+  </section>
+
+  <section id="account" class="screen modal hidden">
+    <div class="card panel wide">
+      <header class="panel-head"><i data-ico="user"></i><span>Profiel</span><button class="x" data-close><i data-ico="close"></i></button></header>
+      <div class="shop-scroll">
+        <div id="acct-out" class="col">
+          <p class="hint">Met een account bewaar je je voortgang op elke computer en kun je ranked spelen. Je hebt geen e-mailadres nodig.</p>
+          <input id="acct-name" type="text" maxlength="14" placeholder="Naam" autocomplete="username">
+          <input id="acct-pass" type="password" maxlength="72" placeholder="Wachtwoord (minstens 6 tekens)" autocomplete="current-password">
+          <div class="tab-row">
+            <button id="btn-login" class="btn primary">Inloggen</button>
+            <button id="btn-register" class="btn">Account maken</button>
+          </div>
+          <p id="acct-error" class="error"></p>
+        </div>
+        <div id="acct-in" class="col hidden">
+          <div id="profile-head"></div>
+          <button id="btn-logout" class="btn ghost">Uitloggen</button>
+        </div>
+        <p class="shop-title">Titel</p>
+        <div id="title-grid" class="chips"></div>
+        <p class="shop-title">Statistieken</p>
+        <ul id="stat-list" class="keys"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="classes" class="screen modal hidden">
+    <div class="card panel xwide">
+      <header class="panel-head"><i data-ico="shield"></i><span>Klasse</span><button class="x" data-close><i data-ico="close"></i></button></header>
+      <p class="hint">Je klasse bepaalt je speciale kracht in het potje. Nieuwe klassen speel je vrij in de battlepass.</p>
+      <div id="class-grid" class="tiles"></div>
     </div>
   </section>
 
@@ -225,6 +302,7 @@
         <li><b>1 2 3</b><span>Je drie gekozen emotes</span></li>
         <li><b>Z X C V</b><span>Hier! · Pak hem! · Help! · GG</span></li>
         <li><b>T</b><span>Spuitbus op de muur</span></li>
+        <li><b>R</b><span>Van het skateboard of de step af</span></li>
         <li><b>Esc</b><span>Menu</span></li>
       </ul>
       <p class="hint">Dash tegen de drager om het broodje los te slaan of tegen een tafel om hem om te gooien. Loop langs een automaat voor een power-up.</p>
@@ -260,6 +338,7 @@
               <button id="pass-next"><i data-ico="chevron"></i></button>
             </div>
           </div>
+          <p id="pass-season" class="pass-season"></p>
           <div id="pass-grid"></div>
           <p class="hint">Je krijgt XP door potjes te spelen en dagelijkse challenges te halen. Elke 100 XP is een trede.</p>
         </div>
@@ -287,8 +366,12 @@
   <section id="board" class="screen modal hidden">
     <div class="card panel wide">
       <header class="panel-head"><i data-ico="trophy"></i><span>Ranglijst van de week</span><button class="x" data-close><i data-ico="close"></i></button></header>
+      <p class="shop-title">Deze week</p>
       <p id="board-week" class="hint"></p>
       <ol id="board-list" class="list"></ol>
+      <p class="shop-title">Ranked</p>
+      <p id="ranked-empty" class="hint">Nog niemand heeft ranked gespeeld.</p>
+      <ol id="ranked-list" class="list"></ol>
     </div>
   </section>
 
