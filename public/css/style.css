@@ -38,8 +38,7 @@ html, body {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(38, 38, 43, 0.45);
-  backdrop-filter: blur(3px);
+  background: rgba(38, 38, 43, 0.55);
 }
 
 .card {
@@ -687,4 +686,359 @@ body.touch #buffs { bottom: 170px; }
   .card { padding: 18px; gap: 9px; max-height: 96vh; overflow-y: auto; }
   .stamp h1 { font-size: 30px; }
   .stamp { margin: 0 0 6px; padding: 8px 20px; }
+}
+
+/* ---------- Hoofdmenu in drie kolommen ---------- */
+.menu-grid {
+  display: grid;
+  grid-template-columns: 270px minmax(320px, 400px) 290px;
+  gap: 18px;
+  align-items: stretch;
+  max-height: 96vh;
+}
+.menu-grid .card { max-width: none; }
+.menu-grid .card.side { gap: 10px; padding: 20px; border-bottom-color: var(--purple); }
+.menu-grid .card.main { justify-content: center; }
+#preview {
+  width: 220px;
+  height: 250px;
+  align-self: center;
+  background: radial-gradient(circle at 50% 70%, #fff 0, #efe9dc 70%);
+  border: 3px solid #e4ddcf;
+  border-radius: 14px;
+}
+.btn.big { padding: 18px 16px; font-size: 19px; }
+.menu-grid .coin-chip { flex: none; padding: 9px; font-size: 15px; }
+.dailies { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.dailies li { padding: 7px 10px; background: #f3eefc; border: 2px solid #d9cdf2; border-radius: 9px; }
+.dailies li.done { border-color: #3aa655; background: #ecf7ee; }
+.dailies .top { display: flex; justify-content: space-between; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: var(--purple); }
+.dailies p { margin: 2px 0 5px; font-size: 12px; font-weight: 700; line-height: 1.25; }
+.pass-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  font: inherit;
+  text-align: left;
+  color: #fff;
+  background: linear-gradient(135deg, var(--purple), #8a4fd0);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+}
+.pass-card .label { color: #ffd34d; }
+.pass-card b { font-size: 18px; font-weight: 900; }
+.pass-card .bar { background: rgba(255, 255, 255, 0.25); }
+.pass-card .bar i { background: #ffd34d; }
+.pass-card small { font-size: 11px; font-weight: 700; }
+
+.card.xwide { max-width: 860px; }
+#pass-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.tier {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  text-align: center;
+  background: #fff;
+  border: 3px solid #ebe5d8;
+  border-radius: 10px;
+  opacity: 0.6;
+}
+.tier.done { opacity: 1; border-color: #3aa655; background: #ecf7ee; }
+.tier.next { opacity: 1; border-color: var(--orange); }
+.tier small { font-size: 10px; font-weight: 900; color: var(--grey); }
+.tier span { font-size: 24px; line-height: 1.1; }
+.tier b { font-size: 10px; font-weight: 800; line-height: 1.2; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  background: #fff;
+  border: 3px solid #ebe5d8;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip.active { border-color: var(--orange); }
+
+#clickstart {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 120px;
+  font-size: 22px;
+  font-weight: 900;
+  text-transform: uppercase;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* de grote melding is kleiner en staat hoger */
+#big {
+  top: 24%;
+  padding: 8px 22px;
+  font-size: clamp(18px, 2.6vw, 30px);
+  border-radius: 12px;
+  border-bottom-width: 5px;
+}
+
+@media (max-width: 1020px) {
+  #menu { align-items: flex-start; overflow-y: auto; }
+  .menu-grid { grid-template-columns: minmax(0, 420px); max-height: none; margin: 0 auto; }
+  .menu-grid .card.main { order: -1; }
+  html, body { touch-action: auto; }
+}
+
+#scene, #hud, #touch, #stick, .tc { touch-action: none; }
+
+/* ======================================================================
+   UI-laag 2: iconen, paneelkoppen, tegels, battlepass, winkel, lobby
+   ====================================================================== */
+.ico { width: 1.15em; height: 1.15em; fill: currentColor; flex: none; vertical-align: -0.2em; }
+.btn { display: flex; align-items: center; justify-content: center; gap: 9px; }
+.btn .ico { width: 1.25em; height: 1.25em; }
+.btn.dim { filter: grayscale(0.7) brightness(0.9); }
+
+.card { background: linear-gradient(180deg, #fffdf8 0, var(--paper) 120px); }
+.card.panel { --pad: 28px; padding: var(--pad); border-bottom-color: var(--purple); }
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: calc(var(--pad) * -1) calc(var(--pad) * -1) 6px;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, var(--purple), #7a4fd0);
+  border-radius: 18px 18px 0 0;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18);
+}
+.panel-head > span:first-of-type { flex: 1; }
+.panel-head .ico { width: 22px; height: 22px; color: #ffd34d; }
+.panel-head .x {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.25);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.panel-head .x:hover { background: var(--orange); }
+.panel-head .x .ico { width: 16px; height: 16px; color: #fff; }
+.head-coins, .coin-chip { display: flex; align-items: center; gap: 6px; }
+.head-coins { flex: none !important; padding: 5px 12px; background: rgba(0, 0, 0, 0.25); border-radius: 999px; }
+.coin-chip .ico, .head-coins .ico { color: #f5b700; }
+.card.xwide { max-width: 940px; }
+
+/* ---------- Tegels ---------- */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 12px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  font: inherit;
+  color: #fff;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+.tile:hover { transform: translateY(-3px); }
+.tile .art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 140px;
+  background: linear-gradient(160deg, #8a63d6, #4b3290);
+}
+.k-emote .art, .k-emote.art { background: linear-gradient(160deg, #f89a4c, #d9540f); }
+.k-stamp .art { background: linear-gradient(160deg, #2fcfc6, #13847e); }
+.k-coins .art { background: linear-gradient(160deg, #ffdc6b, #e0a417); }
+.tile .art img { height: 100%; object-fit: contain; filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.25)); }
+.tile .art em {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  padding: 2px 7px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 5px;
+}
+.bigico { display: grid; place-items: center; color: #fff; }
+.bigico .ico { width: 74px; height: 74px; filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.25)); }
+.tile .bar2 { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px 9px; background: var(--ink); }
+.tile .bar2 b { font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+.tile .bar2 small { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: #ffd34d; }
+.tile .bar2 small .ico { width: 13px; height: 13px; }
+.tile .bar2 s { color: #a39d90; }
+.tile.selected { outline: 4px solid #ffd34d; outline-offset: -4px; }
+.tile.locked .art img, .tile.locked .bigico { filter: grayscale(1) brightness(0.45); }
+.tile.locked .bar2 small { color: #c9c3b6; }
+.tile.locked, .tile.owned, .tile.poor { cursor: default; }
+.tile.owned .bar2 small { color: #7fe39a; }
+.tile.poor .bar2 small { color: #ff8d80; }
+
+/* ---------- Winkel ---------- */
+.shop-scroll { display: flex; flex-direction: column; gap: 10px; max-height: 72vh; overflow-y: auto; padding-right: 4px; }
+.shop-scroll .tiles { max-height: none; overflow: visible; }
+.shop-title { margin: 6px 0 0; font-size: 18px; font-weight: 900; font-style: italic; text-transform: uppercase; color: var(--purple); }
+.shop-title span { margin-left: 8px; font-size: 13px; font-style: normal; color: var(--orange); font-variant-numeric: tabular-nums; }
+#shop-featured { grid-template-columns: minmax(0, 300px); }
+#shop-featured .art { height: 210px; }
+#shop-featured .bar2 b { font-size: 17px; }
+#shop-featured .bar2 small { font-size: 14px; }
+
+/* ---------- Emotes ---------- */
+#emote-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 170px)); gap: 12px; justify-content: center; }
+#emote-slots .art { height: 120px; }
+#emote-grid { max-height: 40vh; }
+
+/* ---------- Battlepass ---------- */
+.pass-layout { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 18px; }
+.pass-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pass-top { display: flex; align-items: center; gap: 16px; padding: 10px 14px; color: #fff; background: var(--ink); border-radius: 12px; }
+.pass-tier { display: flex; flex-direction: column; line-height: 1; }
+.pass-tier small { font-size: 10px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #ffd34d; }
+.pass-tier b { font-size: 38px; font-weight: 900; }
+.pass-xp { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.pass-xp .bar { display: block; height: 10px; background: rgba(255, 255, 255, 0.2); border-radius: 99px; overflow: hidden; }
+.pass-xp .bar i { display: block; height: 100%; background: #ffd34d; }
+.pass-xp small { font-size: 11px; font-weight: 800; }
+.pager { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 900; text-transform: uppercase; white-space: nowrap; }
+.pager button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; color: #fff; background: var(--orange); border: 0; border-radius: 8px; cursor: pointer; }
+.pager button:disabled { opacity: 0.35; cursor: default; }
+.pager button:first-child .ico { transform: scaleX(-1); }
+#pass-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; max-height: none; overflow: visible; padding: 0; }
+.slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  font: inherit;
+  color: #fff;
+  background: none;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.slot .num { padding: 3px 0; font-size: 12px; font-weight: 900; text-align: center; background: var(--ink); }
+.slot .art { position: relative; display: grid; place-items: center; height: 104px; background: linear-gradient(160deg, #8a63d6, #4b3290); }
+.slot .art img { height: 100%; object-fit: contain; }
+.slot .art b { position: absolute; bottom: 6px; font-size: 14px; font-weight: 900; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+.slot .bigico .ico { width: 52px; height: 52px; }
+.slot .mark {
+  position: absolute;
+  top: 26px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+}
+.slot .mark .ico { width: 12px; height: 12px; }
+.slot.done .mark { background: #3aa655; }
+.slot.locked .art img, .slot.locked .bigico { filter: grayscale(0.8) brightness(0.6); }
+.slot.next .num { background: var(--orange); }
+.slot.selected { outline: 4px solid #ffd34d; outline-offset: -4px; }
+#pass-show {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  color: #fff;
+  background: var(--ink);
+  border-radius: 14px;
+  border-bottom: 6px solid var(--orange);
+}
+#pass-show .art { display: grid; place-items: center; height: 250px; margin-bottom: 8px; border-radius: 10px; background: linear-gradient(160deg, #8a63d6, #4b3290); }
+#pass-show.k-emote .art { background: linear-gradient(160deg, #f89a4c, #d9540f); }
+#pass-show.k-stamp .art { background: linear-gradient(160deg, #2fcfc6, #13847e); }
+#pass-show.k-coins .art { background: linear-gradient(160deg, #ffdc6b, #e0a417); }
+#pass-show .art img { height: 100%; object-fit: contain; }
+#pass-show .bigico .ico { width: 130px; height: 130px; }
+#pass-show small { font-size: 10px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #ffd34d; }
+#pass-show b { font-size: 24px; font-weight: 900; text-transform: uppercase; line-height: 1.05; }
+#pass-show p { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #c9c3b6; }
+.pass-card .label { display: flex; align-items: center; gap: 6px; }
+
+/* ---------- Lobby ---------- */
+.card.lobby-card { max-width: 760px; }
+.lobby-card .panel-head .code { font-size: 26px; letter-spacing: 6px; color: #ffd34d; }
+.lobby-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.lobby-cols .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#lobby-players li { flex-wrap: wrap; }
+.ready-mark { display: flex; align-items: center; gap: 4px; flex-basis: 100%; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: #b3ac9e; }
+.ready-mark.on { color: #3aa655; }
+.btn.ready { background: #8d9299; }
+.btn.ready.on { background: #3aa655; }
+
+/* ---------- Kleinigheden ---------- */
+.chip { display: grid; place-items: center; min-width: 46px; min-height: 40px; color: var(--purple); }
+.chip .ico { width: 24px; height: 24px; }
+#buffs span { display: flex; align-items: center; gap: 6px; }
+#buffs .ico { color: #ffd34d; }
+.tc .ico { width: 24px; height: 24px; }
+#menu { background: radial-gradient(circle at 50% 40%, rgba(38, 38, 43, 0.35), rgba(38, 38, 43, 0.75)); }
+.menu-grid .card.main { border-bottom-width: 10px; }
+
+@media (max-width: 900px) {
+  .card.panel { --pad: 18px; }
+  .pass-layout, .lobby-cols { grid-template-columns: 1fr; }
+  #pass-show .art { height: 150px; }
+  #pass-grid { grid-template-columns: repeat(5, 1fr); }
+  .slot .art { height: 70px; }
+}
+
+/* plaatjes vullen de tegel, ongeacht hun eigen formaat */
+.tile .art, .slot .art, #pass-show .art { position: relative; overflow: hidden; }
+.tile .art img, .slot .art img, #pass-show .art img {
+  position: absolute;
+  inset: 4px 0 0;
+  width: 100%;
+  height: calc(100% - 4px);
+  object-fit: contain;
 }

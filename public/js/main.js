@@ -1,10 +1,53 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const M = window.MapData;
 const C = M.COLORS;
 const socket = io();
 const $ = (id) => document.getElementById(id);
+
+// ---------- Iconen (eigen set, 24x24) ----------
+// Dezelfde vormen worden gebruikt in de menu's en als spuitbus-stempel in het spel.
+const ICONS = {
+  coin: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 3.500a6.500 6.500 0 1 1 0 13 6.500 6.500 0 0 1 0-13z M12 8.500l3.500 3.500-3.500 3.500L8.500 12z',
+  lock: 'M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z',
+  bolt: 'M13 2L4 14h6l-1 8 9-12h-6z',
+  shield: 'M12 2l8 3v6c0 5-3.400 9.300-8 11-4.600-1.700-8-6-8-11V5z',
+  banana: 'M4 5c1 9 8 14 17 12-5 5.500-17 4-19-8z',
+  menu: 'M3 5.500h18V8H3zM3 10.750h18v2.500H3zM3 16h18v2.500H3z',
+  shirt: 'M8 3l4 2 4-2 5 4-3 4-2-1v11H8V10l-2 1-3-4z',
+  emote: 'M12 2a2.500 2.500 0 1 0 0 5 2.500 2.500 0 0 0 0-5z M4 6l6 3h4l6-3 1 2-6 4v3l3 6h-3l-3-5-3 5H6l3-6v-3L3 8z',
+  gear: 'M10 2h4l.600 3 2.600 1.500 2.900-1 2 3.500-2.300 2v3l2.300 2-2 3.500-2.900-1-2.600 1.500-.600 3h-4l-.600-3-2.600-1.500-2.900 1-2-3.500 2.300-2v-3L1.900 9l2-3.500 2.900 1L9.400 5z M12 8.500a3.500 3.500 0 1 0 0 7 3.500 3.500 0 0 0 0-7z',
+  play: 'M7 4l13 8-13 8z',
+  plus: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z',
+  help: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1 14h2v2h-2zm1-10a4 4 0 0 1 4 4c0 2.500-3 2.500-3 5h-2c0-3.500 3-3.500 3-5a2 2 0 0 0-4 0H8a4 4 0 0 1 4-4z',
+  close: 'M6 4l6 6 6-6 2 2-6 6 6 6-2 2-6-6-6 6-2-2 6-6-6-6z',
+  chevron: 'M9 4l8 8-8 8-2.500-2.500 5.500-5.500L6.500 6.500z',
+  check: 'M9.500 16.200L5 11.700l-2 2 6.500 6.500L21 8.700l-2-2z',
+  cart: 'M2 3h3.500l1 4H22l-2.500 9H8L5.500 5.500H2z M9.500 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4z M17.500 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  flag: 'M5 2h2.500v20H5z M8.500 3H20l-3 4.500 3 4.500H8.500z',
+  spray: 'M8 9h8v13H8z M10 5h4v3h-4z M16 2h2v2h-2z M19 4h2v2h-2z M16.500 6h2v2h-2z',
+  star: 'M12 2l3 6.500 7 .800-5.200 4.800 1.500 7L12 17.500 5.700 21.100l1.500-7L2 9.300l7-.800z',
+  fire: 'M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-4 2-7 2 1 3 2 3 4 1-2 1-5 1-9z',
+  skull: 'M12 2a8 8 0 0 0-8 8c0 3 1.500 5 3 6v4h10v-4c1.500-1 3-3 3-6a8 8 0 0 0-8-8zM8.500 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM11 15h2l.500 2h-3z',
+  pizza: 'M12 22L3 5c6-3 12-3 18 0z M9 7.500a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3z M14.500 9.500a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3z M12 14a1.300 1.300 0 1 0 0 2.600 1.300 1.300 0 0 0 0-2.600z',
+  gamepad: 'M6 7h12a5 5 0 0 1 5 5v2a3.500 3.500 0 0 1-6.500 1.800L15.500 14h-7l-1 1.800A3.500 3.500 0 0 1 1 14v-2a5 5 0 0 1 5-5zM6 9.500V11H4.500v2H6v1.500h2V13h1.500v-2H8V9.500z M16 9.500a1.200 1.200 0 1 0 0 2.400 1.200 1.200 0 0 0 0-2.400z M18.500 12a1.200 1.200 0 1 0 0 2.400 1.200 1.200 0 0 0 0-2.400z',
+  eye: 'M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7zm0 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8z M12 10.500a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3z',
+  rocket: 'M12 2c4 3 5 8 4 13l3 3-1 3-4-2h-4l-4 2-1-3 3-3C7 10 8 5 12 2z M12 7.500a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  ghost: 'M12 2a8 8 0 0 0-8 8v12l3-2 2.500 2 2.500-2 2.500 2 2.500-2 3 2V10a8 8 0 0 0-8-8zM9 8.500a1.700 1.700 0 1 1 0 3.400 1.700 1.700 0 0 1 0-3.400zm6 0a1.700 1.700 0 1 1 0 3.400 1.700 1.700 0 0 1 0-3.400z',
+  smiley: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM7 8.500h4V11H7zm6 0h4V11h-4zM7.500 14h9a4.500 4.500 0 0 1-9 0z',
+  diamond: 'M6 3h12l4 6-10 12L2 9z',
+  moon: 'M14 2a10 10 0 1 0 8 14A8 8 0 0 1 14 2z',
+  trophy: 'M7 3h10v2h3v3a4 4 0 0 1-4 4h-.500A5 5 0 0 1 13 14.900V18h3v3H8v-3h3v-3.100A5 5 0 0 1 8.500 12H8a4 4 0 0 1-4-4V5h3zM6 7v1a2 2 0 0 0 1 1.700V7zm11 0v2.700A2 2 0 0 0 18 8V7z',
+  note: 'M9 4l11-2v13a3.500 3.500 0 1 1-2-3.200V6l-7 1.300V17a3.500 3.500 0 1 1-2-3.200z',
+  bomb: 'M11 8a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M13 5h3v3h-3z M17 4l3-2 1 1.500-3 2z',
+  heart: 'M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1.500A5 5 0 0 1 22 8c0 4-3 7-10 13z',
+  crown: 'M3 18h18v2.500H3z M3 16L2 7l5.500 4L12 4l4.500 7L22 7l-1 9z',
+  broodje: 'M3 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z M1 10.500h22v3H1z'
+};
+const icon = (name) => `<svg class="ico" viewBox="0 0 24 24"><path fill-rule="evenodd" d="${ICONS[name] || ICONS.star}"/></svg>`;
+document.querySelectorAll('[data-ico]').forEach((el) => { el.innerHTML = icon(el.dataset.ico); });
 
 // ---------- Instellingen van de gameplay ----------
 const RUN_SPEED = 10.5;
@@ -52,9 +95,9 @@ function load(key, fallback) {
 }
 const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, hires: true, bob: true, names: true });
+const settings = load('kr-settings', { sens: 1, fov: 80, vol: 0.5, mus: 0.35, shadows: true, sharp: false, bob: true, names: true });
 const stats = load('kr-stats', { pickups: 0, tackles: 0, hits: 0, holdSeconds: 0, wins: 0, games: 0, jumps: 0 });
-const progress = load('kr-progress', { unlocked: [], skin: 'leerling', coins: 0, owned: [], stamp: 'naam', custom: null });
+const progress = load('kr-progress', { unlocked: [], skin: 'leerling', coins: 0, owned: [], stamp: 'naam', custom: null, xp: 0, bpTier: 0, loadout: [1, 2, 3] });
 
 const SKINS = [
   { id: 'leerling', name: 'Leerling', shirt: 0x2f6fde, pants: 0x3b3d44, tone: 0xf0c39a, hair: 0x5a3a22 },
@@ -73,9 +116,57 @@ const SKINS = [
   { id: 'clown', name: 'Clown', shirt: 0xf4c430, pants: 0x3aa655, tone: 0xffffff, hair: 0xe23b2e, hat: 'cap', hatColor: 0x3d8bd9, price: 150 },
   { id: 'astronaut', name: 'Astronaut', shirt: 0xf2f0ea, pants: 0xd9d5cb, tone: 0xf0c39a, hair: 0xd9d5cb, hat: 'beanie', hatColor: 0xf2f0ea, price: 200 }
 ];
+// vrij te spelen in de battlepass
+SKINS.push(
+  { id: 'piraat', name: 'Piraat', shirt: 0x7a2a1d, pants: 0x26262b, tone: 0xe8b88f, hair: 0x1a1a1a, hat: 'band', hatColor: 0xe23b2e },
+  { id: 'zombie', name: 'Zombie', shirt: 0x5a6b4a, pants: 0x3b3d44, tone: 0x9ccf8a, hair: 0x2d3a2a },
+  { id: 'gamer', name: 'Gamer', shirt: 0x19b5b0, pants: 0x26262b, tone: 0xf0c39a, hair: 0x9b6bd1, hat: 'band', hatColor: 0x26262b },
+  { id: 'dokter', name: 'Dokter', shirt: 0xffffff, pants: 0x9fd4f5, tone: 0xc98d5e, hair: 0x222222 },
+  { id: 'voetballer', name: 'Voetballer', shirt: 0xf26a1b, pants: 0xffffff, tone: 0xf0c39a, hair: 0xd9b35c },
+  { id: 'agent', name: 'Agent', shirt: 0x1d2f6b, pants: 0x1d2f6b, tone: 0xe8b88f, hair: 0x5a3a22, hat: 'cap', hatColor: 0x1d2f6b },
+  { id: 'bakker', name: 'Bakker', shirt: 0xf3c877, pants: 0xffffff, tone: 0xf0c39a, hair: 0x8a5a3c, hat: 'chef', hatColor: 0xf2f0ea },
+  { id: 'neon', name: 'Neon', shirt: 0x39ff14, pants: 0xff2bd6, tone: 0x8a5a3c, hair: 0x00e5ff, hat: 'band', hatColor: 0xfff200 },
+  { id: 'ijsbeer', name: 'IJsbeer', shirt: 0xf2f0ea, pants: 0xf2f0ea, tone: 0xf2f0ea, hair: 0xf2f0ea, hat: 'beanie', hatColor: 0x9fd4f5 },
+  { id: 'lava', name: 'Lava', shirt: 0xe23b2e, pants: 0x26262b, tone: 0xf26a1b, hair: 0xf4c430, hat: 'crown', hatColor: 0xf26a1b },
+  { id: 'schaduw', name: 'Schaduw', shirt: 0x16161a, pants: 0x16161a, tone: 0x2a2a30, hair: 0x16161a, hat: 'beanie', hatColor: 0x16161a },
+  { id: 'diamant', name: 'Diamant', shirt: 0x7fe3ff, pants: 0x4fb8e8, tone: 0xcff6ff, hair: 0xffffff, hat: 'crown', hatColor: 0xffffff }
+);
+const PASS_SKINS = SKINS.slice(-12);
+PASS_SKINS.forEach((k) => { k.pass = true; });
+if (!Array.isArray(progress.loadout)) progress.loadout = [1, 2, 3];
+const EMOTE_NAMES = ['', 'Take the L', 'Dab', 'Zwaai', 'Dans', 'Floss', 'Facepalm', 'Jumping jacks', 'Buiging', 'Helikopter', 'Saluut'];
+const EMOTE_SOURCE = (n) => (n <= 4 ? '' : n <= 6 ? 'Winkel' : 'Battlepass');
+const STAMP_ICONS = ['star', 'fire', 'skull', 'pizza', 'gamepad', 'eye', 'rocket', 'ghost', 'smiley', 'diamond', 'moon', 'trophy', 'note', 'bomb'];
+const STAMP_NAMES = ['Ster', 'Vuur', 'Schedel', 'Pizza', 'Controller', 'Oog', 'Raket', 'Spook', 'Smiley', 'Diamant', 'Maan', 'Beker', 'Muziek', 'Bom'];
+// welk icoon hoort bij welke stempel (e0..e13 uit de battlepass, de rest uit de winkel)
+const STAMP_ICON = { kroon: 'crown', broodje: 'broodje', hart: 'heart', bliksem: 'bolt' };
+STAMP_ICONS.forEach((name, i) => { STAMP_ICON['e' + i] = name; });
+const XP_PER_TIER = 100;
+// 50 treden: 12 skins, 4 emotes, 14 stempels en 20 keer munten
+const BATTLEPASS = [];
+{
+  const skinTiers = [5, 10, 15, 20, 23, 25, 30, 35, 37, 40, 45, 50];
+  const emoteTiers = [8, 18, 28, 38];
+  const stampTiers = [2, 4, 7, 12, 14, 17, 22, 24, 27, 32, 34, 42, 44, 47];
+  for (let t = 1; t <= 50; t++) {
+    if (skinTiers.includes(t)) {
+      const k = PASS_SKINS[skinTiers.indexOf(t)];
+      BATTLEPASS.push({ type: 'skin', id: 'skin:' + k.id, name: k.name, label: 'Skin ' + k.name });
+    } else if (emoteTiers.includes(t)) {
+      const n = 7 + emoteTiers.indexOf(t);
+      BATTLEPASS.push({ type: 'emote', id: 'emote:' + n, name: EMOTE_NAMES[n], label: 'Emote ' + EMOTE_NAMES[n] });
+    } else if (stampTiers.includes(t)) {
+      const i = stampTiers.indexOf(t);
+      BATTLEPASS.push({ type: 'stamp', id: 'stamp:e' + i, name: STAMP_NAMES[i], label: 'Stempel ' + STAMP_NAMES[i] });
+    } else {
+      const coins = 30 + 10 * Math.floor(t / 10);
+      BATTLEPASS.push({ type: 'coins', coins, name: `${coins} munten`, label: `${coins} munten` });
+    }
+  }
+}
 const SHOP = SKINS.filter((k) => k.price).map((k) => ({ id: 'skin:' + k.id, kind: 'Skin', name: k.name, price: k.price })).concat([
-  { id: 'emote:5', kind: 'Emote (toets 5)', name: 'Floss', price: 100 },
-  { id: 'emote:6', kind: 'Emote (toets 6)', name: 'Facepalm', price: 80 },
+  { id: 'emote:5', kind: 'Emote', name: 'Floss', price: 100 },
+  { id: 'emote:6', kind: 'Emote', name: 'Facepalm', price: 80 },
   { id: 'stamp:kroon', kind: 'Stempel', name: 'Kroon', price: 60 },
   { id: 'stamp:broodje', kind: 'Stempel', name: 'Frikandelbroodje', price: 60 },
   { id: 'stamp:hart', kind: 'Stempel', name: 'Hartje', price: 40 },
@@ -83,19 +174,31 @@ const SHOP = SKINS.filter((k) => k.price).map((k) => ({ id: 'skin:' + k.id, kind
 ]);
 const owns = (id) => progress.owned.includes(id);
 const DAILIES = [
-  { desc: 'Raak vandaag 5 keer iemand met een voorwerp.', stat: 'hits', goal: 5 },
-  { desc: 'Pak vandaag 3 keer het broodje.', stat: 'pickups', goal: 3 },
-  { desc: 'Tackel vandaag 3 keer de broodjesdrager.', stat: 'tackles', goal: 3 },
-  { desc: 'Spring vandaag 50 keer.', stat: 'jumps', goal: 50 },
-  { desc: 'Speel vandaag 2 potjes uit.', stat: 'games', goal: 2 },
-  { desc: 'Houd vandaag 40 seconden het broodje vast.', stat: 'holdSeconds', goal: 40 }
+  { desc: 'Raak 5 keer iemand met een voorwerp.', stat: 'hits', goal: 5 },
+  { desc: 'Pak 3 keer het broodje.', stat: 'pickups', goal: 3 },
+  { desc: 'Tackel 3 keer de broodjesdrager.', stat: 'tackles', goal: 3 },
+  { desc: 'Spring 50 keer.', stat: 'jumps', goal: 50 },
+  { desc: 'Speel 2 potjes uit.', stat: 'games', goal: 2 },
+  { desc: 'Houd 40 seconden het broodje vast.', stat: 'holdSeconds', goal: 40 },
+  { desc: 'Gooi 15 keer iets.', stat: 'throws', goal: 15 },
+  { desc: 'Haal 3 power-ups uit een automaat.', stat: 'powerups', goal: 3 },
+  { desc: 'Doe 5 emotes.', stat: 'emotes', goal: 5 },
+  { desc: 'Neem 3 keer de lift.', stat: 'lifts', goal: 3 },
+  { desc: 'Zet 3 keer je stempel op een muur.', stat: 'sprays', goal: 3 },
+  { desc: 'Win een potje.', stat: 'wins', goal: 1 },
+  { desc: 'Pak 6 keer het broodje.', stat: 'pickups', goal: 6 },
+  { desc: 'Raak 10 keer iemand met een voorwerp.', stat: 'hits', goal: 10 }
 ];
 const DAILY_REWARD = 50;
+const DAILY_XP = 60;
 const now0 = new Date();
 const today = `${now0.getFullYear()}-${now0.getMonth() + 1}-${now0.getDate()}`;
-const dailyDef = DAILIES[Math.floor(now0.getTime() / 86400000) % DAILIES.length];
-const daily = load('kr-daily', { date: today, value: 0, done: false });
-if (daily.date !== today) Object.assign(daily, { date: today, value: 0, done: false });
+const dayNumber = Math.floor(now0.getTime() / 86400000);
+const dailyDefs = [0, 5, 9].map((o) => DAILIES[(dayNumber + o) % DAILIES.length]);
+const daily = load('kr-daily', { date: today, values: [0, 0, 0], done: [false, false, false] });
+if (daily.date !== today || !Array.isArray(daily.values)) {
+  Object.assign(daily, { date: today, values: [0, 0, 0], done: [false, false, false] });
+}
 const CHALLENGES = [
   { id: 'hap', title: 'Eerste hap', desc: 'Pak het frikandelbroodje op.', stat: 'pickups', goal: 1, skin: 'frikandel' },
   { id: 'tackle', title: 'Tackelkoning', desc: 'Tackel de broodjesdrager 10 keer.', stat: 'tackles', goal: 10, skin: 'conc' },
@@ -106,22 +209,24 @@ const CHALLENGES = [
   { id: 'baas', title: 'Broodjesbaas', desc: 'Houd het broodje in totaal 120 seconden vast.', stat: 'holdSeconds', goal: 120, skin: 'goud' }
 ];
 const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
-const isUnlocked = (skin) => (skin.price ? owns('skin:' + skin.id) : !skin.locked || progress.unlocked.includes(skin.id));
+const isUnlocked = (skin) => (skin.price || skin.pass ? owns('skin:' + skin.id) : !skin.locked || progress.unlocked.includes(skin.id));
 if (!isUnlocked(skinById(progress.skin))) progress.skin = 'leerling';
 
 function addStat(stat, amount) {
-  stats[stat] += amount;
+  stats[stat] = (stats[stat] || 0) + amount;
   save('kr-stats', stats);
-  if (dailyDef.stat === stat && !daily.done) {
-    daily.value += amount;
-    if (daily.value >= dailyDef.goal) {
-      daily.done = true;
+  dailyDefs.forEach((def, i) => {
+    if (def.stat !== stat || daily.done[i]) return;
+    daily.values[i] += amount;
+    if (daily.values[i] >= def.goal) {
+      daily.done[i] = true;
       addCoins(DAILY_REWARD);
       toast(`Dagelijkse challenge gehaald! +${DAILY_REWARD} munten`, 4000);
       sfx('unlock');
+      addXp(DAILY_XP);
     }
     save('kr-daily', daily);
-  }
+  });
   for (const c of CHALLENGES) {
     if (c.stat !== stat || stats[stat] < c.goal || progress.unlocked.includes(c.skin)) continue;
     progress.unlocked.push(c.skin);
@@ -135,6 +240,24 @@ function addCoins(n) {
   progress.coins += n;
   save('kr-progress', progress);
   document.querySelectorAll('.coins').forEach((el) => { el.textContent = progress.coins; });
+}
+
+// battlepass: elke 100 XP een trede, de beloning krijg je meteen
+function addXp(n) {
+  progress.xp += n;
+  const tier = Math.min(BATTLEPASS.length, Math.floor(progress.xp / XP_PER_TIER));
+  const got = [];
+  while (progress.bpTier < tier) {
+    const reward = BATTLEPASS[progress.bpTier++];
+    if (reward.coins) progress.coins += reward.coins;
+    else if (!owns(reward.id)) progress.owned.push(reward.id);
+    got.push(reward.label);
+  }
+  addCoins(0);
+  if (got.length) {
+    banner(`Battlepass trede ${progress.bpTier}: ${got.join(', ')}`, 5000);
+    sfx('unlock');
+  }
 }
 
 // ---------- Geluid (klein synthesizertje, geen bestanden nodig) ----------
@@ -245,7 +368,8 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.1);
 sun.position.set(16, 34, -6);
 sun.target.position.set(0, 0, 10);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1536, 1536);
+sun.shadow.autoUpdate = false; // de game loop ververst de schaduw om de frame
 sun.shadow.camera.left = -40;
 sun.shadow.camera.right = 40;
 sun.shadow.camera.top = 40;
@@ -265,7 +389,7 @@ vmLight.position.set(1, 2, 1);
 vmScene.add(vmLight);
 
 function resize() {
-  renderer.setPixelRatio(settings.hires ? Math.min(window.devicePixelRatio, 2) : 1);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.sharp ? 2 : 1.25));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   camera.aspect = vmCamera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -278,9 +402,9 @@ const matCache = new Map();
 function mat(color, glass) {
   const key = color + (glass ? 'g' : '');
   if (!matCache.has(key)) {
-    matCache.set(key, new THREE.MeshStandardMaterial(glass
-      ? { color, transparent: true, opacity: 0.28, roughness: 0.2, flatShading: true }
-      : { color, roughness: 0.95, flatShading: true }));
+    matCache.set(key, new THREE.MeshLambertMaterial(glass
+      ? { color, transparent: true, opacity: 0.28, flatShading: true }
+      : { color, flatShading: true }));
   }
   return matCache.get(key);
 }
@@ -300,6 +424,31 @@ function block(parent, color, w, h, d, x, y, z, shadows = true) {
   const m = mesh(boxGeo, mat(color), parent, x, y, z, shadows);
   m.scale.set(w, h, d);
   return m;
+}
+// Voegt alle meshes in een groep samen tot één mesh per materiaal. Scheelt honderden
+// losse tekenopdrachten per frame. Alleen voor groepen waarvan de onderdelen niet los bewegen.
+function mergeStatic(group) {
+  group.updateMatrixWorld(true);
+  const inverse = group.matrixWorld.clone().invert();
+  const buckets = new Map();
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    const key = o.material.uuid + (o.castShadow ? 'c' : '') + (o.receiveShadow ? 'r' : '');
+    if (!buckets.has(key)) buckets.set(key, { material: o.material, cast: o.castShadow, receive: o.receiveShadow, geos: [] });
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, o.matrixWorld));
+    buckets.get(key).geos.push(geo);
+  });
+  group.clear();
+  const merged = [];
+  for (const b of buckets.values()) {
+    const m = new THREE.Mesh(mergeGeometries(b.geos), b.material);
+    m.castShadow = b.cast;
+    m.receiveShadow = b.receive;
+    group.add(m);
+    merged.push(m);
+  }
+  return merged;
 }
 function seeded(seed) {
   return () => {
@@ -343,7 +492,7 @@ function buildMap() {
     const group = new THREE.Group();
     mesh(new THREE.BoxGeometry(g.w, g.h, g.d), mat(C.glass, true), group, g.x, g.y + g.h / 2, g.z, false);
     block(group, C.metal, g.w, 0.06, 0.2, g.x, g.y + g.h + 0.03, g.z);
-    world.add(group);
+    scene.add(group);
     panelMeshes.push(group);
   }
   for (const t of M.trees) drawTree(world, t.x, t.y, t.z, t.s, rnd);
@@ -374,19 +523,15 @@ function buildMap() {
   for (let z = -11.75; z <= 19; z += 4.5) down(new THREE.PlaneGeometry(44, 0.12), beamMat, 0, M.CEILING - 0.01, z);
   // tl-bakken en licht in de kluisjesgang onder de kantine
   for (const x of [-8, 0, 8]) down(new THREE.PlaneGeometry(3, 0.5), panelMat, x, -0.42, 4.4);
-  for (const x of [-6, 6]) {
-    const light = new THREE.PointLight(0xfff2dd, 30, 16);
-    light.position.set(x, -1, 2.6);
-    light.userData.on = 30;
-    world.add(light);
-    indoorLights.push(light);
-  }
+  wallMeshes.length = 0;
+  wallMeshes.push(...mergeStatic(world).filter((m) => !m.material.transparent));
   scene.add(world);
 }
 
 // ---------- Buitenruimte: plein, weg met bussen, bomen, gebouwen, wolken ----------
 const buses = [];
-const clouds = [];
+const clouds = new THREE.Group();
+let cloudTime = 0;
 function buildOutside() {
   const out = new THREE.Group();
   const rnd = seeded(7);
@@ -421,8 +566,9 @@ function buildOutside() {
         wheel.rotation.x = Math.PI / 2;
       }
     }
+    mergeStatic(g);
     g.position.set(x, G, z);
-    out.add(g);
+    scene.add(g);
     return g;
   }
   buses.push({ g: bus(-20, -44, 0xf4c430, 0xe23b2e), speed: 7 });
@@ -467,9 +613,12 @@ function buildOutside() {
       g.add(puffMesh);
     }
     g.position.set((rnd() - 0.5) * 420, 45 + rnd() * 35, (rnd() - 0.5) * 420);
-    out.add(g);
-    clouds.push(g);
+    clouds.add(g);
   }
+  mergeStatic(clouds);
+  scene.add(clouds);
+  out.traverse((o) => { o.castShadow = false; });
+  mergeStatic(out);
   scene.add(out);
 }
 function updateOutside(dt) {
@@ -478,10 +627,8 @@ function updateOutside(dt) {
     if (b.g.position.x > 150) b.g.position.x = -150;
     if (b.g.position.x < -150) b.g.position.x = 150;
   }
-  for (const c of clouds) {
-    c.position.x += dt * 1.2;
-    if (c.position.x > 210) c.position.x = -210;
-  }
+  cloudTime += dt;
+  clouds.position.x = Math.sin(cloudTime * 0.015) * 60;
 }
 buildMap();
 buildOutside();
@@ -529,6 +676,7 @@ function buildProps() {
       block(inner, [C.blue, C.red, 0x19b5b0][i % 3], 0.6, 0.05, 0.42, 0, 0.03, 0);
       block(inner, C.white, 0.2, 0.04, 0.2, 0.12, 0.07, 0);
     }
+    mergeStatic(inner);
     scene.add(outer);
     props.push({ def, outer, inner, x: 0, y: 0, z: 0, tip: 0, dir: 0, tipAnim: 0 });
   });
@@ -545,6 +693,8 @@ function resetProps() {
   for (const p of props) {
     Object.assign(p, { x: p.def.x, y: p.def.y, z: p.def.z, tip: 0, dir: 0, tipAnim: 0 });
     p.outer.position.set(p.x, p.y, p.z);
+    p.outer.rotation.set(0, 0, 0);
+    p.inner.rotation.y = p.def.rot;
   }
   broken.fill(false);
   panelMeshes.forEach((g) => { g.visible = true; });
@@ -555,6 +705,9 @@ function updateProps(dt) {
   const k = 1 - Math.exp(-18 * dt);
   for (const p of props) {
     const pos = p.outer.position;
+    // meubels die stilstaan kosten niets
+    if (p.tipAnim === p.tip && Math.abs(p.x - pos.x) + Math.abs(p.z - pos.z) + Math.abs(p.y + p.tip * TIP_LIFT[p.def.type] - pos.y) < 0.002) continue;
+    if (Math.abs(p.tip - p.tipAnim) < 0.003) p.tipAnim = p.tip;
     const lift = p.tipAnim * TIP_LIFT[p.def.type];
     p.tipAnim += (p.tip - p.tipAnim) * Math.min(1, dt * 9);
     pos.x += (p.x - pos.x) * k;
@@ -569,7 +722,7 @@ buildProps();
 // ---------- Frikandelbroodje ----------
 function makeBroodje() {
   const g = new THREE.Group();
-  const glow = (color, emissive, intensity) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: intensity, flatShading: true });
+  const glow = (color, emissive, intensity) => new THREE.MeshLambertMaterial({ color, emissive, emissiveIntensity: intensity, flatShading: true });
   mesh(new THREE.BoxGeometry(0.85, 0.24, 0.36), glow(0xe0a04a, 0xff8a1e, 0.55), g, 0, 0, 0);
   mesh(new THREE.BoxGeometry(0.7, 0.06, 0.2), glow(0xf3c877, 0xffa53a, 0.5), g, 0, 0.14, 0);
   mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.0, 6), glow(0x7a3b1d, 0x7a2a00, 0.4), g, 0, 0, 0).rotation.z = Math.PI / 2;
@@ -699,37 +852,15 @@ function sprayTexture(name, color) {
   ctx.fillText('WAS HIER', 0, 32);
   return new THREE.CanvasTexture(c);
 }
-// vaste stempels uit de winkel, getekend in de kleur van de speler
+// stempels uit de winkel en de battlepass: het icoon in de kleur van de speler
 function stampTexture(design, color) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = ctx.strokeStyle = color;
-  ctx.lineWidth = 14;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  if (design === 'kroon') {
-    [[40, 200], [40, 80], [90, 140], [128, 60], [166, 140], [216, 80], [216, 200]].forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-    ctx.closePath();
-    ctx.fill();
-  } else if (design === 'hart') {
-    ctx.moveTo(128, 220);
-    ctx.bezierCurveTo(10, 130, 50, 30, 128, 95);
-    ctx.bezierCurveTo(206, 30, 246, 130, 128, 220);
-    ctx.fill();
-  } else if (design === 'bliksem') {
-    [[150, 20], [60, 140], [120, 140], [96, 236], [196, 104], [134, 104]].forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-    ctx.closePath();
-    ctx.fill();
-  } else { // frikandelbroodje
-    ctx.roundRect(30, 96, 196, 72, 30);
-    ctx.stroke();
-    ctx.lineWidth = 22;
-    ctx.beginPath();
-    ctx.moveTo(14, 132);
-    ctx.lineTo(242, 132);
-    ctx.stroke();
-  }
+  ctx.fillStyle = color;
+  ctx.translate(20, 20);
+  ctx.scale(9, 9);
+  ctx.fill(new Path2D(ICONS[STAMP_ICON[design]] || ICONS.star), 'evenodd');
   return new THREE.CanvasTexture(c);
 }
 function placeSpray(e) {
@@ -757,6 +888,7 @@ function trySpray() {
   const hit = raycaster.intersectObjects(wallMeshes, false)[0];
   if (!hit) return toast('Ga dichter bij een muur staan om te spuiten');
   const n = hit.face.normal;
+  addStat('sprays', 1);
   socket.emit('spray', {
     x: hit.point.x + n.x * 0.02, y: hit.point.y + n.y * 0.02, z: hit.point.z + n.z * 0.02, nx: n.x, ny: n.y, nz: n.z,
     design: progress.stamp, img: progress.stamp === 'custom' ? progress.custom : null
@@ -822,6 +954,7 @@ function makePlayerModel(info) {
     block(p, skin.tone, 0.15, 0.2, 0.16, 0, -0.34, 0);
     block(p, 0xf2f0ea, 0.16, 0.06, 0.17, 0, -0.45, 0);
     block(p, 0x26262b, 0.19, 0.1, 0.3, 0, -0.51, 0.05);
+    mergeStatic(p);
     return p;
   };
   // armen: mouw, witte manchet en hand
@@ -830,35 +963,39 @@ function makePlayerModel(info) {
     block(p, skin.shirt, 0.15, 0.42, 0.17, 0, -0.21, 0);
     block(p, 0xf2f0ea, 0.155, 0.04, 0.175, 0, -0.43, 0);
     block(p, skin.tone, 0.13, 0.13, 0.14, 0, -0.52, 0);
+    mergeStatic(p);
     return p;
   };
   const legL = leg(-0.13), legR = leg(0.13);
   const armL = arm(-0.36), armR = arm(0.36);
+  const body = new THREE.Group();
   // romp: jasje met wit overhemd, kraag en stropdas
-  block(g, skin.pants, 0.5, 0.16, 0.3, 0, 0.6, 0);
-  block(g, skin.shirt, 0.56, 0.62, 0.3, 0, 0.96, 0);
-  block(g, 0xf2f0ea, 0.16, 0.32, 0.02, 0, 1.09, 0.155, false);
-  block(g, skin.hatColor && skin.hatColor !== 0xffffff ? skin.hatColor : C.red, 0.06, 0.27, 0.02, 0, 1.07, 0.17, false);
-  block(g, 0xf2f0ea, 0.3, 0.06, 0.32, 0, 1.28, 0);
-  block(g, skin.tone, 0.16, 0.08, 0.16, 0, 1.31, 0);
+  block(body, skin.pants, 0.5, 0.16, 0.3, 0, 0.6, 0);
+  block(body, skin.shirt, 0.56, 0.62, 0.3, 0, 0.96, 0);
+  block(body, 0xf2f0ea, 0.16, 0.32, 0.02, 0, 1.09, 0.155, false);
+  block(body, skin.hatColor && skin.hatColor !== 0xffffff ? skin.hatColor : C.red, 0.06, 0.27, 0.02, 0, 1.07, 0.17, false);
+  block(body, 0xf2f0ea, 0.3, 0.06, 0.32, 0, 1.28, 0);
+  block(body, skin.tone, 0.16, 0.08, 0.16, 0, 1.31, 0);
   // hoofd met haar, oren, ogen en mond
-  block(g, skin.tone, 0.46, 0.42, 0.44, 0, 1.54, 0);
-  block(g, skin.hair, 0.5, 0.12, 0.48, 0, 1.79, 0);
-  block(g, skin.hair, 0.5, 0.36, 0.1, 0, 1.6, -0.21);
-  block(g, skin.hair, 0.5, 0.08, 0.06, 0, 1.72, 0.22);
+  block(body, skin.tone, 0.46, 0.42, 0.44, 0, 1.54, 0);
+  block(body, skin.hair, 0.5, 0.12, 0.48, 0, 1.79, 0);
+  block(body, skin.hair, 0.5, 0.36, 0.1, 0, 1.6, -0.21);
+  block(body, skin.hair, 0.5, 0.08, 0.06, 0, 1.72, 0.22);
   for (const side of [-1, 1]) {
-    block(g, skin.hair, 0.06, 0.22, 0.3, side * 0.24, 1.66, -0.04);
-    block(g, skin.tone, 0.04, 0.1, 0.08, side * 0.245, 1.5, 0.02);
-    block(g, 0xffffff, 0.1, 0.1, 0.02, side * 0.1, 1.56, 0.222, false);
-    block(g, 0x26262b, 0.05, 0.07, 0.02, side * 0.1, 1.555, 0.232, false);
+    block(body, skin.hair, 0.06, 0.22, 0.3, side * 0.24, 1.66, -0.04);
+    block(body, skin.tone, 0.04, 0.1, 0.08, side * 0.245, 1.5, 0.02);
+    block(body, 0xffffff, 0.1, 0.1, 0.02, side * 0.1, 1.56, 0.222, false);
+    block(body, 0x26262b, 0.05, 0.07, 0.02, side * 0.1, 1.555, 0.232, false);
   }
-  block(g, 0x8a3b2e, 0.12, 0.03, 0.02, 0, 1.42, 0.222, false);
+  block(body, 0x8a3b2e, 0.12, 0.03, 0.02, 0, 1.42, 0.222, false);
   // rugzak in spelers- of teamkleur, met voorvak en schouderbanden
-  block(g, info.color, 0.44, 0.5, 0.2, 0, 0.98, -0.25);
-  block(g, 0x55565c, 0.3, 0.2, 0.04, 0, 0.88, -0.36);
-  block(g, info.color, 0.06, 0.5, 0.02, -0.19, 1.0, 0.156, false);
-  block(g, info.color, 0.06, 0.5, 0.02, 0.19, 1.0, 0.156, false);
-  addHat(g, skin, 1.85);
+  block(body, info.color, 0.44, 0.5, 0.2, 0, 0.98, -0.25);
+  block(body, 0x55565c, 0.3, 0.2, 0.04, 0, 0.88, -0.36);
+  block(body, info.color, 0.06, 0.5, 0.02, -0.19, 1.0, 0.156, false);
+  block(body, info.color, 0.06, 0.5, 0.02, 0.19, 1.0, 0.156, false);
+  addHat(body, skin, 1.85);
+  mergeStatic(body);
+  g.add(body);
   // de "L" op het voorhoofd voor Take the L
   const lSign = new THREE.Group();
   block(lSign, skin.tone, 0.07, 0.24, 0.06, 0.1, 1.7, 0.28);
@@ -872,7 +1009,7 @@ function makePlayerModel(info) {
   armR.add(item);
   const label = makeNameSprite(info.name);
   g.add(label);
-  return { group: g, legL, legR, armL, armR, item, label, lSign, shield, walk: 0, emote: 0, emoteStart: 0 };
+  return { group: g, legL, legR, armL, armR, item, label, lSign, shield, walk: 0, emote: 0, emoteStart: 0, lean: 0 };
 }
 
 // Zet armen en benen in de juiste houding. Geeft terug hoeveel het hele model moet
@@ -914,6 +1051,28 @@ function poseModel(m, swing, holding, emote, t) {
     m.armR.rotation.set(k > 0 ? 0.5 : -0.5, 0, k * 0.8);
     return { hop: 0, roll: -k * 0.2, spin: 0 };
   }
+  if (emote === 7) { // jumping jacks
+    const k = Math.abs(Math.sin(t * 6));
+    m.armL.rotation.set(0, 0, -k * 2.6);
+    m.armR.rotation.set(0, 0, k * 2.6);
+    m.legL.rotation.set(0, 0, -k * 0.5);
+    m.legR.rotation.set(0, 0, k * 0.5);
+    return { hop: k * 0.15, roll: 0, spin: 0 };
+  }
+  if (emote === 8) { // buiging
+    m.armL.rotation.set(0.4, 0, 0);
+    m.armR.rotation.set(-0.9, 0, -0.6);
+    return { hop: 0, roll: 0, spin: 0, lean: (Math.sin(t * 3) * 0.5 + 0.5) * 0.9 };
+  }
+  if (emote === 9) { // helikopter
+    m.armL.rotation.set(0, 0, -1.57);
+    m.armR.rotation.set(0, 0, 1.57);
+    return { hop: 0.05, roll: 0, spin: t * 13 };
+  }
+  if (emote === 10) { // saluut
+    m.armR.rotation.set(-2.2, 0, -0.95);
+    return { hop: 0, roll: 0, spin: 0 };
+  }
   if (emote === 6) { // facepalm
     m.armR.rotation.set(-2.35, 0, -0.55);
     return { hop: 0, roll: Math.sin(t * 3) * 0.06, spin: 0 };
@@ -951,8 +1110,7 @@ function updateRemotes(dt) {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     r.yaw += d * k;
     // voorover bij een dash, plat op de rug bij een knock-out
-    const lean = r.stunned ? -Math.PI / 2 : r.dashing ? 0.4 : 0;
-    r.group.rotation.x += (lean - r.group.rotation.x) * Math.min(1, dt * 10);
+    r.lean += ((r.stunned ? -Math.PI / 2 : r.dashing ? 0.4 : 0) - r.lean) * Math.min(1, dt * 10);
 
     const speed = Math.hypot(mx, mz) / Math.max(dt, 0.001);
     r.walk += Math.min(speed, 12) * dt * 1.6;
@@ -960,6 +1118,7 @@ function updateRemotes(dt) {
     const emote = r.stunned ? 0 : activeEmote(r, now);
     const pose = poseModel(r, swing, r.itemKind, emote, (now - r.emoteStart) / 1000);
     p.y = r.baseY + pose.hop;
+    r.group.rotation.x = r.lean + (pose.lean || 0);
     r.group.rotation.y = r.yaw + pose.spin;
     r.group.rotation.z = pose.roll;
     r.label.visible = settings.names;
@@ -1073,6 +1232,7 @@ function setEmote(e) {
   if (e === myEmote) return;
   myEmote = e;
   myEmoteStart = performance.now();
+  if (e) addStat('emotes', 1);
   socket.emit('emote', e);
 }
 function canAct() {
@@ -1096,6 +1256,7 @@ function tryThrow() {
   setEmote(0);
   camera.getWorldDirection(look);
   socket.emit('throw', { x: look.x, y: look.y, z: look.z });
+  addStat('throws', 1);
   lastThrown = myItem;
   myItem = 0;
   throwAnim = 1;
@@ -1112,10 +1273,10 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' || e.code === 'KeyF') tryThrow();
   if (e.code === 'KeyQ' && canAct() && myGadget) socket.emit('gadget');
   if (e.code === 'KeyT') trySpray();
-  if (/^Digit[1-6]$/.test(e.code) && canAct() && me.onGround) {
-    const n = Number(e.code[5]);
-    if (n <= 4 || owns('emote:' + n)) setEmote(n);
-    else toast('Deze emote koop je in de winkel');
+  if (/^Digit[123]$/.test(e.code) && canAct() && me.onGround) {
+    const n = progress.loadout[Number(e.code[5]) - 1];
+    if (n) setEmote(n);
+    else toast('Dit vak is leeg. Kies een emote in het menu');
   }
   const line = ['KeyZ', 'KeyX', 'KeyC', 'KeyV'].indexOf(e.code);
   if (line >= 0 && !spectating) socket.emit('say', line);
@@ -1127,9 +1288,13 @@ window.addEventListener('mousedown', (e) => {
   else if (e.button === 0 && controls.isLocked) tryThrow(); // de klik die de muis vastzet telt niet
 });
 
-controls.addEventListener('lock', () => $('pause').classList.add('hidden'));
+controls.addEventListener('lock', () => {
+  $('pause').classList.add('hidden');
+  $('clickstart').classList.add('hidden');
+});
+$('clickstart').addEventListener('click', () => controls.lock());
 controls.addEventListener('unlock', () => {
-  if (playing && !spectating) $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
+  if (playing && !spectating && $('clickstart').classList.contains('hidden')) $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
 });
 function resume() {
   if (!touchMode) return controls.lock();
@@ -1139,6 +1304,9 @@ function resume() {
 $('btn-resume').addEventListener('click', resume);
 $('pause').addEventListener('click', (e) => { if (e.target === $('pause')) resume(); });
 
+const dashFill = $('dash-fill');
+const dashBar = $('dash');
+let lastFill = '';
 function updateLocal(dt) {
   const now = performance.now();
   const active = isActive() && !stunned;
@@ -1206,6 +1374,7 @@ function updateLocal(dt) {
     liftArmed = false;
     liftTimer = 0;
     sfx('lift');
+    addStat('lifts', 1);
     toast(li === 0 ? 'Lift naar beneden' : 'Lift naar boven');
   }
 
@@ -1218,7 +1387,7 @@ function updateLocal(dt) {
     camera.position.set(me.x - look.x * 3.4, Math.max(me.y + 0.4, camY + 0.2 - look.y * 3.4), me.z - look.z * 3.4);
     const pose = poseModel(selfModel, 0, 0, myEmote, (now - myEmoteStart) / 1000);
     selfModel.group.position.set(me.x, me.y + pose.hop, me.z);
-    selfModel.group.rotation.set(0, Math.atan2(-fwd.x, -fwd.z) + pose.spin, pose.roll);
+    selfModel.group.rotation.set(pose.lean || 0, Math.atan2(-fwd.x, -fwd.z) + pose.spin, pose.roll);
   } else {
     const bob = settings.bob && me.onGround ? Math.abs(swing) * 0.05 : 0;
     camera.position.set(me.x, camY - bob - landKick * 0.12, me.z);
@@ -1237,8 +1406,12 @@ function updateLocal(dt) {
   }
 
   const cd = Math.max(0, dashReadyAt - now / 1000);
-  $('dash-fill').style.transform = `scaleX(${1 - cd / DASH_COOLDOWN})`;
-  $('dash').classList.toggle('ready', cd === 0);
+  const fill = (1 - cd / DASH_COOLDOWN).toFixed(2);
+  if (fill !== lastFill) {
+    lastFill = fill;
+    dashFill.style.transform = `scaleX(${fill})`;
+    dashBar.classList.toggle('ready', cd === 0);
+  }
 }
 
 function updateBroodje(dt, time) {
@@ -1337,39 +1510,95 @@ function updatePodium(time) {
 const screens = ['menu', 'lobby', 'hud', 'gameover'];
 function show(id) {
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
+  if (id === 'menu') renderMenuSide();
   if (id !== 'hud') $('pause').classList.add('hidden');
 }
 
 let lobby = null;
 
+// Een tegel zoals in de winkel en de battlepass: plaatje op een gekleurde achtergrond met een naamstrook.
+function tile(kind, visual, name, footer) {
+  const el = document.createElement('button');
+  el.className = 'tile k-' + kind;
+  el.innerHTML = '<span class="art"></span><span class="bar2"><b></b><small></small></span>';
+  el.querySelector('.art').append(visual);
+  el.querySelector('b').textContent = name;
+  el.querySelector('small').innerHTML = footer;
+  return el;
+}
+function picture(src) {
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = '';
+  return img;
+}
+function bigIcon(name) {
+  const span = document.createElement('span');
+  span.className = 'bigico';
+  span.innerHTML = icon(name);
+  return span;
+}
+// het plaatje dat bij een beloning of winkelartikel hoort
+function visualFor(id) {
+  if (id.startsWith('skin:')) return picture(thumb(id.slice(5)));
+  if (id.startsWith('emote:')) return picture(thumb(progress.skin, Number(id.slice(6))));
+  if (id.startsWith('stamp:')) return bigIcon(STAMP_ICON[id.slice(6)]);
+  return bigIcon('coin');
+}
+const kindOf = (id) => id.split(':')[0];
+
 function renderSkins() {
   $('skin-grid').replaceChildren(...SKINS.map((skin) => {
     const open = isUnlocked(skin);
-    const card = document.createElement('button');
-    card.className = 'skin' + (skin.id === progress.skin ? ' selected' : '') + (open ? '' : ' locked');
-    const avatar = document.createElement('div');
-    avatar.className = 'avatar';
-    [['hat', skin.hatColor || skin.hair], ['head', skin.tone], ['body', skin.shirt], ['legs', skin.pants]].forEach(([cls, color]) => {
-      const part = document.createElement('i');
-      part.className = cls;
-      part.style.background = hex(color);
-      avatar.append(part);
-    });
-    const name = document.createElement('span');
-    name.textContent = skin.name;
-    card.append(avatar, name);
+    let footer = skin.id === progress.skin ? 'Gekozen' : 'Kies';
     if (!open) {
-      const how = document.createElement('small');
-      how.textContent = skin.price ? `🪙 ${skin.price} in de winkel` : '🔒 ' + CHALLENGES.find((c) => c.skin === skin.id).title;
-      card.append(how);
+      footer = icon('lock') + (skin.pass ? `Battlepass trede ${BATTLEPASS.findIndex((r) => r.id === 'skin:' + skin.id) + 1}`
+        : skin.price ? `${skin.price} in de winkel`
+        : CHALLENGES.find((c) => c.skin === skin.id).title);
     }
+    const card = tile('skin', picture(thumb(skin.id)), skin.name, footer);
+    if (skin.id === progress.skin) card.classList.add('selected');
+    if (!open) card.classList.add('locked');
     card.addEventListener('click', () => {
       if (!open) return;
       progress.skin = skin.id;
       save('kr-progress', progress);
       buildArms(skin);
+      buildPreview();
       if (lobby) socket.emit('setSkin', skin.id);
       renderSkins();
+    });
+    return card;
+  }));
+}
+
+// ---------- Emotes kiezen: drie vakken voor de toetsen 1, 2 en 3 ----------
+let emoteSlot = 0;
+function renderEmotes() {
+  $('emote-slots').replaceChildren(...progress.loadout.map((n, i) => {
+    const slot = tile('emote', n ? picture(thumb(progress.skin, n)) : bigIcon('plus'), n ? EMOTE_NAMES[n] : 'Leeg', `Toets ${i + 1}`);
+    if (i === emoteSlot) slot.classList.add('selected');
+    slot.addEventListener('click', () => {
+      emoteSlot = i;
+      renderEmotes();
+    });
+    return slot;
+  }));
+  $('emote-grid').replaceChildren(...EMOTE_NAMES.slice(1).map((name, k) => {
+    const n = k + 1;
+    const open = n <= 4 || owns('emote:' + n);
+    const at = progress.loadout.indexOf(n);
+    const card = tile('emote', picture(thumb(progress.skin, n)), name,
+      open ? (at >= 0 ? `Op toets ${at + 1}` : 'Kies') : icon('lock') + EMOTE_SOURCE(n));
+    if (!open) card.classList.add('locked');
+    if (at >= 0) card.classList.add('selected');
+    card.addEventListener('click', () => {
+      if (!open) return;
+      // staat hij al in een ander vak, dan wisselen de twee van plek
+      if (at >= 0) progress.loadout[at] = progress.loadout[emoteSlot];
+      progress.loadout[emoteSlot] = n;
+      save('kr-progress', progress);
+      renderEmotes();
     });
     return card;
   }));
@@ -1397,16 +1626,78 @@ function renderChallenges() {
     li.append(top, desc, bar);
     return li;
   }));
-  // dagelijkse challenge bovenaan
-  const li = document.createElement('li');
-  li.className = daily.done ? 'done daily' : 'daily';
-  const value = Math.min(dailyDef.goal, Math.floor(daily.value));
-  li.innerHTML = '<div class="top"><span>Vandaag</span><span></span></div><p></p><div class="bar"><i></i></div>';
-  li.querySelector('.top span:last-child').textContent = `${value} / ${dailyDef.goal}`;
-  li.querySelector('p').textContent = `${dailyDef.desc} Beloning: ${DAILY_REWARD} munten.`;
-  li.querySelector('i').style.width = `${(value / dailyDef.goal) * 100}%`;
-  $('challenge-list').prepend(li);
+  $('challenge-list').prepend(...dailyRows());
 }
+// de drie dagelijkse challenges als lijstregels
+function dailyRows() {
+  return dailyDefs.map((def, i) => {
+    const li = document.createElement('li');
+    li.className = daily.done[i] ? 'done daily' : 'daily';
+    const value = Math.min(def.goal, Math.floor(daily.values[i]));
+    li.innerHTML = '<div class="top"><span>Vandaag</span><span></span></div><p></p><div class="bar"><i></i></div>';
+    li.querySelector('.top span:last-child').textContent = `${value} / ${def.goal}`;
+    li.querySelector('p').textContent = `${def.desc} +${DAILY_REWARD} munten`;
+    li.querySelector('i').style.width = `${(value / def.goal) * 100}%`;
+    return li;
+  });
+}
+// rechterkolom van het hoofdmenu: challenges van vandaag en de battlepass
+function renderMenuSide() {
+  $('menu-dailies').replaceChildren(...dailyRows());
+  const tier = progress.bpTier;
+  const into = tier >= BATTLEPASS.length ? XP_PER_TIER : progress.xp % XP_PER_TIER;
+  $('bp-tier').textContent = `Trede ${tier} / ${BATTLEPASS.length}`;
+  $('bp-bar').style.width = `${(into / XP_PER_TIER) * 100}%`;
+  $('bp-next').textContent = tier >= BATTLEPASS.length ? 'Alles vrijgespeeld!' : `Volgende: ${BATTLEPASS[tier].label}`;
+}
+const PASS_PAGE = 10;
+let passPage = -1;
+let passSel = 0;
+function renderPass() {
+  renderMenuSide();
+  const tier = progress.bpTier;
+  const total = BATTLEPASS.length;
+  if (passPage < 0) { // open op de pagina met de volgende beloning
+    passSel = Math.min(tier, total - 1);
+    passPage = Math.floor(passSel / PASS_PAGE);
+  }
+  const pages = Math.ceil(total / PASS_PAGE);
+  const into = tier >= total ? XP_PER_TIER : progress.xp % XP_PER_TIER;
+  $('pass-tier').textContent = tier;
+  $('pass-bar').style.width = `${(into / XP_PER_TIER) * 100}%`;
+  $('pass-xp').textContent = tier >= total ? 'Alles vrijgespeeld' : `${into} / ${XP_PER_TIER} XP tot trede ${tier + 1}`;
+  $('pass-page').textContent = `Pagina ${passPage + 1} / ${pages}`;
+  $('pass-prev').disabled = passPage === 0;
+  $('pass-next').disabled = passPage === pages - 1;
+
+  const from = passPage * PASS_PAGE;
+  $('pass-grid').replaceChildren(...BATTLEPASS.slice(from, from + PASS_PAGE).map((r, k) => {
+    const i = from + k;
+    const cell = document.createElement('button');
+    cell.className = `slot k-${r.type}` + (i < tier ? ' done' : i === tier ? ' next' : ' locked') + (i === passSel ? ' selected' : '');
+    cell.innerHTML = `<span class="num">${i + 1}</span><span class="art"></span><span class="mark">${icon(i < tier ? 'check' : 'lock')}</span>`;
+    cell.querySelector('.art').append(r.type === 'coins' ? bigIcon('coin') : visualFor(r.id));
+    if (r.type === 'coins') cell.querySelector('.art').append(Object.assign(document.createElement('b'), { textContent: r.coins }));
+    cell.addEventListener('click', () => {
+      passSel = i;
+      renderPass();
+    });
+    return cell;
+  }));
+
+  // rechts: de gekozen beloning groot in beeld
+  const r = BATTLEPASS[passSel];
+  const show = $('pass-show');
+  show.className = 'k-' + r.type;
+  show.innerHTML = '<span class="art"></span><small></small><b></b><p></p>';
+  show.querySelector('.art').append(r.type === 'coins' ? bigIcon('coin') : visualFor(r.id));
+  show.querySelector('small').textContent = `Trede ${passSel + 1} · ${{ skin: 'Skin', emote: 'Emote', stamp: 'Spuitbus-stempel', coins: 'Munten' }[r.type]}`;
+  show.querySelector('b').textContent = r.name;
+  show.querySelector('p').textContent = passSel < tier ? 'Vrijgespeeld'
+    : `Nog ${(passSel + 1) * XP_PER_TIER - progress.xp} XP`;
+}
+$('pass-prev').addEventListener('click', () => { passPage--; renderPass(); });
+$('pass-next').addEventListener('click', () => { passPage++; renderPass(); });
 
 function applySettings() {
   controls.pointerSpeed = settings.sens;
@@ -1418,7 +1709,7 @@ function applySettings() {
   $('out-mus').textContent = Math.round(settings.mus * 100) + '%';
   resize();
 }
-[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['hires', 'check'], ['bob', 'check'], ['names', 'check']]
+[['sens', 'range'], ['fov', 'range'], ['vol', 'range'], ['mus', 'range'], ['shadows', 'check'], ['sharp', 'check'], ['bob', 'check'], ['names', 'check']]
   .forEach(([key, kind]) => {
     const el = $('set-' + key);
     if (kind === 'range') el.value = settings[key];
@@ -1437,6 +1728,8 @@ document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('
   if (btn.dataset.open === 'shop') renderShop();
   if (btn.dataset.open === 'board') renderBoard();
   if (btn.dataset.open === 'draw') openDraw();
+  if (btn.dataset.open === 'pass') { passPage = -1; renderPass(); }
+  if (btn.dataset.open === 'emotes') renderEmotes();
   $(btn.dataset.open).classList.remove('hidden');
 }));
 document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => {
@@ -1471,8 +1764,27 @@ function join() {
   socket.emit('joinLobby', { name: playerName(), code, skin: progress.skin }, onJoined);
 }
 $('btn-join').addEventListener('click', join);
+$('btn-public').addEventListener('click', () => {
+  if (!playerName()) return ($('menu-error').textContent = 'Vul eerst je naam in.');
+  socket.emit('quickJoin', { name: playerName(), skin: progress.skin }, onJoined);
+});
+// aftellen in een openbare lobby
+let lobbyStartAt = 0;
+setInterval(() => {
+  if (!lobby || !lobby.public) return;
+  const left = Math.ceil((lobbyStartAt - performance.now()) / 1000);
+  $('lobby-auto').textContent = lobby.playing ? 'Potje is bezig'
+    : lobby.startIn === null ? 'Het aftellen begint zodra genoeg spelers ready zijn'
+    : `Het potje start over ${Math.max(0, left)} s`;
+}, 250);
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
-$('btn-start').addEventListener('click', () => socket.emit('startGame'));
+$('btn-start').addEventListener('click', () => {
+  socket.emit('startGame', (res) => { $('lobby-note').textContent = res.ok ? '' : res.error; });
+});
+$('btn-ready').addEventListener('click', () => {
+  const mine = lobby && lobby.players.find((p) => p.id === socket.id);
+  if (mine) socket.emit('setReady', !mine.ready);
+});
 
 function stopPlaying() {
   playing = false;
@@ -1482,6 +1794,7 @@ function stopPlaying() {
   lossNote = null;
   document.body.classList.remove('spectating');
   $('alarm').classList.add('hidden');
+  $('clickstart').classList.add('hidden');
   $('feed').replaceChildren();
   if (controls.isLocked) controls.unlock();
   clearRemotes();
@@ -1542,14 +1855,30 @@ socket.on('lobby', (info) => {
   roster = new Map(info.players.map((p) => [p.id, p]));
   if (!info.playing) mode = info.mode;
   $('lobby-code').textContent = info.code;
+  $('lobby-kind').textContent = info.public ? 'Openbare lobby' : 'Privélobby';
+  $('lobby-auto').classList.toggle('hidden', !info.public);
+  if (info.startIn !== null) lobbyStartAt = performance.now() + info.startIn * 1000;
   $('lobby-count').textContent = `(${info.players.length}/8)`;
   $('lobby-players').replaceChildren(...info.players.map((p) => {
     const tags = [skinById(p.skin).name];
     if (p.id === info.hostId) tags.push('host');
     if (p.id === socket.id) tags.push('jij');
     if (p.waiting) tags.push('kijkt mee');
-    return row(p.color, p.name, badge(tags.join(' · '), 'tag'));
+    const li = row(p.color, p.name, badge(tags.join(' · '), 'tag'));
+    const state = document.createElement('span');
+    state.className = 'ready-mark' + (p.ready ? ' on' : '');
+    state.innerHTML = p.ready ? icon('check') + 'Ready' : 'Niet ready';
+    if (!p.waiting) li.append(state);
+    return li;
   }));
+  const active = info.players.filter((p) => !p.waiting);
+  const mine = active.find((p) => p.id === socket.id);
+  $('ready-info').textContent = `${active.filter((p) => p.ready).length} van ${active.length} ready · ${info.need} nodig om te starten`;
+  $('btn-ready').classList.toggle('on', !!(mine && mine.ready));
+  $('btn-ready').classList.toggle('hidden', !mine || info.playing);
+  $('btn-ready').querySelector('span').textContent = mine && mine.ready ? 'Je bent ready' : 'Ready';
+  $('btn-start').classList.toggle('dim', !info.canStart);
+  $('lobby-note').textContent = '';
   const isHost = info.hostId === socket.id;
   $('btn-start').classList.toggle('hidden', !isHost);
   $('lobby-wait').classList.toggle('hidden', isHost);
@@ -1589,7 +1918,8 @@ socket.on('gameStart', (data) => {
   camera.lookAt(M.BROODJE_SPAWN.x, camY, M.BROODJE_SPAWN.z);
   broodje.position.set(M.BROODJE_SPAWN.x, 0.8, M.BROODJE_SPAWN.z);
   show('hud');
-  $('pause').classList.toggle('hidden', touchMode);
+  $('pause').classList.add('hidden');
+  $('clickstart').classList.toggle('hidden', touchMode);
   $('holding').classList.add('hidden');
   $('item-hint').classList.add('hidden');
   banner(mode === 'teams' ? `Teams · jij speelt voor ${TEAM_NAMES[teams[socket.id]]}` : MODE_INFO[mode].name, 3500);
@@ -1798,6 +2128,7 @@ socket.on('event', (e) => {
   } else if (e.type === 'power') {
     if (mine) toast(`Uit de automaat: ${POWER_TEXT[e.kind]}`, 3000);
     if (mine) sfx('power');
+    if (mine) addStat('powerups', 1);
   } else if (e.type === 'capture') {
     banner(`${nameOf(e.id)} scoort voor team ${TEAM_NAMES[e.team]}! +15`);
     if (mine) lossNote = { text: 'Gescoord! +15', kind: 'good' };
@@ -1851,7 +2182,9 @@ socket.on('gameOver', (data) => {
   const mine = data.ranking.find((p) => p.id === socket.id);
   const earned = 10 + Math.floor((mine ? mine.score : 0) / 5) + (won && data.ranking.length > 1 ? 20 : 0);
   addCoins(earned);
-  $('earned').textContent = `+${earned} munten verdiend`;
+  const xp = 25 + Math.min(120, Math.floor((mine ? mine.score : 0) / 2)) + (won && data.ranking.length > 1 ? 40 : 0);
+  addXp(xp);
+  $('earned').textContent = `+${earned} munten · +${xp} XP`;
 });
 
 // later binnengekomen: meekijken tot het volgende potje
@@ -1912,48 +2245,61 @@ function say(id, text) {
 }
 
 // ---------- Winkel ----------
-function renderShop() {
-  $('shop-list').replaceChildren(...SHOP.map((item) => {
-    const li = document.createElement('li');
-    const text = document.createElement('div');
-    text.innerHTML = '<b></b><small></small>';
-    text.querySelector('b').textContent = item.name;
-    text.querySelector('small').textContent = item.kind;
-    const btn = document.createElement('button');
-    btn.className = 'btn small';
-    const stamp = item.id.startsWith('stamp:') ? item.id.slice(6) : null;
-    if (!owns(item.id)) {
-      btn.textContent = `🪙 ${item.price}`;
-      btn.classList.add('primary');
-      btn.disabled = progress.coins < item.price;
-      btn.addEventListener('click', () => {
-        progress.owned.push(item.id);
-        addCoins(-item.price);
-        sfx('coin');
-        renderShop();
-      });
-    } else if (stamp) {
-      btn.textContent = progress.stamp === stamp ? 'Gekozen' : 'Kies';
-      btn.disabled = progress.stamp === stamp;
-      btn.addEventListener('click', () => {
-        progress.stamp = stamp;
-        save('kr-progress', progress);
-        renderShop();
-      });
-    } else {
-      btn.textContent = 'In bezit';
-      btn.disabled = true;
+const dealItem = SHOP[dayNumber % SHOP.length];
+const priceOf = (item) => (item === dealItem ? Math.round((item.price * 0.7) / 5) * 5 : item.price);
+let confirmId = null; // eerste klik vraagt om bevestiging, tweede klik koopt
+function shopTile(item) {
+  const price = priceOf(item);
+  const owned = owns(item.id);
+  let footer = owned ? 'In bezit' : icon('coin') + price;
+  if (!owned && item === dealItem) footer = `<s>${item.price}</s> ` + footer;
+  if (confirmId === item.id) footer = 'Nog een keer klikken om te kopen';
+  const el = tile(kindOf(item.id), visualFor(item.id), item.name, footer);
+  el.querySelector('.art').insertAdjacentHTML('beforeend', `<em>${item.kind}</em>`);
+  if (owned) el.classList.add('owned');
+  else if (progress.coins < price) el.classList.add('poor');
+  el.addEventListener('click', () => {
+    if (owned) return;
+    if (progress.coins < price) return;
+    if (confirmId !== item.id) {
+      confirmId = item.id;
+      return renderShop();
     }
-    li.append(text, btn);
-    return li;
-  }));
-  $('stamp-now').textContent = { naam: 'je naam', custom: 'je eigen tekening' }[progress.stamp] || progress.stamp;
+    confirmId = null;
+    progress.owned.push(item.id);
+    addCoins(-price);
+    sfx('coin');
+    renderShop();
+  });
+  return el;
 }
-$('btn-stamp-name').addEventListener('click', () => {
-  progress.stamp = 'naam';
-  save('kr-progress', progress);
-  renderShop();
-});
+function renderShop() {
+  $('shop-featured').replaceChildren(shopTile(dealItem));
+  $('shop-grid').replaceChildren(...SHOP.filter((item) => item !== dealItem).map(shopTile));
+  // alle stempels die je hebt, uit de winkel en de battlepass
+  const stamps = ['naam'].concat(progress.custom ? ['custom'] : [],
+    progress.owned.filter((id) => id.startsWith('stamp:')).map((id) => id.slice(6)));
+  $('stamp-grid').replaceChildren(...stamps.map((id) => {
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (progress.stamp === id ? ' active' : '');
+    if (STAMP_ICON[id]) chip.innerHTML = icon(STAMP_ICON[id]);
+    else chip.textContent = id === 'naam' ? 'Naam' : 'Eigen tekening';
+    chip.addEventListener('click', () => {
+      progress.stamp = id;
+      save('kr-progress', progress);
+      renderShop();
+    });
+    return chip;
+  }));
+}
+// aftellen tot de volgende aanbieding (middernacht)
+setInterval(() => {
+  if ($('shop').classList.contains('hidden')) return;
+  const d = new Date();
+  const left = 86400 - (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds());
+  const two = (n) => String(n).padStart(2, '0');
+  $('shop-timer').textContent = `${two(Math.floor(left / 3600))}:${two(Math.floor((left % 3600) / 60))}:${two(left % 60)}`;
+}, 1000);
 
 // ---------- Eigen stempel tekenen ----------
 const drawCanvas = $('draw-canvas');
@@ -2012,18 +2358,66 @@ async function renderBoard() {
     const data = await (await fetch('/api/leaderboard')).json();
     $('board-week').textContent = data.top.length ? `Week ${data.week.split('-W')[1]}` : 'Nog niemand heeft deze week gespeeld.';
     $('board-list').replaceChildren(...data.top.map((p, i) =>
-      row([0xf5c542, 0xbfc5cc, 0xc98d5e][i] || 0x55565c, `${i + 1}. ${p.name}`, badge(`${p.points} pt · ${p.wins}× winst`, 'pts'))));
+      row([0xf5c542, 0xbfc5cc, 0xc98d5e][i] || 0x55565c, `${i + 1}. ${p.name}`, badge(`${p.points} pt · ${p.wins} keer winst`, 'pts'))));
   } catch (e) {
     $('board-week').textContent = 'Ranglijst kon niet geladen worden.';
   }
 }
+
+// ---------- Je poppetje in het hoofdmenu ----------
+const preview = {
+  renderer: new THREE.WebGLRenderer({ canvas: $('preview'), antialias: true, alpha: true }),
+  scene: new THREE.Scene(),
+  camera: new THREE.PerspectiveCamera(32, 220 / 250, 0.1, 20),
+  model: null
+};
+preview.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+preview.renderer.setSize(220, 250, false);
+preview.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 1.9));
+const previewLight = new THREE.DirectionalLight(0xffffff, 1.6);
+previewLight.position.set(2, 4, 3);
+preview.scene.add(previewLight);
+preview.camera.position.set(0, 1.35, 5.4);
+preview.camera.lookAt(0, 1.05, 0);
+function buildPreview() {
+  if (preview.model) preview.scene.remove(preview.model.group);
+  preview.model = makePlayerModel({ name: '', skin: progress.skin, color: 0x3aa655 });
+  preview.model.label.visible = false;
+  preview.scene.add(preview.model.group);
+}
+function updatePreview(time) {
+  poseModel(preview.model, 0, 0, 3, time);
+  preview.model.group.rotation.y = Math.sin(time * 0.7) * 0.7;
+  preview.renderer.render(preview.scene, preview.camera);
+}
+// Rendert een poppetje (eventueel in een emote-houding) naar een plaatje voor de tegels.
+const thumbCache = new Map();
+function thumb(skinId, emote = 0) {
+  const key = skinId + ':' + emote;
+  if (!thumbCache.has(key)) {
+    const m = makePlayerModel({ name: '', skin: skinId, color: 0x3aa655 });
+    m.label.visible = false;
+    const pose = poseModel(m, 0, 0, emote, 0.55);
+    m.group.position.y = pose.hop;
+    m.group.rotation.set(pose.lean || 0, 0.45, pose.roll);
+    if (preview.model) preview.model.group.visible = false;
+    preview.scene.add(m.group);
+    preview.renderer.render(preview.scene, preview.camera);
+    thumbCache.set(key, preview.renderer.domElement.toDataURL());
+    preview.scene.remove(m.group);
+    if (preview.model) preview.model.group.visible = true;
+  }
+  return thumbCache.get(key);
+}
+buildPreview();
+renderMenuSide();
 
 // ---------- Uitleg voor nieuwe spelers ----------
 if (!localStorage.getItem('kr-seen')) {
   localStorage.setItem('kr-seen', '1');
   $('howto').classList.remove('hidden');
 }
-addCoins(0);
+addXp(0); // haalt beloningen op die nog niet waren uitgekeerd en ververst de munten
 
 // ---------- Besturing op een telefoon ----------
 if (touchMode) {
@@ -2070,7 +2464,7 @@ if (touchMode) {
     dash: (down) => down && tryDash(),
     throw: (down) => down && tryThrow(),
     banana: (down) => down && canAct() && myGadget && socket.emit('gadget'),
-    emote: (down) => down && canAct() && me.onGround && setEmote(1),
+    emote: (down) => down && canAct() && me.onGround && setEmote(progress.loadout.find((n) => n) || 1),
     menu: (down) => {
       if (!down || !playing || spectating) return;
       paused = true;
@@ -2094,8 +2488,11 @@ socket.on('disconnect', () => {
 
 // ---------- Game loop ----------
 const clock = new THREE.Clock();
+let frameCount = 0;
+const menuEl = $('menu');
 function frame() {
   requestAnimationFrame(frame);
+  if (++frameCount % 2 === 0) sun.shadow.needsUpdate = true;
   const dt = Math.min(0.05, clock.getDelta());
   const time = clock.elapsedTime;
 
@@ -2128,6 +2525,7 @@ function frame() {
     }
   }
 
+  if (!menuEl.classList.contains('hidden')) updatePreview(time);
   renderer.clear();
   renderer.render(scene, camera);
   if (playing && !spectating && !stunned && !myEmote) {

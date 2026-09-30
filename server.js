@@ -19,6 +19,8 @@ const BROODJE_LIFE = 30;      // seconden vasthouden tot het broodje op is
 const STREAK_HITS = 3;        // rake worpen op rij voor een pizzadoos
 const STREAK_AMMO = 10;
 const CHAT_LINES = 4;
+const COUNTDOWN_MS = 10000;  // aftellen in een openbare lobby, zodat er nog mensen bij kunnen
+const READY_SHARE = 0.6;     // 6 op de 10 spelers ready is genoeg om te starten
 const PLAYER_RADIUS = 0.4;
 const BROODJE_RADIUS = 0.3;
 const BROODJE_REST = 0.4;     // hoogte boven de grond als het broodje stil ligt
@@ -110,19 +112,29 @@ function freeColor(lobby) {
 function newPlayer(socket, data, lobby) {
   return {
     id: socket.id, name: cleanName(data && data.name), skin: cleanSkin(data && data.skin), color: freeColor(lobby),
-    team: 0, x: 0, y: 0, z: 0, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
+    ready: false, team: 0, x: 0, y: 0, z: 0, ry: 0, score: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
     lastDash: 0, dashUntil: 0, dashX: 0, dashZ: 1, lastSpray: 0, lastSay: 0, streak: 0, ammo: 0,
     noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0
   };
 }
 
+const readyNeeded = (lobby) => Math.ceil(lobby.players.size * READY_SHARE);
+function canStart(lobby) {
+  const ready = [...lobby.players.values()].filter((p) => p.ready).length;
+  return lobby.players.size >= (lobby.public ? 2 : 1) && ready >= readyNeeded(lobby);
+}
+
 function lobbyInfo(lobby) {
   return {
+    need: readyNeeded(lobby),
+    canStart: canStart(lobby),
     code: lobby.code,
+    public: lobby.public,
+    startIn: lobby.autoStartAt ? Math.max(0, Math.ceil((lobby.autoStartAt - Date.now()) / 1000)) : null,
     hostId: lobby.hostId,
     playing: lobby.playing,
     mode: lobby.mode,
-    players: [...lobby.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin }))
+    players: [...lobby.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, ready: p.ready }))
       .concat([...lobby.waiting.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, skin: p.skin, waiting: true })))
   };
 }
@@ -505,6 +517,7 @@ function startGame(lobby) {
   const pick = () => pool[Math.floor(Math.random() * pool.length)];
   lobby.schedule = [{ at: 140, type: pick() }, { at: 100, type: pick() }, { at: 60, type: 'dubbel' }, { at: 30, type: pick() }];
   lobby.playing = true;
+  lobby.autoStartAt = null;
   lobby.endsAt = Date.now() + GAME_SECONDS * 1000;
   lobby.lastTick = Date.now();
   sendLobby(lobby);
@@ -540,6 +553,7 @@ function endGame(lobby) {
   // wie meekeek doet het volgende potje mee
   for (const [id, p] of lobby.waiting) lobby.players.set(id, p);
   lobby.waiting.clear();
+  for (const p of lobby.players.values()) p.ready = false;
   sendLobby(lobby);
 }
 
@@ -589,7 +603,24 @@ function tick(lobby, now) {
 
 setInterval(() => {
   const now = Date.now();
-  for (const lobby of lobbies.values()) if (lobby.playing) tick(lobby, now);
+  for (const lobby of lobbies.values()) {
+    if (lobby.playing) {
+      tick(lobby, now);
+    } else if (lobby.public) {
+      // openbare lobby: telt tien seconden af zodra genoeg spelers ready zijn
+      if (!canStart(lobby)) {
+        if (lobby.autoStartAt) {
+          lobby.autoStartAt = null;
+          sendLobby(lobby);
+        }
+      } else if (!lobby.autoStartAt) {
+        lobby.autoStartAt = now + COUNTDOWN_MS;
+        sendLobby(lobby);
+      } else if (now >= lobby.autoStartAt) {
+        startGame(lobby);
+      }
+    }
+  }
   MapData.dynamic = [];
 }, TICK_MS);
 
@@ -627,10 +658,11 @@ io.on('connection', (socket) => {
     return { lobby, p };
   };
 
-  socket.on('createLobby', (data, cb) => {
+  function createLobby(data, cb, isPublic) {
     leaveLobby(socket);
     const code = makeCode();
     const lobby = {
+      public: isPublic, autoStartAt: null,
       code, hostId: socket.id, players: new Map(), waiting: new Map(), playing: false, mode: 'klassiek', endsAt: 0, lastTick: 0,
       broodje: null, items: [], vending: [], projectiles: [], bananas: [], props: [], panels: [], dynamic: [],
       event: { type: '', until: 0 }, double: false, schedule: []
@@ -641,10 +673,19 @@ io.on('connection', (socket) => {
     socket.join(code);
     reply(cb, { ok: true });
     sendLobby(lobby);
+  }
+  socket.on('createLobby', (data, cb) => createLobby(data, cb, false));
+
+  // openbare lobby: schuif aan bij een bestaande, of maak een nieuwe
+  socket.on('quickJoin', (data, cb) => {
+    const open = [...lobbies.values()].filter((l) => l.public && l.code !== socket.data.code && l.players.size + l.waiting.size < MAX_PLAYERS);
+    const lobby = open.find((l) => !l.playing) || open[0];
+    if (lobby) joinLobby(lobby.code, data, cb);
+    else createLobby(data, cb, true);
   });
 
-  socket.on('joinLobby', (data, cb) => {
-    const code = String((data && data.code) || '').toUpperCase().trim();
+  socket.on('joinLobby', (data, cb) => joinLobby(String((data && data.code) || '').toUpperCase().trim(), data, cb));
+  function joinLobby(code, data, cb) {
     const lobby = lobbies.get(code);
     if (!lobby) return reply(cb, { ok: false, error: 'Lobby niet gevonden.' });
     if (lobby.players.size + lobby.waiting.size >= MAX_PLAYERS) return reply(cb, { ok: false, error: 'Lobby zit vol.' });
@@ -669,7 +710,7 @@ io.on('connection', (socket) => {
     }
     lobby.players.set(socket.id, player);
     sendLobby(lobby);
-  });
+  }
 
   socket.on('leaveLobby', () => leaveLobby(socket));
 
@@ -688,9 +729,30 @@ io.on('connection', (socket) => {
     sendLobby(lobby);
   });
 
-  socket.on('startGame', () => {
+  socket.on('setReady', (ready) => {
     const lobby = lobbies.get(socket.data.code);
-    if (lobby && lobby.hostId === socket.id && !lobby.playing) startGame(lobby);
+    const p = lobby && lobby.players.get(socket.id);
+    if (!p || lobby.playing) return;
+    p.ready = !!ready;
+    sendLobby(lobby);
+  });
+
+  // De host start. In een privélobby begint het potje meteen, in een openbare na tien seconden.
+  socket.on('startGame', (cb) => {
+    const lobby = lobbies.get(socket.data.code);
+    if (!lobby || lobby.hostId !== socket.id || lobby.playing) return;
+    lobby.players.get(socket.id).ready = true;
+    if (!canStart(lobby)) {
+      sendLobby(lobby);
+      return reply(cb, {
+        ok: false,
+        error: lobby.public && lobby.players.size < 2 ? 'Wacht op een tweede speler.' : 'Nog niet genoeg spelers zijn ready.'
+      });
+    }
+    reply(cb, { ok: true });
+    if (!lobby.public) return startGame(lobby);
+    if (!lobby.autoStartAt) lobby.autoStartAt = Date.now() + COUNTDOWN_MS;
+    sendLobby(lobby);
   });
 
   socket.on('move', (m) => {
@@ -740,7 +802,7 @@ io.on('connection', (socket) => {
 
   socket.on('emote', (e) => {
     const a = activePlayer();
-    if (a && Number.isInteger(e) && e >= 0 && e <= 6) emit(a.lobby, { type: 'emote', id: socket.id, e });
+    if (a && Number.isInteger(e) && e >= 0 && e <= 10) emit(a.lobby, { type: 'emote', id: socket.id, e });
   });
 
   socket.on('spray', (s) => {
@@ -750,7 +812,7 @@ io.on('connection', (socket) => {
     if (Math.hypot(s.x - a.p.x, s.y - a.p.y, s.z - a.p.z) > 8) return;
     a.p.lastSpray = now;
     // design is een vaste stempel, of een zelfgetekende afbeelding (kleine PNG)
-    const design = /^[a-z]{1,12}$/.test(String(s.design)) ? s.design : 'naam';
+    const design = /^[a-z0-9]{1,12}$/.test(String(s.design)) ? s.design : 'naam';
     const img = typeof s.img === 'string' && s.img.length < 40000 && s.img.startsWith('data:image/png;base64,') ? s.img : null;
     emit(a.lobby, { type: 'spray', id: socket.id, x: s.x, y: s.y, z: s.z, nx: s.nx, ny: s.ny, nz: s.nz, design, img });
   });
