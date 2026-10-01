@@ -335,6 +335,7 @@ function sfx(name, pos) {
   else if (name === 'hitmark') { tone(2600, 2400, 0.04, 'square', 0.12); noise(0.03, 0.3, 5000); }
   else if (name === 'whistle') { tone(2800, 2950, 0.35, 'sine', 0.25); tone(2800, 2650, 0.5, 'sine', 0.2, 0.38); }
   else if (name === 'click') tone(620, 480, 0.05, 'triangle', 0.18);
+  else if (name === 'chair') { noise(0.08, 0.6, 600); tone(240, 160, 0.12, 'triangle', 0.2); }
   else if (name === 'ping') { tone(1320, 1320, 0.09, 'sine', 0.25); tone(1760, 1760, 0.16, 'sine', 0.2, 0.09); }
   else if (name === 'hover') tone(1200, 1300, 0.025, 'sine', 0.05);
   else if (name === 'whoosh') noise(0.35, 0.3, 900);
@@ -444,9 +445,22 @@ setInterval(() => {
 
 // ---------- Renderer, scene, licht ----------
 const canvas = $('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// Eerste keer op een zwakke computer (oude MacBook met Intel-graphics, weinig processorkernen)? Dan beginnen op Laag.
+if (!localStorage.getItem('kr-quality-set')) {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+    const weak = /intel|hd graphics|iris|mali|adreno [1-5]|swiftshader|llvmpipe/i.test(gpu) || (navigator.hardwareConcurrency || 8) <= 4;
+    settings.quality = weak ? 'laag' : 'middel';
+    localStorage.setItem('kr-settings', JSON.stringify(settings));
+    localStorage.setItem('kr-quality-set', 'auto');
+  } catch (e) { /* geen webgl-info: standaard houden */ }
+}
+// randen gladmaken kost veel op zwakke computers; dat kan alleen bij het opstarten gekozen worden
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'laag', powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = settings.quality === 'hoog' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.autoClear = false;
 // cartoonranden (alleen op kwaliteit Hoog): een donkere omlijning om alles
 const outline = new OutlineEffect(renderer, { defaultThickness: 0.006, defaultColor: [0.09, 0.09, 0.11], defaultAlpha: 0.9 });
@@ -488,14 +502,16 @@ vmLight.position.set(1, 2, 1);
 vmScene.add(vmLight);
 
 // Grafische kwaliteit: laag voor zwakke laptops, hoog met omlijnde cartoonranden en scherpere schaduwen.
+// far: hoe ver je kunt kijken (minder ver = minder tekenwerk), shadowEvery: om de hoeveel frames de schaduw ververst
 const QUALITY = {
-  laag: { ratio: 0.85, shadow: 0, outline: false },
-  middel: { ratio: 1.25, shadow: 1536, outline: false },
-  hoog: { ratio: 2, shadow: 2048, outline: true }
+  laag: { ratio: 0.75, shadow: 0, outline: false, far: 140, fog: [45, 130], shadowEvery: 0 },
+  middel: { ratio: 1, shadow: 1024, outline: false, far: 300, fog: [80, 230], shadowEvery: 3 },
+  hoog: { ratio: 2, shadow: 2048, outline: true, far: 400, fog: [90, 260], shadowEvery: 2 }
 };
 const quality = () => QUALITY[settings.quality] || QUALITY.middel;
+let renderScale = 1; // zakt vanzelf als het spel hapert
 function resize() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.sharp ? 2 : quality().ratio));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.sharp ? 2 : quality().ratio) * renderScale);
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   camera.aspect = vmCamera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -1987,6 +2003,14 @@ function poseModel(m, swing, holding, emote, t) {
 }
 // gezicht bij een emote (anders het gewone gezicht)
 const EMOTE_FACE = { 1: 'happy', 6: 'sad', 11: 'surprised', 16: 'angry', 19: 'surprised', 20: 'sleep', 22: 'cry', 24: 'happy', 25: 'happy', 26: 'dizzy' };
+// zitten: benen naar voren, handen op de knieën
+function sitPose(m) {
+  m.legL.rotation.set(-1.45, 0, 0.06);
+  m.legR.rotation.set(-1.45, 0, -0.06);
+  m.armL.rotation.set(-0.7, 0, 0.1);
+  m.armR.rotation.set(-0.7, 0, -0.1);
+  m.lSign.visible = false;
+}
 const activeEmote = (m, now) => (m.emote && now - m.emoteStart < EMOTE_MS ? m.emote : 0);
 
 const remotes = new Map();
@@ -2117,6 +2141,13 @@ function updateRemotes(dt) {
     r.group.rotation.x = r.lean + (pose.lean || 0);
     r.group.rotation.y = r.yaw + pose.spin;
     r.group.rotation.z = pose.roll;
+    // stoelendans: zittend op de stoel, met de rug tegen de leuning
+    const chair = seatOf(r.id);
+    if (chair) {
+      sitPose(r);
+      p.set(chair.outer.position.x, chair.outer.position.y - 0.04, chair.outer.position.z);
+      r.group.rotation.set(0, chair.inner.rotation.y, 0);
+    }
     r.label.visible = settings.names;
     if (r.dashing && r.trail.colors) trailPuff(p.x, p.y, p.z, r.trail);
   }
@@ -2207,6 +2238,7 @@ let padMode = false;   // er wordt met een controller gespeeld
 let playing = false;
 const me = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true };
 let camY = EYE_HEIGHT;
+let wasSeated = false;
 let dashLeft = 0;
 let dashReadyAt = 0;
 const dashDir = new THREE.Vector3();
@@ -2289,9 +2321,9 @@ const MODE_TIPS = {
   duo: ['Speel met z\'n tweeën, jullie punten tellen samen', 'Gooi het broodje naar je maat met G', 'Bescherm elkaar met klappen en worpen'],
   voedsel: ['Geen broodje: elke rake worp is een punt', 'Pak spullen van de paarse ringen', 'Drie keer raak op rij = pizzadoos'],
   broodjes: ['Elke 40 seconden een ander broodje', 'Kaassoufflé glijdt, saucijs is van voren niet te tackelen', 'Pizzabroodje laat een glad spoor achter'],
-  prophunt: ['Verstoppers: kies met R een vermomming en blijf stil staan', 'Zoekers: klik om te slaan, raak een verstopper om hem te vinden', 'Gevonden? Dan zoek je mee'],
+  prophunt: ['Verstoppers: R = vermomming, E = vastzetten en rondkijken, Q = geluidje (+3 punten)', 'Zoekers: klik om te slaan, raak een verstopper om hem te vinden', 'Gevonden? Dan zoek je mee'],
   lava: ['Na 15 seconden wordt de vloer lava: klim op tafels en kisten', 'Het gouden eiland geeft 3 punten per seconde', 'Niet stilstaan: hete voeten, smeltende plekken en lavaballen!'],
-  stoelen: ['Blijf in de buurt van de gele ringen', 'Stopt de muziek? Ga snel bij een stoel staan', 'Klap anderen weg van hun stoel'],
+  stoelen: ['Blijf in de buurt van de gele ringen', 'Stopt de muziek? Loop naar een vrije stoel en ga zitten', 'Wie zit, is veilig; klap anderen weg voordat ze zitten'],
   trefbal: ['Alleen ballen: elke rake worp is een punt', 'Ballen stuiteren tegen muren', 'Ontwijk door te springen en te dashen']
 };
 function startCountdown(seconds, first) {
@@ -2390,6 +2422,7 @@ function lookDir() {
 // zonder voorwerp in je hand wordt gooien een klap
 function tryThrow() {
   if (!canAct()) return;
+  if (hiderMe()) return toggleLock();
   if (!myItem) return trySlap();
   if (myVehicle) return toast('Op een board kun je niet gooien. Stap af met R');
   setEmote(0);
@@ -2436,8 +2469,26 @@ function tryFeint() {
   sfx('swoosh');
 }
 function tryGadget() {
+  if (hiderMe()) return tryTaunt();
   if (canAct() && myGadget) socket.emit('gadget');
 }
+// ---------- Verstoppertje: vastzetten en geluidjes ----------
+// Vastgezet sta je stil en draait je voorwerp niet mee, zodat je rustig om je heen kunt kijken.
+let propLock = null; // { ry } zolang je vastzit
+function toggleLock() {
+  propLock = propLock ? null : { ry: Math.atan2(fwd.x, fwd.z) };
+  sfx(propLock ? 'click' : 'swoosh');
+  toast(propLock ? `Vastgezet! Kijk rustig rond · ${keyLabel(keyOf('throw'))} om los te laten` : 'Losgelaten: je kunt weer bewegen');
+  modeHud(lastState || {});
+}
+let tauntReady = 0;
+function tryTaunt() {
+  const now = performance.now();
+  if (!canAct() || now < tauntReady) return;
+  tauntReady = now + 4000;
+  socket.emit('taunt');
+}
+const TAUNTS = ['piep', 'kwak', 'boing', 'fluit', 'koekoek', 'toeter'];
 
 window.addEventListener('keydown', (e) => {
   if (rebinding) {
@@ -2565,7 +2616,9 @@ controls.addEventListener('lock', () => {
 });
 $('clickstart').addEventListener('click', () => controls.lock());
 controls.addEventListener('unlock', () => {
-  if (playing && !spectating && !ending && !warm && $('clickstart').classList.contains('hidden')) {
+  // alleen in een echt potje; in de lobby brengt Esc je gewoon terug bij de knoppen
+  const inGame = playing && !warm && !$('hud').classList.contains('hidden') && $('lobby').classList.contains('hidden');
+  if (inGame && !spectating && !ending && $('clickstart').classList.contains('hidden')) {
     $('pause').classList.remove('hidden'); // Esc opent het pauzemenu
     if (padMode) paused = true;
   }
@@ -2581,12 +2634,20 @@ $('pause').addEventListener('click', (e) => { if (e.target === $('pause')) resum
 const dashFill = $('dash-fill');
 const dashBar = $('dash');
 let lastFill = '';
+// stoelendans: op welke stoel zit iemand (index in props), of null
+function seatOf(id) {
+  const st = mode === 'stoelen' && lastState && lastState.x && lastState.x.st;
+  const seat = st && st.find((s) => s[1] === id);
+  return seat && props[seat[0]] ? props[seat[0]] : null;
+}
 function updateLocal(dt) {
   const now = performance.now();
+  const chair = playing ? seatOf(socket.id) : null;
   const frozen = !!(myFlags & 512);     // verstoppertje: tellen tot twintig
   const sticky = !!(myFlags & 64);      // vast in het plakband
   const biting = biteLock > now;
-  const active = isActive() && !stunned && !frozen && !biting && !counting() && !ending;
+  if (propLock && !hiderMe()) propLock = null;
+  const active = isActive() && !stunned && !frozen && !biting && !counting() && !ending && !chair && !propLock;
   const wish = wishDir();
   const boosted = myFlags & 4;
   const holding = holderId === socket.id;
@@ -2673,8 +2734,16 @@ function updateLocal(dt) {
     toast(li === 0 ? 'Lift naar beneden' : 'Lift naar boven');
   }
 
+  // op een stoel: vast op de zitting, en de camera zakt mee naar zithoogte
+  if (chair) {
+    me.x = chair.outer.position.x;
+    me.z = chair.outer.position.z;
+    me.vx = me.vz = 0;
+  }
+  if (chair && !wasSeated) sfx('chair');
+  wasSeated = !!chair;
   const swing = updateArms(dt, speed);
-  camY += (me.y + EYE_HEIGHT - camY) * Math.min(1, dt * (me.onGround ? 16 : 40));
+  camY += (me.y + EYE_HEIGHT - (chair ? 0.55 : 0) - camY) * Math.min(1, dt * (me.onGround ? 16 : 40));
   // Van achteren kijken: tijdens een emote, als lappenpop, en als verstopper (dan zie je je vermomming)
   const hider = hiderMe();
   const third = !!myEmote || stunned || hider;
@@ -2733,7 +2802,7 @@ function updateLocal(dt) {
   if (selfProp) {
     selfProp.visible = hider;
     selfProp.position.set(me.x, me.y, me.z);
-    selfProp.rotation.y = Math.atan2(fwd.x, fwd.z);
+    selfProp.rotation.y = propLock ? propLock.ry : Math.atan2(fwd.x, fwd.z);
   }
   // eigen dash-spoor
   if (dashLeft > 0 && myTrail().colors) trailPuff(me.x, me.y, me.z, myTrail());
@@ -2746,7 +2815,7 @@ function updateLocal(dt) {
 
   if (now - lastSend > SEND_MS) {
     lastSend = now;
-    socket.emit('move', { x: me.x, y: me.y, z: me.z, ry: Math.atan2(fwd.x, fwd.z) });
+    socket.emit('move', { x: me.x, y: me.y, z: me.z, ry: propLock ? propLock.ry : Math.atan2(fwd.x, fwd.z) });
   }
 
   const cd = Math.max(0, dashReadyAt - now / 1000);
@@ -2996,12 +3065,12 @@ function modeHud(s) {
       : `Gouden eiland = 3 punten per seconde · verplaatst over ${x.isn} s · blijf niet stilstaan!`;
   }
   if (x && mode === 'prophunt') {
-    text = myTeam === 0 ? `Je bent een ${DISGUISE_NAMES[myDisguise] || 'verstopper'} · R = andere vermomming · nog ${x.hl} verstoppers`
+    text = myTeam === 0 ? `Je bent een ${DISGUISE_NAMES[myDisguise] || 'verstopper'}${propLock ? ' (vastgezet)' : ''} · ${keyLabel(keyOf('dismount'))} = andere vermomming · ${keyLabel(keyOf('throw'))} = vastzetten · ${keyLabel(keyOf('banana'))} = geluidje (+3) · nog ${x.hl} verstoppers`
       : x.hd > 0 ? `De verstoppers verstoppen zich… ${x.hd}` : `Zoek de verstoppers! Klik = klap · nog ${x.hl} over`;
   }
   if (x && mode === 'stoelen') {
     alert = !x.mu;
-    text = x.mu ? `Muziek! Blijf bij de gele ringen · nog ${x.sl} spelers` : `STOP! Zoek een stoel! ${x.cw}`;
+    text = x.mu ? `Muziek! Blijf bij de gele ringen · nog ${x.sl} spelers` : seatOf(socket.id) ? 'Je zit! Je bent door naar de volgende ronde' : `STOP! Loop naar een vrije stoel om te gaan zitten! ${x.cw}`;
   }
   const el = $('mode-hud');
   el.textContent = text;
@@ -3272,7 +3341,9 @@ function updatePodium(time, dt) {
 const screens = ['menu', 'lobby', 'hud', 'gameover'];
 function show(id) {
   if (id !== 'lobby' && warm) leaveWarm();
-  if (id !== 'menu' && PAGES) closePages();
+  // een update van de lobby terwijl je al in de lobby bent, mag de Kluis niet dichtgooien
+  const already = !$(id).classList.contains('hidden');
+  if (id !== 'menu' && PAGES && !(id === 'lobby' && already)) closePages();
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
   if (id === 'lobby') {
     if (pendingWarm) enterWarm();
@@ -3745,6 +3816,7 @@ function equip(cat, item) {
   }
 }
 $('btn-pick-back').addEventListener('click', renderLocker);
+$('btn-lobby-back').addEventListener('click', () => closePages());
 
 // ---------- Profiel: account, rang, titel en statistieken ----------
 function rankBadge(rp) {
@@ -4050,6 +4122,11 @@ function applySettings() {
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   }
   outline.enabled = q.outline;
+  camera.far = q.far;
+  camera.updateProjectionMatrix();
+  scene.fog.near = q.fog[0];
+  scene.fog.far = q.fog[1];
+  renderScale = 1;
   document.body.classList.toggle('q-hoog', settings.quality === 'hoog');
   document.querySelectorAll('[data-quality]').forEach((b) => b.classList.toggle('active', b.dataset.quality === settings.quality));
   $('fps').classList.toggle('hidden', !settings.fps);
@@ -4062,6 +4139,8 @@ function applySettings() {
 }
 document.querySelectorAll('[data-quality]').forEach((b) => b.addEventListener('click', () => {
   settings.quality = b.dataset.quality;
+  localStorage.setItem('kr-quality-set', 'zelf');
+  if ((b.dataset.quality === 'laag') !== !renderer.getContextAttributes().antialias) toast('Herlaad de pagina om dit helemaal toe te passen', 3000);
   save('kr-settings', settings);
   applySettings();
 }));
@@ -4122,15 +4201,23 @@ function slideTo(id) {
 }
 function closePages() {
   if (currentPage !== 'play' && !$('menu').classList.contains('hidden')) return slideTo('play');
+  // in de lobby (of tijdens een potje): de pagina schuift weg, de lobby komt terug
+  const open = currentPage !== 'play' ? $(currentPage) : null;
   currentPage = 'play';
-  PAGES.forEach((id) => $(id).classList.add('hidden'));
+  PAGES.forEach((id) => { if ($(id) !== open) $(id).classList.add('hidden'); });
+  if (open) {
+    open.classList.add('to-right');
+    clearTimeout(open.leaveTimer);
+    open.leaveTimer = setTimeout(() => { open.classList.remove('to-right'); if (currentPage !== open.id) open.classList.add('hidden'); }, 360);
+  }
   document.body.classList.remove('paged');
   document.querySelectorAll('.top-nav .nav').forEach((n) => n.classList.toggle('on', n.dataset.nav === 'play'));
 }
 document.querySelector('[data-nav="play"]').addEventListener('click', () => slideTo('play'));
 window.addEventListener('keydown', (e) => {
+  // Esc sluit een open pagina, ook in de lobby (daar loop je rond en telt het als "spelen")
+  if (e.key === 'Escape' && currentPage !== 'play' && !document.querySelector('.modal:not(.hidden)') && (!playing || warm)) return closePages();
   if (playing || e.target.tagName === 'INPUT' || document.querySelector('.modal:not(.hidden)')) return;
-  if (e.key === 'Escape' && currentPage !== 'play') closePages();
   // pijltjes links en rechts: naar het vorige of volgende tabblad
   if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !$('menu').classList.contains('hidden')) {
     const i = NAV_ORDER.indexOf(currentPage) + (e.key === 'ArrowRight' ? 1 : -1);
@@ -4142,6 +4229,8 @@ window.addEventListener('keydown', (e) => {
   }
 });
 document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => {
+  // in de lobby: nog een keer op Kluis klikken brengt je terug
+  if (btn.closest('#lobby') && currentPage === btn.dataset.open) return requestAnimationFrame(() => closePages());
   if (PAGES.includes(btn.dataset.open)) {
     // de knop zelf maakt de pagina zichtbaar; hier komt het schuiven en de bovenbalk
     requestAnimationFrame(() => slideTo(btn.dataset.open));
@@ -4667,6 +4756,7 @@ function onState(s, replay) {
     let r = remotes.get(id);
     if (!r) {
       r = makePlayerModel(modelInfo(id));
+      r.id = id;
       r.trail = fxOf(id).trail;
       r.group.position.set(x, y, z);
       r.baseY = y;
@@ -5193,6 +5283,12 @@ socket.on('event', (e) => {
     sfx('bell');
   } else if (e.type === 'musicStart') {
     sfx('good');
+  } else if (e.type === 'taunt') {
+    // verstoppertje: een geluidje van een verstopper, te horen vanaf zijn plek
+    const pos = posOf(e.id);
+    sfx(TAUNTS[e.k] || 'piep', pos);
+    if (pos) puff(pos.x, pos.y + 1.2, pos.z, 0xffd34d, 6);
+    if (e.id === socket.id) toast('Geluidje! +3 punten, maar de zoekers weten nu waar je bent');
   } else if (e.type === 'chairOut') {
     if (!mine) toast(`${nameOf(e.id)} heeft geen stoel en ligt eruit`);
   } else if (e.type === 'island') {
@@ -6914,10 +7010,47 @@ const clock = new THREE.Clock();
 let fpsFrames = 0, fpsTime = 0;
 let frameCount = 0;
 const menuEl = $('menu');
+// Hapert het spel (minder dan 30 beelden per seconde), dan gaat de resolutie stap voor stap omlaag.
+// Gaat het weer ruim goed, dan langzaam terug omhoog.
+const perf = { time: 0, frames: 0, slow: 0, fast: 0, told: false };
+function adaptQuality(raw) {
+  if (document.hidden || raw > 0.5) return; // tabblad op de achtergrond telt niet
+  perf.time += raw;
+  perf.frames++;
+  if (perf.time < 2) return;
+  const fps = perf.frames / perf.time;
+  perf.time = perf.frames = 0;
+  if (!playing || warm) return;
+  if (fps < 30) {
+    perf.fast = 0;
+    if (++perf.slow >= 2 && renderScale > 0.55) {
+      perf.slow = 0;
+      renderScale = Math.max(0.55, renderScale - 0.15);
+      resize();
+      if (settings.quality !== 'laag' && renderScale <= 0.7) {
+        settings.quality = settings.quality === 'hoog' ? 'middel' : 'laag';
+        save('kr-settings', settings);
+        applySettings();
+        if (!perf.told) toast(`Het spel hapert: graphics staan nu op ${settings.quality === 'laag' ? 'Laag' : 'Middel'} (aan te passen in Settings)`, 4000);
+        perf.told = true;
+      }
+    }
+  } else if (fps > 55) {
+    perf.slow = 0;
+    if (++perf.fast >= 5 && renderScale < 1) {
+      perf.fast = 0;
+      renderScale = Math.min(1, renderScale + 0.1);
+      resize();
+    }
+  }
+}
 function frame() {
   requestAnimationFrame(frame);
-  if (++frameCount % 2 === 0) sun.shadow.needsUpdate = true;
+  const every = quality().shadowEvery;
+  if (every && ++frameCount % every === 0) sun.shadow.needsUpdate = true;
+  else if (!every) frameCount++;
   const raw = clock.getDelta();
+  adaptQuality(raw);
   const dt = Math.min(0.05, raw) * (ending ? 0.25 : 1); // GAME!: alles vertraagd
   if (settings.fps) {
     fpsFrames++;
@@ -6972,6 +7105,8 @@ function frame() {
   updateShowcase();
   updateShopView();
   if (!$('locker').classList.contains('hidden')) ($('locker-pick').classList.contains('hidden') ? lockerView : pickView).render();
+  // een pagina (Kluis, Winkel, …) bedekt het hele scherm: de 3D-wereld erachter hoeft niet getekend te worden
+  if (document.body.classList.contains('paged') && !playing) return;
   renderer.clear();
   // doorzichtige en lichtgevende dingen (lampen, ringen, lava, lichtbundels) krijgen geen cartoonrand
   if (outline.enabled && frameCount % 30 === 0) {

@@ -2127,3 +2127,47 @@ body.paged .hub .topbar { animation: none; }
 @keyframes rc-badge { 0% { transform: scale(1); } 40% { transform: scale(1.4) rotate(-10deg); } 100% { transform: scale(1); } }
 .rc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 600px) { .rc-name { font-size: 18px; } .rc-badge, .rc-badge .ico { width: 46px; height: 46px; } .rc-delta b { font-size: 24px; } }
+/* lobby: terugknop als er een pagina (Kluis) open is */
+.lobby-back { display: none; background: #ffd34d !important; color: var(--ink) !important; }
+.lobby-back .ico { transform: scaleX(-1); }
+body.paged .lobby-back { display: inline-flex; }
+body.paged #lobby .top-right > :not(.lobby-back):not([data-open="locker"]):not([data-open="settings"]) { display: none; }
+
+/* ======================================================================
+   Eindscherm: compact, in twee kolommen, en nooit hoger dan het scherm
+   ====================================================================== */
+#gameover { align-items: center; padding: 12px; }
+.go-card { --pad: 20px; max-width: 980px !important; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; gap: 8px; }
+.go-card .panel-head { position: sticky; top: calc(var(--pad) * -1); z-index: 2; }
+.go-card #winner { margin: 0; font-size: 22px; text-align: center; }
+.go-cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.go-right { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.go-right .rank-change { margin: 12px 0 0; max-width: none; }
+.go-right #earned { margin: 0; }
+.go-right .rewards { max-height: 150px; }
+.go-card #ranking tbody td { padding: 6px 8px; }
+.go-card .rank-wrap { max-height: 46vh; overflow-y: auto; }
+.go-card .mvp-cards { justify-content: flex-start; gap: 6px; }
+.go-card .mvp-card { width: 96px; padding: 4px 4px 6px; }
+.go-card .mvp-card img { width: 70px; height: 74px; }
+.go-card #over-next { margin: 0; text-align: center; }
+.go-card #over-buttons, .go-card .tab-row { margin: 0; }
+.go-card #over-buttons .btn { padding-top: 10px; padding-bottom: 10px; }
+.go-cols .go-right:empty { display: none; }
+@media (max-width: 820px) { .go-cols { grid-template-columns: 1fr; } .go-card .rank-wrap { max-height: none; } }
+/* lage schermen (laptops): nog compacter */
+@media (max-height: 820px) {
+  .go-card { --pad: 16px; gap: 6px; }
+  .go-card .panel-head { padding: 10px 16px; font-size: 18px; }
+  .go-card #winner { font-size: 18px; }
+  .go-card #ranking { font-size: 13px; }
+  .go-card #ranking tbody td { padding: 4px 8px; }
+  .go-card .rank-change { padding: 8px 12px; }
+  .go-card .rc-badge, .go-card .rc-badge .ico { width: 44px; height: 44px; }
+  .go-card .rc-name { font-size: 18px; }
+  .go-card .rc-delta b { font-size: 24px; }
+  .go-card .mvp-card { width: 84px; }
+  .go-card .mvp-card img { width: 56px; height: 58px; }
+  .go-right .rewards { max-height: 110px; }
+  .go-card .btn { font-size: 14px; }
+}

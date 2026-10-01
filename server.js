@@ -831,6 +831,7 @@ const inPlay = (lobby) => [...lobby.players.values()].filter((p) => !p.out);
 
 // Duwt iemand weg. Echte spelers bewegen zelf, dus die krijgen een duwtje toegestuurd.
 function knock(lobby, p, dirX, dirZ, power, up) {
+  if (p.seat !== null && p.seat !== undefined) return; // wie op een stoel zit, blijft zitten
   const len = Math.hypot(dirX, dirZ) || 1;
   const x = (dirX / len) * power, z = (dirZ / len) * power;
   if (p.isBot) {
@@ -1110,8 +1111,22 @@ function inZone(p) {
   if (z.maxY !== undefined && p.y > z.maxY) return false;
   return Math.hypot(p.x - z.x, p.z - z.z) <= z.r;
 }
+// Een plas ligt altijd plat op de vloer: niet op een tafel, en niet half over een rand heen.
+// Daarom de laagste vloer onder het midden en vier punten op de rand van de plas (tafels tellen niet mee).
+function puddleY(x, z, y) {
+  const saved = MapData.dynamic;
+  MapData.dynamic = [];
+  let low = MapData.groundAt(x, z, y + 0.5);
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const g = MapData.groundAt(x + dx, z + dz, y + 0.5);
+    if (g > -40) low = Math.min(low, g);
+  }
+  MapData.dynamic = saved;
+  return low;
+}
 function addPuddle(lobby, u) {
-  lobby.puddles.push(Object.assign({ id: nextId++, y: MapData.groundAt(u.x, u.z, u.y + 0.5) }, u));
+  const y = u.kind === 2 ? MapData.groundAt(u.x, u.z, u.y + 0.5) : puddleY(u.x, u.z, u.y);
+  lobby.puddles.push(Object.assign({ id: nextId++ }, u, { y }));
   if (lobby.puddles.length > 30) lobby.puddles.shift();
 }
 
@@ -1702,35 +1717,49 @@ function markChairs(lobby, now) {
     .sort((a, b) => Math.hypot(a.o.x - s.x, a.o.z - s.z) - Math.hypot(b.o.x - s.x, b.o.z - s.z));
   // uit de dichtstbijzijnde stoelen een willekeurige keuze, zodat ze niet allemaal aan één tafel staan
   const near = chairs.slice(0, Math.max(left + 4, 12)).sort(() => Math.random() - 0.5);
-  lobby.chairs = { phase: 'music', until: now + 7000 + Math.random() * 7000, marked: near.slice(0, Math.max(1, left - 1)).map((c) => c.i) };
+  lobby.chairs = { phase: 'music', until: now + 7000 + Math.random() * 7000, marked: near.slice(0, Math.max(1, left - 1)).map((c) => c.i), seats: {} };
+  for (const p of lobby.players.values()) p.seat = null;
+}
+// Als de muziek stopt: wie bij een vrije stoel komt, gaat erop zitten en zit daar vast tot de ronde om is.
+// Een stoel is voor één speler; wie het eerst zit, heeft hem.
+function seatPlayers(lobby, c) {
+  for (const p of inPlay(lobby)) {
+    if (p.seat !== null && p.seat !== undefined) continue;
+    let best = null, bestD = 1.3;
+    for (const i of c.marked) {
+      const o = lobby.props[i];
+      if (c.seats[i] || o.tip) continue;
+      const d = Math.hypot(p.x - o.x, p.z - o.z);
+      if (d < bestD && Math.abs(p.y - o.y) < 1.2) { best = i; bestD = d; }
+    }
+    if (best === null) continue;
+    c.seats[best] = p.id;
+    p.seat = best;
+    const o = lobby.props[best];
+    Object.assign(p, { x: o.x, z: o.z, velX: 0, velZ: 0 });
+    emit(lobby, { type: 'sit', id: p.id });
+  }
 }
 function tickChairs(lobby, now) {
   const c = lobby.chairs;
-  if (!c || c.phase === 'done' || now < c.until) return;
+  if (!c || c.phase === 'done') return;
+  if (c.phase === 'claim') {
+    seatPlayers(lobby, c);
+    // alle stoelen bezet: niet langer wachten
+    if (Object.keys(c.seats).length >= c.marked.length) c.until = Math.min(c.until, now + 600);
+  }
+  if (now < c.until) return;
   if (c.phase === 'music') {
     c.phase = 'claim';
     c.until = now + CLAIM_MS;
     emit(lobby, { type: 'musicStop' });
     return;
   }
-  // wie staat er het dichtst bij een stoel? Elke stoel is voor één speler.
+  // wie zit, is door naar de volgende ronde
   const players = inPlay(lobby);
-  const pairs = [];
-  for (const p of players) {
-    for (const i of c.marked) {
-      const o = lobby.props[i];
-      const d = Math.hypot(p.x - o.x, p.z - o.z);
-      if (d < 1.3 && Math.abs(p.y - o.y) < 1.2) pairs.push({ p, i, d });
-    }
-  }
-  pairs.sort((a, b) => a.d - b.d);
-  const seated = new Set(), taken = new Set();
-  for (const { p, i } of pairs) {
-    if (seated.has(p) || taken.has(i)) continue;
-    seated.add(p);
-    taken.add(i);
-    p.chairs++;
-  }
+  const seated = new Set(players.filter((p) => p.seat !== null && p.seat !== undefined));
+  for (const p of seated) p.chairs++;
+  for (const p of lobby.players.values()) p.seat = null;
   const outNow = players.filter((p) => !seated.has(p));
   // wie eruit ligt, krijgt als punten het aantal spelers dat eerder af was
   const already = [...lobby.players.values()].filter((p) => p.out).length;
@@ -1805,7 +1834,7 @@ function startGame(lobby) {
     const known = humans(lobby).filter((p) => p.games >= 3);
     if (known.length) {
       const rate = known.reduce((a, p) => a + p.winRate, 0) / known.length;
-      lobby.opts.botLevel = rate < 0.12 ? 0 : rate > 0.4 ? 2 : 1;
+      lobby.opts.botLevel = rate < 0.15 ? 0 : rate > 0.5 ? 2 : 1;
     }
   }
   lobby.round = 1;
@@ -2185,7 +2214,8 @@ function modeState(lobby, now) {
   }
   if (lobby.mode === 'stoelen' && lobby.chairs) {
     const c = lobby.chairs;
-    return { mu: c.phase === 'music' ? 1 : 0, cw: c.phase === 'claim' ? Math.max(0, Math.ceil((c.until - now) / 1000)) : 0, ch: c.phase === 'done' ? [] : c.marked, sl: inPlay(lobby).length };
+    return { mu: c.phase === 'music' ? 1 : 0, cw: c.phase === 'claim' ? Math.max(0, Math.ceil((c.until - now) / 1000)) : 0, ch: c.phase === 'done' ? [] : c.marked, sl: inPlay(lobby).length,
+      st: c.phase === 'claim' ? Object.entries(c.seats).map(([i, id]) => [Number(i), id]) : [] };
   }
   return null;
 }
@@ -2834,6 +2864,16 @@ io.on('connection', (socket) => {
   });
 
   // verstoppertje: een andere vermomming kiezen
+  // verstoppertje: een geluidje maken. Riskant (de zoekers horen waar je bent), dus het levert punten op.
+  socket.on('taunt', () => {
+    const a = activePlayer();
+    const now = Date.now();
+    if (!a || a.lobby.mode !== 'prophunt' || a.p.team !== 0 || a.p.found || now - (a.p.lastTaunt || 0) < 4000) return;
+    a.p.lastTaunt = now;
+    if (a.lobby.playing && now > a.lobby.hideUntil) a.p.score += 3 * multiplier(a.lobby);
+    emit(a.lobby, { type: 'taunt', id: a.p.id, k: Math.floor(Math.random() * 6) });
+  });
+
   socket.on('disguise', () => {
     const a = activePlayer();
     const now = Date.now();

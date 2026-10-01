@@ -8,9 +8,10 @@ const RADIUS = 0.4;
 const HEIGHT = 1.8;
 // Drie niveaus: makkelijk, normaal, moeilijk. Een mens rent 10,5 m/s.
 const LEVELS = [
-  { speed: 8.2, skill: [0.3, 0.5], dash: [6000, 9000], toss: [3200, 5200] },
-  { speed: 9.7, skill: [0.6, 0.9], dash: [3200, 5800], toss: [1700, 3600] },
-  { speed: 10.4, skill: [0.85, 0.97], dash: [2100, 3300], toss: [1000, 1900] }
+// aim: hoe lang een bot zijn doelwit eerst in beeld moet hebben voor hij gooit (ms)
+  { speed: 8.2, skill: [0.3, 0.5], dash: [6000, 9000], toss: [3800, 6200], aim: [900, 1500] },
+  { speed: 9.5, skill: [0.5, 0.75], dash: [3600, 6200], toss: [2600, 4600], aim: [600, 1100] },
+  { speed: 10.2, skill: [0.75, 0.9], dash: [2400, 3600], toss: [1600, 2800], aim: [350, 700] }
 ];
 const between = (range) => range[0] + Math.random() * (range[1] - range[0]);
 const HOLDER_FACTOR = 0.77;
@@ -371,21 +372,35 @@ function think(lobby, p, now, api) {
   const target = lobby.mode === 'prophunt' ? null : holder && enemies.includes(holder) && holder.stunImmuneUntil < now ? holder : foe;
   if (p.item && target && now > b.nextThrow) {
     const d = Math.hypot(target.x - p.x, target.z - p.z);
-    if (d > 2 && d < 17 && Math.abs(target.y - p.y) < 3.5 && clearShot(p, target)) {
-      // voor bewegende doelen mikken waar ze straks zijn, met een beetje afwijking
+    const inSight = d > 2 && d < 17 && Math.abs(target.y - p.y) < 3.5 && clearShot(p, target);
+    // een bot moet eerst even mikken: zo kun je wegduiken als je ziet dat hij op je richt
+    if (!inSight || b.aimAt !== target.id) {
+      b.aimAt = inSight ? target.id : null;
+      b.aimSince = now;
+      b.aimNeed = between(b.L.aim);
+    }
+    if (inSight && now - b.aimSince > b.aimNeed) {
+      // Mikken als een mens: de looprichting maar half meerekenen en met een afwijking in de hoek,
+      // die groter is op afstand en bij minder goede bots. Geen aimbot dus.
       const speed = 24 * (p.cls === 'werper' ? 1.35 : 1);
       const t = d / speed;
-      const miss = (1 - b.skill) * 7;
-      const tx = target.x + (target.velX || 0) * t + (Math.random() - 0.5) * miss;
-      const tz = target.z + (target.velZ || 0) * t + (Math.random() - 0.5) * miss;
+      const lead = b.skill * (0.35 + Math.random() * 0.45);
+      let tx = target.x + (target.velX || 0) * t * lead - p.x;
+      let tz = target.z + (target.velZ || 0) * t * lead - p.z;
+      const err = (Math.random() - 0.5) * 2 * (1 - b.skill * 0.75) * 0.32;
+      const cos0 = Math.cos(err), sin0 = Math.sin(err);
+      [tx, tz] = [tx * cos0 - tz * sin0, tx * sin0 + tz * cos0];
+      tx += p.x;
+      tz += p.z;
       const hx = tx - p.x, hz = tz - p.z, hd = Math.hypot(hx, hz) || 1;
       const time = hd / speed;
       const rise = (target.y + 1 - (p.y + 1.45) + 6 * time * time) / time; // nodige snelheid omhoog
       const sin = Math.max(-0.5, Math.min(0.6, (rise - 2) / speed));
       const cos = Math.sqrt(1 - sin * sin);
       p.ry = Math.atan2(hx, hz);
-      api.throwItem(lobby, p, (hx / hd) * cos, sin, (hz / hd) * cos);
+      api.throwItem(lobby, p, (hx / hd) * cos, sin + (Math.random() - 0.5) * 0.08 * (1 - b.skill), (hz / hd) * cos);
       b.nextThrow = now + between(b.L.toss);
+      b.aimAt = null;
     }
   }
 
@@ -518,6 +533,12 @@ function tickBots(lobby, now, dt, api) {
     if (p.stunnedUntil <= now && now > p.bot.thinkAt) {
       p.bot.thinkAt = now + 180 + Math.random() * 120;
       think(lobby, p, now, api);
+    }
+    // op een stoel bij de stoelendans: blijven zitten
+    if (p.seat !== null && p.seat !== undefined) {
+      const o = lobby.props[p.seat];
+      Object.assign(p, { x: o.x, z: o.z, velX: 0, velZ: 0 });
+      continue;
     }
     move(lobby, p, now, dt, api);
   }

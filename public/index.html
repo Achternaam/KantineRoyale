@@ -207,6 +207,7 @@
     <header class="topbar">
       <div class="lobby-id"><i data-ico="flag"></i><span id="lobby-kind">Lobby</span><b id="lobby-code" class="code">----</b></div>
       <div class="top-right">
+        <button id="btn-lobby-back" class="top-btn lobby-back"><i data-ico="chevron"></i>Terug naar de lobby</button>
         <button id="btn-invite" class="top-btn"><i data-ico="link"></i>Kopieer link</button>
         <button class="top-btn" data-open="locker"><i data-ico="shirt"></i>Kluis</button>
         <button class="top-btn" data-open="players"><i data-ico="friends"></i>Spelers</button>
@@ -361,15 +362,22 @@
 
   <!-- Eindscherm -->
   <section id="gameover" class="screen hidden">
-    <div class="card panel wide">
+    <div class="card panel wide go-card">
       <header class="panel-head"><i data-ico="trophy"></i><span id="over-title">Tijd is om!</span></header>
       <h2 id="winner"></h2>
-      <div class="rank-wrap"><table id="ranking"></table></div>
-      <div id="over-rank" class="rank-change hidden"></div>
-      <p id="earned" class="hint"></p>
-      <ul id="over-rewards" class="rewards"></ul>
-      <div id="mvp-cards" class="mvp-cards"></div>
-      <div id="mvp-vote" class="mvp-vote hidden"><p class="label">Stem op de speler van het potje <span id="mvp-left"></span></p><div id="mvp-list" class="chips"></div></div>
+      <!-- links de uitslag, rechts je beloning en de prijzen: past zo ook op een laptopscherm -->
+      <div class="go-cols">
+        <div class="go-left">
+          <div class="rank-wrap"><table id="ranking"></table></div>
+        </div>
+        <div class="go-right">
+          <div id="over-rank" class="rank-change hidden"></div>
+          <p id="earned" class="hint"></p>
+          <ul id="over-rewards" class="rewards"></ul>
+          <div id="mvp-cards" class="mvp-cards"></div>
+          <div id="mvp-vote" class="mvp-vote hidden"><p class="label">Stem op de speler van het potje <span id="mvp-left"></span></p><div id="mvp-list" class="chips"></div></div>
+        </div>
+      </div>
       <p id="over-next" class="hint"></p>
       <div id="over-buttons" class="tab-row">
         <button id="btn-again" class="btn primary"><i data-ico="play"></i>Nog een keer</button>
@@ -587,6 +595,7 @@
         <li><b>Z X C V</b><span>Hier! · Pak hem! · Help! · GG</span></li>
         <li><b>T</b><span>Spuitbus op de muur</span></li>
         <li><b>R</b><span>Van het board af · bij verstoppertje: andere vermomming</span></li>
+        <li><b>E / Q</b><span>Bij verstoppertje (als verstopper): vastzetten en rondkijken / geluidje maken</span></li>
         <li><b>Esc</b><span>Menu</span></li>
       </ul>
       <p class="hint">Dit zijn de standaardtoetsen; je past ze aan onder Settings. Met een controller: linkerstick lopen, rechterstick kijken, A springen, B dash, X gooien, Y bananenschil, Start pauze.</p>
