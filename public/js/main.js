@@ -914,6 +914,7 @@ scene.add(beacon);
 
 // ---------- Gooibare spullen, automaten, bananen, bases ----------
 // Geeft een groep met pizza, bord en plant; setKind() laat er één zien.
+const ballGeo = new THREE.SphereGeometry(1, 14, 10);
 function makeItem() {
   const g = new THREE.Group();
   const pizza = new THREE.Group();
@@ -937,7 +938,11 @@ function makeItem() {
   const can = new THREE.Group();
   mesh(cylGeo, mat(C.red), can, 0, 0, 0).scale.set(0.11, 0.3, 0.11);
   mesh(cylGeo, mat(C.metal), can, 0, 0.16, 0).scale.set(0.1, 0.03, 0.1);
-  const kinds = [pizza, plate, plant, milk, fries, can];
+  // trefbal: een rode bal met een witte band
+  const ball = new THREE.Group();
+  mesh(ballGeo, mat(C.red), ball, 0, 0, 0).scale.setScalar(0.24);
+  mesh(cylGeo, mat(0xffffff), ball, 0, 0, 0).scale.set(0.245, 0.05, 0.245);
+  const kinds = [pizza, plate, plant, milk, fries, can, ball];
   g.add(...kinds);
   g.userData.setKind = (kind) => kinds.forEach((k, i) => { k.visible = kind === i + 1; });
   g.userData.setKind(0);
