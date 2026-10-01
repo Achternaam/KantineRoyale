@@ -2097,3 +2097,33 @@ body.paged .hub .topbar { animation: none; }
 .page #shop-featured .trail-art i { width: 30px; height: 30px; border-radius: 6px; }
 .page #shop-grid .trail-art i { width: 20px; height: 20px; }
 .slot.k-coins .art { background: radial-gradient(circle at 50% 30%, #fff2a0 0, #ffcf3f 50%, #c98a10 100%); }
+
+/* ---------- Ranked: je rang na een potje ---------- */
+.rank-change { position: relative; display: flex; align-items: center; gap: 14px; margin: 10px auto 4px; max-width: 520px; padding: 12px 16px; color: #fff;
+  background: linear-gradient(135deg, #2a2247, #3b2d6b); border: 3px solid var(--rank, #c98d5e); border-radius: 16px;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.3), 0 0 22px color-mix(in srgb, var(--rank, #c98d5e) 40%, transparent); animation: slide-up 0.4s ease-out both; transition: border-color 0.3s; }
+.rank-change.hidden { display: none; }
+.rc-badge { flex: none; display: grid; place-items: center; width: 62px; height: 62px; }
+.rc-badge .ico { width: 62px; height: 62px; color: var(--rank, #c98d5e); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35)); transition: color 0.3s; }
+.rc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; text-align: left; }
+.rc-main small { font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.75; }
+.rc-name { font-size: 22px; font-weight: 900; font-style: italic; text-transform: uppercase; line-height: 1; }
+.rc-bar { display: block; height: 10px; background: rgba(0, 0, 0, 0.4); border-radius: 99px; overflow: hidden; }
+.rc-bar i { display: block; height: 100%; background: var(--rank, #c98d5e); border-radius: 99px; }
+.rc-main .rc-next { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.rc-delta { flex: none; display: flex; flex-direction: column; align-items: center; min-width: 70px; }
+.rc-delta b { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+.rc-delta small { font-size: 11px; font-weight: 900; opacity: 0.8; }
+.rc-delta.plus b { color: #7fe39a; }
+.rc-delta.min b { color: #ff8d80; }
+.rc-banner { position: absolute; top: -16px; left: 50%; padding: 4px 14px; font-size: 14px; font-weight: 900; font-style: italic; text-transform: uppercase; white-space: nowrap;
+  color: var(--ink); background: var(--rank, #ffd34d); border: 3px solid var(--ink); border-radius: 10px; transform: translateX(-50%) scale(0); }
+.rank-change.flash { animation: rc-flash 0.6s ease-out; }
+.rank-change.flash .rc-banner { animation: rc-banner 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+.rank-change.flash .rc-badge { animation: rc-badge 0.6s ease-out; }
+.rank-change.down .rc-banner { color: #fff; background: #8d9299; }
+@keyframes rc-flash { 0% { box-shadow: 0 0 0 0 var(--rank), 0 0 60px var(--rank); } 100% { box-shadow: 0 5px 0 rgba(0, 0, 0, 0.3), 0 0 22px transparent; } }
+@keyframes rc-banner { to { transform: translateX(-50%) scale(1) rotate(-3deg); } }
+@keyframes rc-badge { 0% { transform: scale(1); } 40% { transform: scale(1.4) rotate(-10deg); } 100% { transform: scale(1); } }
+.rc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .rc-name { font-size: 18px; } .rc-badge, .rc-badge .ico { width: 46px; height: 46px; } .rc-delta b { font-size: 24px; } }

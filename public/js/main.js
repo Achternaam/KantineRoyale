@@ -5323,16 +5323,64 @@ function handleGameOver(data) {
 
   // ranked: je nieuwe rang
   const me2 = data.ranking.find((p) => p.id === socket.id);
-  $('over-rank').textContent = '';
+  $('over-rank').classList.add('hidden');
+  cancelAnimationFrame(rankAnim);
   if (data.ranked && me2 && me2.rpDelta !== undefined && account) {
     account.rp = me2.rp;
-    $('over-rank').textContent = `${me2.rpDelta >= 0 ? '+' : ''}${me2.rpDelta} rangpunten · ${rankOf(me2.rp).name}`;
+    showRankChange(me2.rp - me2.rpDelta, me2.rp);
     refreshAccountUi();
   }
   if (!gainedShown) $('earned').textContent = watched ? '' : 'Beloning wordt berekend…';
 }
 
 // Wat je dit potje verdiende: munten, XP, levels, prestaties, records, reeks en weekverhaal.
+// Ranked: een kaart met je rang, waarop de rangpunten optellen (of aftellen) en de balk meeloopt.
+// Ga je een rang omhoog of omlaag, dan wisselt het schild met een flits en een melding.
+let rankAnim = 0;
+function showRankChange(before, after) {
+  const el = $('over-rank');
+  const delta = after - before;
+  el.className = 'rank-change';
+  el.innerHTML = `<span class="rc-badge">${icon('shield')}</span>
+    <div class="rc-main"><small>Ranked</small><b class="rc-name"></b><span class="rc-bar"><i></i></span><small class="rc-next"></small></div>
+    <div class="rc-delta ${delta >= 0 ? 'plus' : 'min'}"><b>${delta >= 0 ? '+' : '−'}0</b><small>RP</small></div>
+    <div class="rc-banner"></div>`;
+  const badge = el.querySelector('.rc-badge'), name = el.querySelector('.rc-name'), bar = el.querySelector('.rc-bar i');
+  const next = el.querySelector('.rc-next'), count = el.querySelector('.rc-delta b'), banner = el.querySelector('.rc-banner');
+  let shown = -1;
+  const paint = (rp) => {
+    const r = rankOf(rp);
+    if (r.index !== shown) {
+      if (shown >= 0) {
+        // nieuwe rang: flits, geluid en een melding
+        const up = r.index > shown;
+        el.classList.remove('flash');
+        void el.offsetWidth;
+        el.classList.add('flash', up ? 'up' : 'down');
+        banner.textContent = up ? `Promotie! ${r.name}` : `Gedegradeerd naar ${r.name}`;
+        sfx(up ? 'unlock' : 'bad');
+        if (up) sfx('fanfare');
+      }
+      shown = r.index;
+      el.style.setProperty('--rank', hex(r.color));
+      name.textContent = r.name;
+    }
+    bar.style.width = `${r.share * 100}%`;
+    next.textContent = r.toGo ? `Nog ${Math.ceil(r.toGo)} RP tot ${RANK_NAMES[r.index + 1]}` : 'Hoogste rang!';
+    const d = Math.round(rp - before);
+    count.textContent = `${d >= 0 ? '+' : '−'}${Math.abs(d)}`;
+  };
+  paint(before);
+  const start = performance.now() + 700, dur = Math.min(2200, 600 + Math.abs(delta) * 25);
+  const step = (now) => {
+    const t = Math.max(0, Math.min(1, (now - start) / dur));
+    const ease = 1 - Math.pow(1 - t, 3);
+    paint(before + delta * ease);
+    if (t < 1) rankAnim = requestAnimationFrame(step);
+    else if (delta) sfx(delta > 0 ? 'coin' : 'tick');
+  };
+  rankAnim = requestAnimationFrame(step);
+}
 function showGained(gained) {
   gainedShown = true;
   const parts = [`+${gained.coins} munten`, `+${gained.xp} XP`];
