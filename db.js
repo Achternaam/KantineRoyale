@@ -123,6 +123,12 @@ module.exports = {
     flush();
   },
 
+  // alle records van één map in één keer ("rec:kantine:" + soort)
+  async recordAll(prefix) {
+    if (remote) return rest('GET', `leaderboard?week=like.${enc(prefix + '*')}&select=week,name,points&order=points.desc&limit=500`);
+    return local.leaderboard.filter((r) => r.week.startsWith(prefix));
+  },
+
   async recordTop(key) {
     if (remote) return rest('GET', `leaderboard?week=eq.${enc(key)}&order=points.desc&limit=5`);
     return local.leaderboard.filter((r) => r.week === key).sort((a, b) => b.points - a.points).slice(0, 5);

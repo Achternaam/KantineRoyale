@@ -1982,3 +1982,118 @@ body.paged .hub .topbar { animation: none; }
 @media (max-width: 1400px) { .nav { padding: 8px 9px; font-size: 12px; gap: 5px; } .nav .ico { width: 15px; height: 15px; } }
 @media (max-width: 1200px) { .nav .ico { display: none; } .top-right .streak-chip { display: none; } }
 @media (max-width: 1020px) { .top-nav { flex-wrap: wrap; } }
+
+/* ======================================================================
+   Zeldzaamheid op tegels in de kluis, de battlepass en de winkel
+   ====================================================================== */
+.lk-tile[class*="rar-"] { border-color: color-mix(in srgb, var(--rarity) 70%, white);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rarity) 70%, white) 0, var(--rarity) 50%, color-mix(in srgb, var(--rarity) 55%, black) 100%); }
+.lk-tile[class*="rar-"]:hover { border-color: #fff; background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rarity) 55%, white) 0, var(--rarity) 55%, color-mix(in srgb, var(--rarity) 60%, black) 100%); }
+.lk-tile[class*="rar-"] .lk-name { border-top: 3px solid color-mix(in srgb, var(--rarity) 60%, white); background: rgba(10, 6, 30, 0.55); }
+.lk-tile.on { border-color: #ffd34d !important; box-shadow: 0 0 0 3px rgba(255, 211, 77, 0.55), 0 0 18px rgba(255, 211, 77, 0.45); }
+.lk-tile.rar-mythisch { animation: myth 2.4s ease-in-out infinite; }
+@keyframes myth { 50% { box-shadow: 0 0 16px rgba(255, 226, 122, 0.8); } }
+.lk-season { position: absolute; top: 5px; left: 5px; padding: 1px 6px; font-size: 10px; font-style: normal; font-weight: 900; color: var(--ink);
+  background: #ffd34d; border-radius: 6px; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3); }
+.lk-art > img + .lk-season, .lk-art .lk-season { z-index: 1; }
+.lk-draw { border-style: dashed; background: rgba(255, 255, 255, 0.08); }
+.lk-art img[src^="data:image/png"] { image-rendering: auto; }
+#pick-kind, #locker-kind { transition: color 0.2s; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+
+.slot[class*="rar-"] .art { background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rarity) 70%, white) 0, var(--rarity) 50%, color-mix(in srgb, var(--rarity) 55%, black) 100%); }
+.slot[class*="rar-"] .num { border-bottom: 3px solid var(--rarity); }
+#pass-show .art { background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rarity, #8a63d6) 70%, white) 0, var(--rarity, #8a63d6) 50%, color-mix(in srgb, var(--rarity, #8a63d6) 50%, black) 100%) !important; }
+#pass-show small { color: var(--rarity, #ffd34d); }
+.season-chip { gap: 6px !important; }
+.season-chip small { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; }
+.season-chip b { font-variant-numeric: tabular-nums; color: #ffd34d; }
+.pass-card .bp-left { display: block; margin-top: 2px; font-size: 11px; opacity: 0.85; }
+
+/* winkel: zeldzaamheid als achtergrond, zoals in Fortnite */
+.tile.rar-gewoon .art { background: radial-gradient(circle at 50% 30%, #c4c8cd 0, #8d9299 55%, #4d5157 100%); }
+.tile.rar-zeldzaam .art { background: radial-gradient(circle at 50% 30%, #8fb6ff 0, #2f6fde 55%, #173a80 100%); }
+.tile.rar-episch .art { background: radial-gradient(circle at 50% 30%, #d6b8ff 0, #9b6bd1 55%, #4b2785 100%); }
+.tile.rar-legendarisch .art { background: radial-gradient(circle at 50% 30%, #ffc98a 0, #f26a1b 55%, #8a3208 100%); }
+.tile.rar-mythisch .art { background: radial-gradient(circle at 50% 30%, #fff2a0 0, #f5c542 55%, #8a6a10 100%); }
+
+/* ======================================================================
+   Winkel: twee uitgelichte artikelen in de aanbieding en acht daaronder
+   ====================================================================== */
+.shop-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.sale-chip { padding: 3px 10px; font-size: 13px !important; font-style: normal; color: #fff !important; background: #e23b2e; border-radius: 999px; vertical-align: middle; }
+.page #shop-featured { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.page #shop-featured .art { height: 320px; }
+.page #shop-featured .bar2 { padding: 12px 14px; }
+.page #shop-featured .bar2 b { font-size: 22px; }
+.page #shop-featured .bar2 small { font-size: 16px; }
+.page #shop-featured .tile { box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3), inset 0 0 0 4px var(--rarity), 0 0 26px color-mix(in srgb, var(--rarity) 50%, transparent); }
+.page #shop-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.page #shop-grid .art { height: 210px; }
+.tile .art em.sale { top: 7px; right: 7px; left: auto; bottom: auto; padding: 4px 9px; font-size: 13px; background: #e23b2e; transform: rotate(4deg); box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3); }
+@media (max-width: 1300px) { .page #shop-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .page #shop-featured, .page #shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page #shop-featured .art { height: 220px; } }
+
+/* "kopen voor": een pil in de stijl van de pagina, het hele vlak opent de keuzelijst */
+.page .gift-row { position: relative; display: inline-flex; align-items: center; gap: 10px; padding: 7px 40px 7px 12px; color: #fff; cursor: pointer;
+  background: rgba(10, 6, 30, 0.4); border: 2px solid rgba(255, 255, 255, 0.18); border-radius: 14px; transition: background 0.15s, border-color 0.15s; }
+.page .gift-row.hidden { display: none; }
+.page .gift-row:hover { background: rgba(10, 6, 30, 0.55); border-color: rgba(255, 255, 255, 0.4); }
+.page .gift-row.on { background: linear-gradient(135deg, #f26a1b, #e23b2e); border-color: #ffd34d; box-shadow: 0 0 18px rgba(242, 106, 27, 0.5); }
+.page .gift-row > .ico { width: 26px; height: 26px; color: #ffd34d; }
+.gift-label { display: flex; flex-direction: column; line-height: 1.1; }
+.gift-label small { font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.75; }
+.gift-label b { font-size: 16px; font-weight: 900; font-style: italic; text-transform: uppercase; }
+.page .gift-row select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.gift-arrow { position: absolute; right: 12px; width: 16px !important; height: 16px !important; transform: rotate(90deg); opacity: 0.8; }
+
+/* ======================================================================
+   Soepel wisselen tussen pagina's: de oude schuift weg, de nieuwe komt binnen
+   ====================================================================== */
+.screen.page { will-change: transform, opacity; }
+.from-right { animation: kr-in-right 0.48s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
+.from-left { animation: kr-in-left 0.48s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
+.to-left { animation: kr-out-left 0.36s cubic-bezier(0.4, 0, 0.2, 1) both !important; pointer-events: none; z-index: 8 !important; }
+.to-right { animation: kr-out-right 0.36s cubic-bezier(0.4, 0, 0.2, 1) both !important; pointer-events: none; z-index: 8 !important; }
+.hub.from-right, .hub.from-left { animation: none !important; }
+.hub.from-right > :not(.topbar):not(.stage-name):not(#stage-slots) { animation: kr-in-right 0.48s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
+.hub.from-left > :not(.topbar):not(.stage-name):not(#stage-slots) { animation: kr-in-left 0.48s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
+@keyframes kr-in-right { from { transform: translate3d(7vw, 0, 0) scale(0.985); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes kr-in-left { from { transform: translate3d(-7vw, 0, 0) scale(0.985); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes kr-out-left { to { transform: translate3d(-7vw, 0, 0) scale(0.985); opacity: 0; } }
+@keyframes kr-out-right { to { transform: translate3d(7vw, 0, 0) scale(0.985); opacity: 0; } }
+/* tegels komen een voor een binnen */
+.page.from-right .lk-tile, .page.from-left .lk-tile, .page.from-right .tile, .page.from-left .tile, .page.from-right .quest, .page.from-left .quest {
+  animation: kr-tile 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.page .lk-tile:nth-child(2), .page .tile:nth-child(2), .page .quest:nth-child(2) { animation-delay: 0.03s; }
+.page .lk-tile:nth-child(3), .page .tile:nth-child(3), .page .quest:nth-child(3) { animation-delay: 0.06s; }
+.page .lk-tile:nth-child(4), .page .tile:nth-child(4), .page .quest:nth-child(4) { animation-delay: 0.09s; }
+.page .lk-tile:nth-child(n+5), .page .tile:nth-child(n+5), .page .quest:nth-child(n+5) { animation-delay: 0.12s; }
+@keyframes kr-tile { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.nav { transition: background 0.25s, color 0.25s, transform 0.2s; }
+@media (prefers-reduced-motion: reduce) { .from-right, .from-left, .to-left, .to-right, .page .lk-tile, .page .tile { animation-duration: 0.01s !important; } }
+
+/* ---------- Gemaakt door ---------- */
+.credit { margin: 0; font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.8); letter-spacing: 0.5px; }
+.credit b { color: #ffd34d; font-weight: 900; }
+.load-credit { position: absolute; bottom: 24px; }
+.hintbar .hub-credit { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 5px 12px; font-size: 11px; background: rgba(38, 38, 43, 0.55); border-radius: 999px; }
+@media (max-width: 1100px) { .hintbar .hub-credit { display: none; } }
+.welcome-credit { margin: -6px 0 12px; color: var(--grey); }
+.welcome-credit b { color: var(--purple); }
+.about { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 14px 16px; background: linear-gradient(135deg, #5b3fa8, #8a4fd0); border-radius: 14px; color: #fff; }
+.about-crown { flex: none; width: 34px; height: 34px; fill: #ffd34d; }
+.about p { margin: 0; font-size: 14px; }
+.about b { color: #ffd34d; }
+.about small { margin-left: auto; font-weight: 700; opacity: 0.8; }
+
+/* ---------- Records ---------- */
+.record-mine { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px; }
+.record-top { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.record-card { padding: 10px; background: rgba(255, 255, 255, 0.92); border-radius: 12px; color: var(--ink); }
+.record-card .list li { padding: 5px 8px; font-size: 13px; }
+
+/* emote-wiel met veel emotes */
+#wheel-ring .seg.small { width: 58px; height: 58px; margin: -29px 0 0 -29px; }
+.page #shop-featured .trail-art i { width: 30px; height: 30px; border-radius: 6px; }
+.page #shop-grid .trail-art i { width: 20px; height: 20px; }
+.slot.k-coins .art { background: radial-gradient(circle at 50% 30%, #fff2a0 0, #ffcf3f 50%, #c98a10 100%); }

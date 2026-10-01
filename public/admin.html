@@ -5,101 +5,188 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kantine Royale · beheer</title>
   <style>
-    body { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #26262b; background: #fbf8f2; }
-    h1 { margin: 0 0 4px; font-size: 26px; color: #5b3fa8; }
-    h2 { margin: 0 0 10px; font-size: 18px; color: #5b3fa8; }
-    section { margin: 16px 0; padding: 16px; background: #fff; border: 2px solid #ebe5d8; border-radius: 14px; }
-    input, button, select, textarea { padding: 8px 11px; font: inherit; border: 2px solid #ddd6c8; border-radius: 8px; }
-    textarea { width: 100%; box-sizing: border-box; min-height: 54px; }
-    button { font-weight: 800; color: #fff; background: #5b3fa8; border-color: #5b3fa8; cursor: pointer; }
-    button:hover { filter: brightness(1.1); }
-    button.orange { background: #f26a1b; border-color: #f26a1b; }
-    button.red { background: #d12f2f; border-color: #d12f2f; }
-    button.grey { background: #8d9299; border-color: #8d9299; }
-    button.small { padding: 4px 8px; font-size: 12px; }
+    :root { --ink: #1c1730; --card: #2a2247; --card2: #352b5a; --line: rgba(255, 255, 255, 0.12); --text: #f4f1ff; --muted: #b9b0d9; --purple: #8a63d6; --gold: #ffd34d;
+      --orange: #f26a1b; --red: #e2463b; --green: #3aa655; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: var(--text);
+      background: radial-gradient(ellipse at 30% 0%, #4b3290 0, #2a1c5c 45%, #150f2e 100%) fixed; min-height: 100vh; }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 18px 18px 60px; }
+    header.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    header.top h1 { margin: 0; font-size: 26px; font-style: italic; text-transform: uppercase; letter-spacing: 1px; }
+    header.top h1 span { color: var(--gold); }
+    .status { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: 13px; font-weight: 800; background: rgba(0, 0, 0, 0.3); border-radius: 999px; }
+    .pill.ok { background: rgba(58, 166, 85, 0.35); }
+    .pill.bad { background: rgba(226, 70, 59, 0.55); }
+    input, button, select, textarea { padding: 9px 12px; font: inherit; color: var(--text); background: rgba(0, 0, 0, 0.3); border: 2px solid var(--line); border-radius: 10px; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold); }
+    textarea { width: 100%; min-height: 56px; resize: vertical; }
+    button { font-weight: 800; background: var(--purple); border-color: transparent; cursor: pointer; transition: filter 0.12s, transform 0.12s; }
+    button:hover { filter: brightness(1.15); }
+    button:active { transform: translateY(1px); }
+    button.orange { background: var(--orange); }
+    button.red { background: var(--red); }
+    button.grey { background: #5d5677; }
+    button.green { background: var(--green); }
+    button.small { padding: 5px 9px; font-size: 12px; border-radius: 8px; }
+    button.big { padding: 12px 22px; font-size: 16px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
-    .tabs button { background: #c9c3b6; border-color: #c9c3b6; color: #26262b; }
-    .tabs button.on { background: #5b3fa8; border-color: #5b3fa8; color: #fff; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    td, th { padding: 7px 8px; text-align: left; border-bottom: 1px solid #e4ddcf; vertical-align: top; }
-    #note { position: sticky; top: 0; z-index: 2; min-height: 22px; margin: 0; padding: 6px 10px; font-weight: 800; color: #fff; background: #26262b; border-radius: 8px; }
+    .tabs { display: flex; gap: 6px; margin: 10px 0 14px; }
+    .tabs button { padding: 10px 18px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; background: rgba(0, 0, 0, 0.25); }
+    .tabs button.on { color: var(--ink); background: var(--gold); }
+    section.panel { padding: 16px; background: var(--card); border: 2px solid var(--line); border-radius: 16px; }
+    h2 { margin: 0 0 10px; font-size: 18px; font-style: italic; text-transform: uppercase; letter-spacing: 0.5px; }
+    h3 { margin: 0 0 8px; font-size: 15px; text-transform: uppercase; color: var(--gold); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .hidden { display: none !important; }
+    #note { position: fixed; left: 50%; bottom: 20px; z-index: 9; transform: translateX(-50%); padding: 10px 18px; font-weight: 800; background: var(--ink);
+      border: 2px solid var(--gold); border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
     #note:empty { display: none; }
-    .stats { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 800; }
-    .stats span { padding: 4px 10px; background: #f3eefc; border-radius: 999px; }
-    .items { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; }
-    .items span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; font-size: 13px; font-weight: 700; background: #f3eefc; border-radius: 999px; }
-    .lobby { margin: 10px 0; padding: 12px; border: 2px solid #ebe5d8; border-radius: 12px; }
-    .lobby h3 { margin: 0 0 6px; font-size: 16px; }
-    .lobby h3 small { font-weight: 600; color: #55565c; }
-    .player { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0; border-top: 1px solid #f0ebe0; }
-    .player b { min-width: 150px; }
-    .player em { font-style: normal; font-size: 12px; color: #55565c; min-width: 70px; }
-    .muted { color: #8d9299; font-size: 13px; }
-    .hidden { display: none; }
+    .warnbox { margin: 0 0 14px; padding: 12px 14px; font-weight: 700; background: rgba(226, 70, 59, 0.3); border: 2px solid var(--red); border-radius: 12px; }
+
+    /* live */
+    .lobby { margin: 0 0 12px; padding: 14px; background: var(--card2); border-radius: 14px; }
+    .lobby h3 { color: var(--text); font-size: 17px; text-transform: none; }
+    .lobby h3 small { font-weight: 600; color: var(--muted); }
+    .player { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 7px 0; border-top: 1px solid var(--line); }
+    .player b { min-width: 170px; }
+    .player em { min-width: 60px; font-size: 12px; font-style: normal; color: var(--muted); }
+
+    /* speler */
+    .search { display: flex; gap: 8px; }
+    .search input { flex: 1; font-size: 16px; }
+    .profile { display: grid; grid-template-columns: 200px 1fr; gap: 18px; margin-top: 14px; }
+    .hero { display: flex; flex-direction: column; align-items: center; padding: 12px; background: radial-gradient(circle at 50% 35%, #8a63d6 0, #4b3290 70%); border-radius: 16px; }
+    .hero canvas { width: 160px; height: 200px; }
+    .hero b { font-size: 22px; font-style: italic; text-transform: uppercase; }
+    .hero small { color: var(--gold); font-weight: 800; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    .stat { padding: 10px 12px; background: var(--card2); border-radius: 12px; }
+    .stat small { display: block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    .stat b { font-size: 20px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+    .box { padding: 14px; background: var(--card2); border-radius: 14px; }
+    .nums { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .nums label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--muted); }
+    .nums input { width: 100%; }
+    .quick { display: flex; gap: 4px; flex-wrap: wrap; }
+
+    /* voorwerpen kiezen */
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+    .filters button { padding: 6px 11px; font-size: 12px; background: rgba(0, 0, 0, 0.25); }
+    .filters button.on { color: var(--ink); background: #bfe0ff; }
+    .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; max-height: 430px; overflow-y: auto; padding: 4px; }
+    .item { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: var(--text); text-align: left; cursor: pointer;
+      background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rar) 70%, white) 0, var(--rar) 55%, color-mix(in srgb, var(--rar) 50%, black) 100%);
+      border: 3px solid transparent; border-radius: 12px; }
+    .item:hover { border-color: rgba(255, 255, 255, 0.7); }
+    .item.on { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255, 211, 77, 0.4); }
+    .item canvas { display: block; width: 100%; height: 96px; }
+    .item .name { padding: 5px 7px; font-size: 11px; font-weight: 900; text-transform: uppercase; line-height: 1.15; background: rgba(10, 6, 30, 0.6); }
+    .item .name small { display: block; font-size: 9px; letter-spacing: 1px; opacity: 0.75; }
+    .item .x { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; padding: 0; font-size: 14px; line-height: 1; border-radius: 50%; }
+    .item .tag { position: absolute; top: 4px; left: 4px; padding: 1px 6px; font-size: 10px; font-weight: 900; color: var(--ink); background: var(--gold); border-radius: 6px; }
+    .picked { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; padding: 6px 10px; background: rgba(0, 0, 0, 0.25); border-radius: 10px; }
+    .picked canvas { width: 40px; height: 40px; }
+    .warnings div { padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td, th { padding: 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tbody tr:hover { background: rgba(255, 255, 255, 0.05); cursor: pointer; }
+    .credit { margin-top: 26px; text-align: center; font-size: 12px; color: var(--muted); }
+    .credit b { color: var(--gold); }
+    @media (max-width: 860px) { .profile, .grid2 { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <h1>Kantine Royale · beheer</h1>
-  <p class="muted">Vul je beheersleutel in (de waarde van ADMIN_KEY op de server). De sleutel wordt alleen in dit tabblad onthouden.</p>
-  <div class="row">
-    <input id="key" type="password" placeholder="Beheersleutel" autocomplete="off" size="40">
+<div class="wrap">
+  <header class="top">
+    <h1>Kantine Royale · <span>beheer</span></h1>
+    <div class="status" id="status"><span class="pill">Niet ingelogd</span></div>
+  </header>
+  <div class="row" id="login-row">
+    <input id="key" type="password" placeholder="Beheersleutel (ADMIN_KEY)" autocomplete="off" size="36">
     <button id="check">Inloggen</button>
+    <span class="muted">De sleutel wordt alleen in dit tabblad onthouden.</span>
   </div>
-  <p id="note"></p>
+  <div id="storage-warn" class="warnbox hidden">Let op: de server bewaart accounts in een lokaal bestand. Op Render is dat na elke herstart of nieuwe versie weer leeg,
+    waardoor spelers "Naam of wachtwoord klopt niet" krijgen. Zet SUPABASE_URL en SUPABASE_SECRET_KEY bij Render onder Environment.</div>
 
-  <div class="row tabs">
-    <button data-tab="live" class="on">Live in het spel</button>
-    <button data-tab="player">Speler beheren</button>
+  <div class="tabs">
+    <button data-tab="player" class="on">Speler beheren</button>
+    <button data-tab="live">Live in het spel</button>
     <button data-tab="reports">Meldingen</button>
   </div>
 
+  <!-- ===== Speler ===== -->
+  <section id="tab-player" class="panel">
+    <div class="search">
+      <input id="name" type="text" placeholder="Accountnaam opzoeken…">
+      <button id="lookup" class="big">Opzoeken</button>
+    </div>
+    <div id="account" class="hidden">
+      <div class="profile">
+        <div class="hero"><canvas id="hero" width="320" height="400"></canvas><b id="hero-name"></b><small id="hero-sub"></small></div>
+        <div>
+          <div class="stats" id="acc-stats"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="ban" class="red">Blokkeren</button>
+            <button id="unban" class="grey">Blokkade opheffen</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="box">
+          <h3>Geven</h3>
+          <div class="nums">
+            <label>Munten<input id="give-coins" type="number" min="0" max="100000" placeholder="0"></label>
+            <label>Levels (min = omlaag)<input id="give-levels" type="number" min="-100" max="100" placeholder="0"></label>
+            <label>Rangpunten (min = eraf)<input id="give-rp" type="number" min="-5000" max="5000" placeholder="0"></label>
+            <label>Battlepass-treden<input id="give-tiers" type="number" min="0" max="50" placeholder="0"></label>
+          </div>
+          <div class="quick row">
+            <button class="small grey" data-quick="coins:100">+100 munten</button><button class="small grey" data-quick="coins:1000">+1000 munten</button>
+            <button class="small grey" data-quick="levels:1">+1 level</button><button class="small grey" data-quick="levels:10">+10 levels</button>
+            <button class="small grey" data-quick="rp:100">+100 RP</button><button class="small grey" data-quick="tiers:5">+5 treden</button>
+          </div>
+          <div class="picked" id="picked"><span class="muted">Geen voorwerp gekozen. Kies er hieronder een, of geef alleen getallen.</span></div>
+          <button id="give" class="green big">Geven</button>
+        </div>
+        <div class="box">
+          <h3>Waarschuwen</h3>
+          <textarea id="warn-text" maxlength="200" placeholder="Bijvoorbeeld: Kies een nettere naam of je account wordt geblokkeerd."></textarea>
+          <div class="row"><button id="warn" class="orange">Waarschuwing sturen</button><span class="muted">Online direct, anders bij de volgende keer inloggen.</span></div>
+          <h3 style="margin-top:12px">Munten afpakken</h3>
+          <div class="row"><input id="take-coins" type="number" min="0" placeholder="Aantal"><button id="take-coins-btn" class="red">Afpakken</button></div>
+          <div class="warnings" id="acc-warnings"></div>
+        </div>
+      </div>
+
+      <div class="box" style="margin-top:14px">
+        <h3>Alle voorwerpen <span class="muted" style="text-transform:none">· klik om te kiezen voor "Geven"</span></h3>
+        <div class="row"><input id="item-search" type="search" placeholder="Zoeken…" style="flex:1"></div>
+        <div class="filters" id="kind-filters"></div>
+        <div class="filters" id="rar-filters"></div>
+        <div class="items" id="all-items"></div>
+      </div>
+
+      <div class="box" style="margin-top:14px">
+        <h3>Wat deze speler heeft <span class="muted" style="text-transform:none">· × om af te pakken (had hij het aan, dan gaat hij terug naar standaard)</span></h3>
+        <div class="items" id="acc-items"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ===== Live ===== -->
-  <section id="tab-live">
+  <section id="tab-live" class="panel hidden">
     <h2>Lobby's en potjes</h2>
-    <p class="muted">Ververst elke 3 seconden. Kies een actie per lobby of per speler.</p>
+    <p class="muted">Ververst elke 3 seconden.</p>
     <div id="lobbies"><p class="muted">Log eerst in.</p></div>
   </section>
 
-  <!-- ===== Speler ===== -->
-  <section id="tab-player" class="hidden">
-    <h2>Speler opzoeken</h2>
-    <div class="row">
-      <input id="name" type="text" placeholder="Accountnaam">
-      <button id="lookup">Opzoeken</button>
-    </div>
-    <div id="account" class="hidden">
-      <div class="stats" id="acc-stats"></div>
-
-      <h2 style="margin-top:16px">Waarschuwen</h2>
-      <textarea id="warn-text" maxlength="200" placeholder="Bijvoorbeeld: Kies een nettere naam of je account wordt geblokkeerd."></textarea>
-      <div class="row"><button id="warn" class="orange">Waarschuwing sturen</button><span class="muted">Online ziet de speler hem meteen, anders bij de volgende keer inloggen.</span></div>
-      <div id="acc-warnings" class="muted"></div>
-
-      <h2 style="margin-top:16px">Geven</h2>
-      <div class="row">
-        <select id="give-item"><option value="">Geen voorwerp, alleen munten</option></select>
-        <input id="give-coins" type="number" min="0" max="100000" placeholder="Munten">
-        <button id="give">Geven</button>
-      </div>
-
-      <h2 style="margin-top:16px">Afpakken</h2>
-      <div class="row">
-        <input id="take-coins" type="number" min="0" placeholder="Munten afpakken">
-        <button id="take-coins-btn" class="red">Munten afpakken</button>
-      </div>
-      <p class="muted">Klik op × om een voorwerp af te pakken. Had de speler het aan, dan krijgt hij het standaarduiterlijk terug.</p>
-      <div class="items" id="acc-items"></div>
-
-      <h2 style="margin-top:16px">Blokkeren</h2>
-      <div class="row">
-        <button id="ban" class="red">Blokkeren</button>
-        <button id="unban" class="grey">Blokkade opheffen</button>
-      </div>
-    </div>
-  </section>
-
   <!-- ===== Meldingen ===== -->
-  <section id="tab-reports" class="hidden">
+  <section id="tab-reports" class="panel hidden">
     <h2>Meldingen van spelers</h2>
     <button id="load">Meldingen laden</button>
     <table>
@@ -107,166 +194,325 @@
       <tbody id="reports"></tbody>
     </table>
   </section>
+  <p class="credit">Kantine Royale · gemaakt door <b>Justin van Uum</b></p>
+</div>
+<p id="note"></p>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    try { $('key').value = sessionStorage.getItem('kr-admin') || ''; } catch (e) { /* geen opslag */ }
-    const note = (text) => { $('note').textContent = text; clearTimeout(note.t); note.t = setTimeout(() => { $('note').textContent = ''; }, 5000); };
-    async function call(path, body) {
-      const res = await fetch(path, {
-        method: body ? 'POST' : 'GET',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': $('key').value },
-        body: body ? JSON.stringify(body) : undefined
+<script src="/js/catalog.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const C = window.Catalog;
+  try { $('key').value = sessionStorage.getItem('kr-admin') || ''; } catch (e) { /* geen opslag */ }
+  const note = (text) => { $('note').textContent = text; clearTimeout(note.t); note.t = setTimeout(() => { $('note').textContent = ''; }, 4500); };
+  async function call(path, body) {
+    const res = await fetch(path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': $('key').value },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Er ging iets mis.');
+    return data;
+  }
+  const run = (fn) => async (...args) => { try { await fn(...args); } catch (e) { note(e.message); } };
+  const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids); return e; };
+  const hex = (n) => '#' + Number(n).toString(16).padStart(6, '0');
+
+  // ---------- plaatjes: een getekend poppetje per skin, en eenvoudige plaatjes voor de rest ----------
+  // Zelfde bouw en onderdelen als in het spel (C.BUILDS en skin.parts), maar dan plat getekend.
+  function drawDoll(ctx, skin, w, h) {
+    const B = C.BUILDS[skin.build] || C.BUILDS.normaal;
+    const parts = skin.parts || [];
+    const u = h / 2.55;
+    const cx = w / 2, ground = h - u * 0.12;
+    const thick = B.width > 1.1 ? 1.15 : B.width < 0.9 ? 0.9 : 1;
+    const rect = (color, x, y, rw, rh) => { ctx.fillStyle = hex(color); ctx.fillRect(cx + (x - rw / 2) * u, ground - (y + rh / 2) * u, rw * u, rh * u); };
+    const hipY = 0.56 * B.leg;
+    // schaduw
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(cx, ground, 0.45 * u * B.width, 0.08 * u, 0, 0, Math.PI * 2); ctx.fill();
+    // staarten achter het lijf
+    if (parts.includes('staart') || parts.includes('drakenstaart')) rect(skin.hair, 0.36 * B.width, hipY + 0.1, 0.32, 0.1);
+    // benen
+    for (const s of [-1, 1]) {
+      const x = s * 0.13 * Math.max(0.85, B.width);
+      rect(skin.pants, x, hipY - 0.13 * B.leg, 0.21 * thick, 0.26 * B.leg);
+      rect(skin.tone, x, hipY - 0.34 * B.leg, 0.15 * thick, 0.2 * B.leg);
+      rect(0x26262b, x, 0.05, 0.19 * thick, 0.1);
+    }
+    const lift = hipY - 0.56;
+    // armen
+    for (const s of [-1, 1]) {
+      rect(skin.shirt, s * 0.36 * B.width, 1.05 + lift - (B.arm - 1) * 0.21, 0.15 * thick, 0.42 * B.arm);
+      rect(skin.tone, s * 0.36 * B.width, 1.26 + lift - 0.52 * B.arm, 0.13 * thick, 0.13);
+    }
+    // romp
+    rect(skin.pants, 0, 0.6 + lift, 0.5 * B.width, 0.16);
+    rect(skin.shirt, 0, 0.96 + lift, 0.56 * B.width, 0.62);
+    if (parts.includes('jurk')) rect(skin.shirt, 0, 0.47 + lift, 0.64 * B.width, 0.34);
+    rect(0xf2f0ea, 0, 1.09 + lift, 0.16, 0.32);
+    rect(skin.hatColor && skin.hatColor !== 0xffffff ? skin.hatColor : 0xe23b2e, 0, 1.07 + lift, 0.06, 0.27);
+    // hoofd
+    const hs = B.head, hy = 1.33 + lift;
+    const H = (color, x, y, rw, rh) => rect(color, x * hs, hy + (y - 1.33) * hs, rw * hs, rh * hs);
+    for (const s of [-1, 1]) {
+      if (parts.includes('kattenoren') || parts.includes('berenoren')) H(skin.hair, s * 0.18, 1.88, 0.14, 0.16);
+      if (parts.includes('konijnenoren')) H(skin.hair, s * 0.11, 2.04, 0.1, 0.44);
+      if (parts.includes('hoorns') || parts.includes('gewei')) H(parts.includes('gewei') ? 0x8a5a3c : 0xf2e6c8, s * 0.2, 1.92, 0.08, 0.24);
+    }
+    H(skin.tone, 0, 1.54, 0.46, 0.42);
+    H(skin.hair, 0, 1.79, 0.5, 0.12);
+    H(skin.hair, 0, 1.72, 0.5, 0.06);
+    for (const s of [-1, 1]) { H(0xffffff, s * 0.1, 1.56, 0.1, 0.1); H(0x26262b, s * 0.1, 1.555, 0.05, 0.07); }
+    if (parts.includes('snuit')) H(skin.tone, 0, 1.46, 0.24, 0.15);
+    if (parts.includes('snavel')) H(0xf4a020, 0, 1.48, 0.17, 0.07);
+    if (parts.includes('baard')) H(skin.hair === skin.tone ? 0xd9d5cb : skin.hair, 0, 1.36, 0.46, 0.2);
+    if (!parts.includes('snuit') && !parts.includes('snavel') && !parts.includes('baard')) H(0x8a3b2e, 0, 1.42, 0.12, 0.03);
+    const c = skin.hatColor;
+    if (skin.hat === 'cap') { H(c, 0, 1.91, 0.46, 0.12); H(c, 0.15, 1.87, 0.3, 0.04); }
+    if (skin.hat === 'beanie') H(c, 0, 1.91, 0.47, 0.22);
+    if (skin.hat === 'band') H(c, 0, 1.73, 0.47, 0.08);
+    if (skin.hat === 'chef') { H(c, 0, 2.0, 0.38, 0.3); H(c, 0, 2.21, 0.48, 0.16); }
+    if (skin.hat === 'crown') { H(c, 0, 1.9, 0.44, 0.1); for (const x of [-0.17, 0, 0.17]) H(c, x, 2.01, 0.09, 0.14); }
+    if (skin.hat === 'antenna') { H(0x55565c, 0, 2.0, 0.04, 0.3); H(c, 0, 2.18, 0.1, 0.1); }
+    if (skin.hat === 'helm') { H(c, 0, 1.59, 0.54, 0.5); H(0x1f2024, 0, 1.58, 0.36, 0.05); H(0xe23b2e, 0, 1.92, 0.08, 0.2); }
+    if (skin.hat === 'kam') H(c, 0, 1.9, 0.2, 0.14);
+    if (parts.includes('helm')) { ctx.fillStyle = 'rgba(159,212,245,0.35)'; ctx.fillRect(cx - 0.32 * u * hs, ground - (hy + 0.57 * hs) * u, 0.64 * u * hs, 0.6 * u * hs); }
+  }
+  const ICON = { emote: '💃', stamp: '🎨', acc: '🎩', sound: '🔊', class: '🛡️', trail: '✨' };
+  function itemCanvas(id, size = 112) {
+    const cv = el('canvas', { width: size * 2, height: Math.round(size * 1.7) });
+    const ctx = cv.getContext('2d');
+    const [kind, key] = id.split(':');
+    if (kind === 'skin') {
+      drawDoll(ctx, C.skinById(key), cv.width, cv.height);
+    } else if (kind === 'trail') {
+      const t = C.TRAILS.find((x) => x.id === key);
+      ((t && t.colors) || [0x888888]).concat((t && t.colors) || []).slice(0, 6).forEach((col, i) => {
+        ctx.fillStyle = hex(col);
+        ctx.save(); ctx.translate(30 + i * 30, cv.height / 2 + Math.sin(i) * 14); ctx.rotate(0.4); ctx.fillRect(-12, -12, 24, 24); ctx.restore();
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Er ging iets mis.');
-      return data;
+    } else {
+      ctx.font = `${cv.height * 0.5}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ICON[kind] || '⭐', cv.width / 2, cv.height / 2);
     }
-    const run = (fn) => async (...args) => { try { await fn(...args); } catch (e) { note(e.message); } };
-    const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids); return e; };
+    return cv;
+  }
+  const KINDS = [['', 'Alles'], ['skin', 'Skins'], ['emote', 'Emotes'], ['stamp', 'Stempels'], ['acc', 'Accessoires'], ['trail', 'Sporen'], ['sound', 'Raakgeluiden'], ['class', 'Klassen']];
+  const kindName = Object.fromEntries(KINDS);
+  function itemCard(it, extra) {
+    const r = C.RARITY[it.rarity] || C.RARITY[0];
+    const card = el('div', { className: 'item', title: `${it.name} · ${r.name}` });
+    card.style.setProperty('--rar', hex(r.color));
+    card.append(itemCanvas(it.id), el('div', { className: 'name' }, it.name.replace(/^(Skin|Emote|Stempel|Accessoire|Spoor|Raakgeluid|Klasse) /, ''), el('small', { textContent: `${(kindName[it.kind] || it.kind).replace(/s$/, '')} · ${r.name}` })));
+    if (it.season) card.append(el('span', { className: 'tag', textContent: 'S' + it.season, title: 'Battlepass seizoen ' + it.season }));
+    if (extra) card.append(extra);
+    return card;
+  }
 
-    // ---------- tabbladen ----------
-    document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
-      document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
-      ['live', 'player', 'reports'].forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
-    }));
+  // ---------- inloggen en status ----------
+  let ITEMS = [];
+  let picked = null;
+  let kindFilter = '', rarFilter = -1;
+  $('check').addEventListener('click', run(async () => {
+    const data = await call('/api/admin/items');
+    ITEMS = data.items;
+    try { sessionStorage.setItem('kr-admin', $('key').value); } catch (e) { /* geen opslag */ }
+    $('login-row').classList.add('hidden');
+    $('storage-warn').classList.toggle('hidden', data.storage === 'supabase');
+    $('status').replaceChildren(
+      el('span', { className: 'pill ' + (data.storage === 'supabase' ? 'ok' : 'bad'), textContent: data.storage === 'supabase' ? 'Opslag: Supabase' : 'Opslag: lokaal bestand!' }),
+      el('span', { className: 'pill', textContent: `${data.online} online` }),
+      el('span', { className: 'pill', textContent: `${data.lobbies} lobby's` }));
+    renderFilters();
+    renderAllItems();
+    note('Ingelogd als beheerder.');
+    refreshLobbies();
+  }));
+  document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
+    ['live', 'player', 'reports'].forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  }));
 
-    $('check').addEventListener('click', run(async () => {
-      const { items } = await call('/api/admin/items');
-      try { sessionStorage.setItem('kr-admin', $('key').value); } catch (e) { /* geen opslag */ }
-      $('give-item').replaceChildren(new Option('Geen voorwerp, alleen munten', ''), ...items.map((x) => new Option(x.name, x.id)));
-      note('Ingelogd als beheerder.');
-      refreshLobbies();
-    }));
-
-    // ---------- live ----------
-    const MODES = { klassiek: 'Klassiek', teams: 'Teams', duo: "Duo's", voedsel: 'Voedselgevecht', broodjes: 'Broodjesbar', prophunt: 'Verstoppertje', lava: 'De vloer is lava', stoelen: 'Stoelendans', trefbal: 'Trefbal' };
-    const EVENTS = [['donker', 'Stroomstoring'], ['goud', 'Gouden broodje'], ['regen', 'Pizzaregen'], ['brand', 'Brandalarm'], ['dubbel', 'Dubbele punten']];
-    let busy = false;
-    const act = (code, action, extra) => run(async () => {
-      await call('/api/admin/lobby', Object.assign({ code, action }, extra));
-      note('Gedaan.');
-      refreshLobbies();
-    });
-    async function refreshLobbies() {
-      if (busy || !$('key').value) return;
-      // niet verversen terwijl je in een tekstvak typt
-      if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#lobbies input')) return;
-      busy = true;
-      try {
-        const { lobbies } = await call('/api/admin/lobbies');
-        $('lobbies').replaceChildren(...(lobbies.length ? lobbies.map(lobbyCard) : [el('p', { className: 'muted', textContent: 'Er zijn nu geen lobby\'s.' })]));
-      } catch (e) {
-        $('lobbies').replaceChildren(el('p', { className: 'muted', textContent: e.message }));
-      }
-      busy = false;
-    }
-    setInterval(refreshLobbies, 3000);
-    function lobbyCard(l) {
-      const state = l.playing ? `potje bezig · nog ${l.remaining} s` : 'in de wachtruimte';
-      const card = el('div', { className: 'lobby' },
-        el('h3', {}, `${l.code} · ${MODES[l.mode] || l.mode}${l.playing ? ' op ' + l.map : ''} `, el('small', { textContent: `(${l.public ? 'openbaar' : 'privé'}${l.ranked ? ', ranked' : ''} · ${state})` })));
-      const msg = el('input', { placeholder: 'Bericht aan de hele lobby', maxLength: 120, size: 34 });
-      card.append(el('div', { className: 'row' }, msg, el('button', { textContent: 'Versturen', onclick: () => act(l.code, 'message', { text: msg.value })() })));
-      if (l.playing) {
-        card.append(el('div', { className: 'row' },
-          ...EVENTS.map(([id, name]) => el('button', { className: 'small orange', textContent: name, onclick: act(l.code, 'event', { value: id }) })),
-          el('button', { className: 'small', textContent: '+30 s', onclick: act(l.code, 'time', { value: 30 }) }),
-          el('button', { className: 'small', textContent: '−30 s', onclick: act(l.code, 'time', { value: -30 }) }),
-          el('button', { className: 'small', textContent: 'Broodje resetten', onclick: act(l.code, 'broodje') }),
-          el('button', { className: 'small', textContent: 'Confetti', onclick: act(l.code, 'confetti') }),
-          el('button', { className: 'small red', textContent: 'Potje beëindigen', onclick: act(l.code, 'end') })));
-      }
-      for (const p of l.players) {
-        const row = el('div', { className: 'player' },
-          el('b', { textContent: `${p.name}${p.bot ? ' (bot)' : p.account ? '' : ' (gast)'}${p.host ? ' · host' : ''}${l.holder === p.id ? ' · broodje' : ''}` }),
-          el('em', { textContent: l.playing ? `${p.score} pt` : '' }));
-        const b = (text, action, cls, extra) => el('button', { className: 'small ' + (cls || ''), textContent: text, onclick: act(l.code, action, Object.assign({ id: p.id }, extra)) });
-        if (l.playing) {
-          row.append(b('Broodje geven', 'broodje'), b('Lanceren', 'launch', 'orange'), b('Knock-out', 'stun', 'orange'),
-            b('Superkracht', 'boost'), b('Pizzadoos', 'pizza'), b('Val', 'trap', '', { value: 1 + Math.floor(Math.random() * 4) }),
-            b('Naar het broodje', 'teleport'), b('+10 pt', 'score', '', { value: 10 }), b('−10 pt', 'score', '', { value: -10 }));
-        }
-        if (!p.bot) {
-          row.append(el('button', {
-            className: 'small orange', textContent: 'Waarschuwen', onclick: run(async () => {
-              const text = prompt(`Waarschuwing voor ${p.name}:`);
-              if (!text) return;
-              await call('/api/admin/warn', { id: p.id, text });
-              note(`Waarschuwing verstuurd naar ${p.name}.`);
-            })
-          }));
-          if (p.account) row.append(el('button', { className: 'small grey', textContent: 'Profiel', onclick: () => { $('name').value = p.account; document.querySelector('[data-tab="player"]').click(); lookup(); } }));
-        }
-        row.append(b(p.bot ? 'Bot weghalen' : 'Wegsturen', 'kick', 'red'));
-        card.append(row);
-      }
-      return card;
-    }
-
-    // ---------- speler ----------
-    const lookup = run(async () => {
-      const a = await call('/api/admin/account?name=' + encodeURIComponent($('name').value.trim()));
-      $('account').classList.remove('hidden');
-      $('acc-stats').replaceChildren(...[`${a.name}`, `${a.coins} munten`, `level ${a.level}`, `${a.rp} rangpunten`, a.online ? 'online' : 'offline',
-        a.banned ? 'GEBLOKKEERD' : 'niet geblokkeerd', `${a.warnings.length} waarschuwing${a.warnings.length === 1 ? '' : 'en'}`].map((t) => el('span', { textContent: t })));
-      $('acc-warnings').replaceChildren(...a.warnings.slice().reverse().map((w) => el('div', { textContent: `${new Date(w.at).toLocaleString('nl-NL')}: ${w.text}${w.seen ? '' : ' (nog niet gezien)'}` })));
-      $('acc-items').replaceChildren(...(a.items.length ? a.items.map((it) => el('span', {}, it.name, el('button', {
-        className: 'small red', textContent: '×', title: 'Afpakken', onclick: run(async () => {
-          if (!confirm(`${it.name} afpakken van ${a.name}?`)) return;
-          await call('/api/admin/take', { name: a.name, id: it.id });
-          note(`${it.name} afgepakt.`);
-          lookup();
-        })
-      }))) : [el('p', { className: 'muted', textContent: 'Deze speler heeft nog niets.' })]));
-    });
-    $('lookup').addEventListener('click', lookup);
-    $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup(); });
-    $('warn').addEventListener('click', run(async () => {
-      const out = await call('/api/admin/warn', { name: $('name').value, text: $('warn-text').value });
-      $('warn-text').value = '';
-      note(`Waarschuwing verstuurd naar ${out.name}${out.live ? ' (direct gezien)' : ' (bij de volgende keer inloggen)'}.`);
-      lookup();
-    }));
-    $('give').addEventListener('click', run(async () => {
-      const out = await call('/api/admin/give', { name: $('name').value, id: $('give-item').value, coins: $('give-coins').value });
-      $('give-coins').value = '';
-      note(`${out.name} kreeg: ${out.given.join(', ')}.`);
-      lookup();
-    }));
-    $('take-coins-btn').addEventListener('click', run(async () => {
-      const out = await call('/api/admin/take', { name: $('name').value, coins: $('take-coins').value });
-      $('take-coins').value = '';
-      note(`${out.name} heeft nu ${out.coins} munten.`);
-      lookup();
-    }));
-    const ban = (banned) => run(async () => {
-      const out = await call('/api/admin/ban', { name: $('name').value, banned });
-      note(`${out.name} is ${banned ? 'geblokkeerd' : 'weer toegelaten'}.`);
-      lookup();
-    });
-    $('ban').addEventListener('click', ban(true));
-    $('unban').addEventListener('click', ban(false));
-
-    // ---------- meldingen ----------
-    $('load').addEventListener('click', run(async () => {
-      const { reports } = await call('/api/admin/reports');
-      if (!reports.length) note('Er zijn geen meldingen.');
-      $('reports').replaceChildren(...reports.map((r) => {
-        const tr = document.createElement('tr');
-        [new Date(r.created_at).toLocaleString('nl-NL'), r.target, r.reason, r.reporter].forEach((text) => { tr.insertCell().textContent = text; });
-        tr.style.cursor = 'pointer';
-        tr.title = 'Klik om deze speler op te zoeken';
-        tr.addEventListener('click', () => {
-          if (r.target.endsWith('(gast)')) return note('Dit is een gast: die kun je alleen live waarschuwen of wegsturen.');
-          $('name').value = r.target;
-          document.querySelector('[data-tab="player"]').click();
-          lookup();
-        });
-        return tr;
+  // ---------- alle voorwerpen, met filters ----------
+  function renderFilters() {
+    $('kind-filters').replaceChildren(...KINDS.map(([id, name]) => el('button', {
+      className: id === kindFilter ? 'on' : '', textContent: name, onclick: () => { kindFilter = id; renderFilters(); renderAllItems(); }
+    })));
+    $('rar-filters').replaceChildren(el('button', { className: rarFilter < 0 ? 'on' : '', textContent: 'Elke zeldzaamheid', onclick: () => { rarFilter = -1; renderFilters(); renderAllItems(); } }),
+      ...C.RARITY.map((r, i) => {
+        const b = el('button', { className: rarFilter === i ? 'on' : '', textContent: r.name, onclick: () => { rarFilter = i; renderFilters(); renderAllItems(); } });
+        if (rarFilter !== i) b.style.borderColor = hex(r.color);
+        return b;
       }));
+  }
+  function renderAllItems() {
+    const q = $('item-search').value.trim().toLowerCase();
+    const list = ITEMS.filter((it) => (!kindFilter || it.kind === kindFilter) && (rarFilter < 0 || it.rarity === rarFilter) && (!q || it.name.toLowerCase().includes(q)));
+    $('all-items').replaceChildren(...list.slice(0, 300).map((it) => {
+      const card = itemCard(it);
+      if (picked && picked.id === it.id) card.classList.add('on');
+      card.addEventListener('click', () => { picked = picked && picked.id === it.id ? null : it; renderPicked(); renderAllItems(); });
+      return card;
     }));
-    if ($('key').value) $('check').click();
-  </script>
+  }
+  $('item-search').addEventListener('input', renderAllItems);
+  function renderPicked() {
+    if (!picked) return $('picked').replaceChildren(el('span', { className: 'muted', textContent: 'Geen voorwerp gekozen. Kies er hieronder een, of geef alleen getallen.' }));
+    const cv = itemCanvas(picked.id, 40);
+    $('picked').replaceChildren(cv, el('b', { textContent: picked.name }), el('button', { className: 'small grey', textContent: 'Weghalen', onclick: () => { picked = null; renderPicked(); renderAllItems(); } }));
+  }
+  document.querySelectorAll('[data-quick]').forEach((b) => b.addEventListener('click', () => {
+    const [field, n] = b.dataset.quick.split(':');
+    const input = $('give-' + field);
+    input.value = (Number(input.value) || 0) + Number(n);
+  }));
+
+  // ---------- speler ----------
+  let current = null;
+  const lookup = run(async () => {
+    const a = await call('/api/admin/account?name=' + encodeURIComponent($('name').value.trim()));
+    current = a;
+    $('account').classList.remove('hidden');
+    const ctx = $('hero').getContext('2d');
+    ctx.clearRect(0, 0, 320, 400);
+    drawDoll(ctx, C.skinById(a.look.skin), 320, 400);
+    $('hero-name').textContent = a.name;
+    $('hero-sub').textContent = `${a.online ? '● online' : 'offline'}${a.banned ? ' · GEBLOKKEERD' : ''}`;
+    const stat = (label, value) => el('div', { className: 'stat' }, el('small', { textContent: label }), el('b', { textContent: value }));
+    $('acc-stats').replaceChildren(stat('Munten', a.coins), stat('Level', a.level + (a.prestige ? ` (${a.prestige}× diploma)` : '')), stat('Rang', `${a.rank} · ${a.rp} RP`),
+      stat('Battlepass', `trede ${a.tier} · S${a.season}`), stat('Potjes', a.stats.games), stat('Gewonnen', a.stats.wins), stat('Raak', a.stats.hits),
+      stat('Waarschuwingen', a.warnings.length), stat('Skin', C.skinById(a.look.skin).name), stat('Voorwerpen', a.items.length));
+    $('acc-warnings').replaceChildren(...a.warnings.slice().reverse().map((w) => el('div', { textContent: `${new Date(w.at).toLocaleString('nl-NL')}: ${w.text}${w.seen ? '' : ' (nog niet gezien)'}` })));
+    $('acc-items').replaceChildren(...(a.items.length ? a.items.map((it) => itemCard(it, el('button', {
+      className: 'x red', textContent: '×', title: 'Afpakken', onclick: run(async (e) => {
+        e.stopPropagation();
+        if (!confirm(`${it.name} afpakken van ${a.name}?`)) return;
+        await call('/api/admin/take', { name: a.name, id: it.id });
+        note(`${it.name} afgepakt.`);
+        lookup();
+      })
+    }))) : [el('p', { className: 'muted', textContent: 'Deze speler heeft nog niets.' })]));
+  });
+  $('lookup').addEventListener('click', lookup);
+  $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup(); });
+  $('give').addEventListener('click', run(async () => {
+    const out = await call('/api/admin/give', {
+      name: $('name').value, id: picked ? picked.id : '', coins: $('give-coins').value, levels: $('give-levels').value, rp: $('give-rp').value, tiers: $('give-tiers').value
+    });
+    ['give-coins', 'give-levels', 'give-rp', 'give-tiers'].forEach((id) => { $(id).value = ''; });
+    picked = null;
+    renderPicked();
+    renderAllItems();
+    note(`${out.name} kreeg: ${out.given.join(', ')}.`);
+    lookup();
+  }));
+  $('warn').addEventListener('click', run(async () => {
+    const out = await call('/api/admin/warn', { name: $('name').value, text: $('warn-text').value });
+    $('warn-text').value = '';
+    note(`Waarschuwing verstuurd naar ${out.name}${out.live ? ' (direct gezien)' : ' (bij de volgende keer inloggen)'}.`);
+    lookup();
+  }));
+  $('take-coins-btn').addEventListener('click', run(async () => {
+    const out = await call('/api/admin/take', { name: $('name').value, coins: $('take-coins').value });
+    $('take-coins').value = '';
+    note(`${out.name} heeft nu ${out.coins} munten.`);
+    lookup();
+  }));
+  const ban = (banned) => run(async () => {
+    if (banned && !confirm(`${$('name').value} blokkeren?`)) return;
+    const out = await call('/api/admin/ban', { name: $('name').value, banned });
+    note(`${out.name} is ${banned ? 'geblokkeerd' : 'weer toegelaten'}.`);
+    lookup();
+  });
+  $('ban').addEventListener('click', ban(true));
+  $('unban').addEventListener('click', ban(false));
+
+  // ---------- live ----------
+  const MODES = Object.fromEntries(Object.entries(C.MODE_INFO).map(([id, m]) => [id, m.name]));
+  const EVENTS = [['donker', 'Stroomstoring'], ['goud', 'Gouden broodje'], ['regen', 'Pizzaregen'], ['brand', 'Brandalarm'], ['dubbel', 'Dubbele punten']];
+  let busy = false;
+  const act = (code, action, extra) => run(async () => {
+    await call('/api/admin/lobby', Object.assign({ code, action }, extra));
+    note('Gedaan.');
+    refreshLobbies();
+  });
+  async function refreshLobbies() {
+    if (busy || !ITEMS.length || $('tab-live').classList.contains('hidden')) return;
+    if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#lobbies input')) return;
+    busy = true;
+    try {
+      const { lobbies } = await call('/api/admin/lobbies');
+      $('lobbies').replaceChildren(...(lobbies.length ? lobbies.map(lobbyCard) : [el('p', { className: 'muted', textContent: 'Er zijn nu geen lobby\'s.' })]));
+    } catch (e) {
+      $('lobbies').replaceChildren(el('p', { className: 'muted', textContent: e.message }));
+    }
+    busy = false;
+  }
+  setInterval(refreshLobbies, 3000);
+  document.querySelector('[data-tab="live"]').addEventListener('click', refreshLobbies);
+  function lobbyCard(l) {
+    const state = l.playing ? `potje bezig · nog ${l.remaining} s` : 'in de wachtruimte';
+    const card = el('div', { className: 'lobby' },
+      el('h3', {}, `${l.code} · ${MODES[l.mode] || l.mode}${l.playing ? ' op ' + l.map : ''} `, el('small', { textContent: `(${l.public ? 'openbaar' : 'privé'}${l.ranked ? ', ranked' : ''} · ${state})` })));
+    const msg = el('input', { placeholder: 'Bericht aan de hele lobby', maxLength: 120, size: 34 });
+    card.append(el('div', { className: 'row' }, msg, el('button', { textContent: 'Versturen', onclick: () => act(l.code, 'message', { text: msg.value })() })));
+    if (l.playing) {
+      card.append(el('div', { className: 'row' },
+        ...EVENTS.map(([id, name]) => el('button', { className: 'small orange', textContent: name, onclick: act(l.code, 'event', { value: id }) })),
+        el('button', { className: 'small', textContent: '+30 s', onclick: act(l.code, 'time', { value: 30 }) }),
+        el('button', { className: 'small', textContent: '−30 s', onclick: act(l.code, 'time', { value: -30 }) }),
+        el('button', { className: 'small', textContent: 'Broodje resetten', onclick: act(l.code, 'broodje') }),
+        el('button', { className: 'small', textContent: 'Confetti', onclick: act(l.code, 'confetti') }),
+        el('button', { className: 'small red', textContent: 'Potje beëindigen', onclick: act(l.code, 'end') })));
+    }
+    for (const p of l.players) {
+      const row = el('div', { className: 'player' },
+        el('b', { textContent: `${p.name}${p.bot ? ' (bot)' : p.account ? '' : ' (gast)'}${p.host ? ' · host' : ''}${l.holder === p.id ? ' · broodje' : ''}` }),
+        el('em', { textContent: l.playing ? `${p.score} pt` : '' }));
+      const b = (text, action, cls, extra) => el('button', { className: 'small ' + (cls || ''), textContent: text, onclick: act(l.code, action, Object.assign({ id: p.id }, extra)) });
+      if (l.playing) {
+        row.append(b('Broodje geven', 'broodje'), b('Lanceren', 'launch', 'orange'), b('Knock-out', 'stun', 'orange'),
+          b('Superkracht', 'boost'), b('Pizzadoos', 'pizza'), b('Val', 'trap', '', { value: 1 + Math.floor(Math.random() * 4) }),
+          b('Naar het broodje', 'teleport'), b('+10 pt', 'score', '', { value: 10 }), b('−10 pt', 'score', '', { value: -10 }));
+      }
+      if (!p.bot) {
+        row.append(el('button', {
+          className: 'small orange', textContent: 'Waarschuwen', onclick: run(async () => {
+            const text = prompt(`Waarschuwing voor ${p.name}:`);
+            if (!text) return;
+            await call('/api/admin/warn', { id: p.id, text });
+            note(`Waarschuwing verstuurd naar ${p.name}.`);
+          })
+        }));
+        if (p.account) row.append(el('button', { className: 'small grey', textContent: 'Profiel', onclick: () => { $('name').value = p.account; document.querySelector('[data-tab="player"]').click(); lookup(); } }));
+      }
+      row.append(b(p.bot ? 'Bot weghalen' : 'Wegsturen', 'kick', 'red'));
+      card.append(row);
+    }
+    return card;
+  }
+
+  // ---------- meldingen ----------
+  $('load').addEventListener('click', run(async () => {
+    const { reports } = await call('/api/admin/reports');
+    if (!reports.length) note('Er zijn geen meldingen.');
+    $('reports').replaceChildren(...reports.map((r) => {
+      const tr = document.createElement('tr');
+      [new Date(r.created_at).toLocaleString('nl-NL'), r.target, r.reason, r.reporter].forEach((text) => { tr.insertCell().textContent = text; });
+      tr.title = 'Klik om deze speler op te zoeken';
+      tr.addEventListener('click', () => {
+        if (r.target.endsWith('(gast)')) return note('Dit is een gast: die kun je alleen live waarschuwen of wegsturen.');
+        $('name').value = r.target;
+        document.querySelector('[data-tab="player"]').click();
+        lookup();
+      });
+      return tr;
+    }));
+  }));
+  if ($('key').value) $('check').click();
+</script>
 </body>
 </html>

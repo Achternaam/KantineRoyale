@@ -120,14 +120,17 @@ app.get('/api/leaderboard', async (req, res) => {
     res.status(503).json({ week: weekKey(), top: [], ranked: [], error: 'Ranglijst is even niet bereikbaar.' });
   }
 });
-// records per map: langste broodjestijd, verste rake worp en hoogste score (alleen ingelogde spelers)
-const RECORD_KINDS = ['hold', 'far', 'score'];
+// records per map, de beste vijf van iedereen per soort (alleen ingelogde spelers)
+const RECORD_KINDS = Catalog.RECORDS.map((r) => r.key);
 app.get('/api/records', async (req, res) => {
   const map = MapData.MAP_IDS.includes(req.query.map) ? req.query.map : 'kantine';
   try {
-    const lists = await Promise.all(RECORD_KINDS.map((kind) => db.recordTop(`rec:${map}:${kind}`)));
+    const rows = await db.recordAll(`rec:${map}:`);
     const out = {};
-    RECORD_KINDS.forEach((kind, i) => { out[kind] = lists[i].map((r) => ({ name: r.name, value: kind === 'far' ? r.points / 10 : r.points })); });
+    for (const kind of RECORD_KINDS) {
+      out[kind] = rows.filter((r) => r.week === `rec:${map}:${kind}`).sort((a, b) => b.points - a.points).slice(0, 5)
+        .map((r) => ({ name: r.name, value: kind === 'far' ? r.points / 10 : r.points }));
+    }
     res.json({ map, records: out });
   } catch (e) {
     res.status(503).json({ map, records: null, error: 'Records zijn even niet bereikbaar.' });
@@ -155,11 +158,36 @@ function tooMany(req, res) {
   if (n > 12) res.status(429).json({ error: 'Te veel pogingen. Wacht een minuut.' });
   return n > 12;
 }
+// Eén wijziging per account tegelijk. Anders kan bijvoorbeeld de beloning na een potje net een aankoop
+// of je nieuwe skin overschrijven (beide lezen het oude account en schrijven het daarna terug).
+const accountLocks = new Map();
+function withLock(username, fn) {
+  const prev = accountLocks.get(username) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  const tail = next.catch(() => {});
+  accountLocks.set(username, tail);
+  tail.then(() => { if (accountLocks.get(username) === tail) accountLocks.delete(username); });
+  return next;
+}
+// twee accounts tegelijk (cadeau): altijd in dezelfde volgorde op slot, zodat ze niet op elkaar blijven wachten
+const withLocks = (a, b, fn) => {
+  const [first, second] = [a, b].sort();
+  return first === second ? withLock(first, fn) : withLock(first, () => withLock(second, fn));
+};
 async function newSession(account) {
   const token = crypto.randomBytes(32).toString('hex');
-  const tokens = (account.tokens || []).concat(hashToken(token)).slice(-5); // maximaal vijf apparaten
-  await db.updateAccount(account.id, { tokens });
-  return token;
+  return withLock(account.username, async () => {
+    const fresh = (await db.findAccount(account.username)) || account;
+    const tokens = (fresh.tokens || []).concat(hashToken(token)).slice(-10); // maximaal tien apparaten
+    await db.updateAccount(account.id, { tokens });
+    return token;
+  });
+}
+// de ingelogde speler, vers uit de database gelezen terwijl zijn account op slot zit
+async function lockedMe(req, fn) {
+  const found = await accountFor(bearer(req));
+  if (!found) return fn(null);
+  return withLock(found.username, async () => fn(await db.findAccount(found.username)));
 }
 async function accountFor(token) {
   if (typeof token !== 'string' || token.length !== 64) return null;
@@ -176,7 +204,10 @@ const apiError = (res) => (e) => {
 };
 // Nieuw ranked-seizoen? Dan krijg je een skin in de kleur van je hoogste rang en halveren je rangpunten.
 // Cadeaus die nog in je brievenbus liggen gaan mee in de meldingen en worden daarna geleegd.
-async function freshAccount(account) {
+function freshAccount(account) {
+  return withLock(account.username, async () => freshUnlocked(await db.findAccount(account.username) || account));
+}
+async function freshUnlocked(account) {
   const notices = [];
   const warnings = [];
   const season = economy.rankSeason(account);
@@ -264,32 +295,32 @@ app.post('/api/recover', (req, res) => {
 // Alleen je uiterlijk en uitrusting komen van de client, en alleen wat je echt hebt.
 // Munten, XP en skins kent de server zelf toe.
 app.post('/api/save', (req, res) => {
-  (async () => {
-    const account = await accountFor(bearer(req));
+  lockedMe(req, async (account) => {
     if (!account) return res.status(401).json({ error: 'Niet ingelogd.' });
     await db.updateAccount(account.id, { progress: economy.cosmetics(account, req.body.progress) });
     res.json({ ok: true });
-  })().catch(apiError(res));
+  }).catch(apiError(res));
 });
 
 app.post('/api/buy', (req, res) => {
-  (async () => {
-    const account = await accountFor(bearer(req));
+  lockedMe(req, async (account) => {
     if (!account) return res.status(401).json({ error: 'Niet ingelogd.' });
     const result = economy.buy(account, String(req.body.id));
     if (result.error) return res.status(400).json({ error: result.error });
     const saved = await db.updateAccount(account.id, { progress: result.progress });
     res.json({ account: publicAccount(saved) });
-  })().catch(apiError(res));
+  }).catch(apiError(res));
 });
 
 // Een artikel uit de winkel van vandaag kopen voor een vriend.
 app.post('/api/gift', (req, res) => {
   (async () => {
-    const sender = await accountFor(bearer(req));
-    if (!sender) return res.status(401).json({ error: 'Niet ingelogd.' });
+    const me = await accountFor(bearer(req));
+    if (!me) return res.status(401).json({ error: 'Niet ingelogd.' });
     const username = String(req.body.to || '').trim().toLowerCase();
-    if (!(sender.friends || []).includes(username)) return res.status(400).json({ error: 'Je kunt alleen cadeaus geven aan je vrienden.' });
+    if (!(me.friends || []).includes(username)) return res.status(400).json({ error: 'Je kunt alleen cadeaus geven aan je vrienden.' });
+    await withLocks(me.username, username, async () => {
+    const sender = await db.findAccount(me.username);
     const recipient = await db.findAccount(username);
     if (!recipient) return res.status(404).json({ error: 'Er is geen account met die naam.' });
     const result = economy.gift(sender, recipient, String(req.body.id));
@@ -299,13 +330,13 @@ app.post('/api/gift', (req, res) => {
     const sock = presence.get(recipient.username);
     if (sock) sock.emit('gift', { from: sender.display });
     res.json({ account: publicAccount(saved), gained: result.gained });
+    });
   })().catch(apiError(res));
 });
 
 // Prestige: de battlepass opnieuw beginnen, of je diploma halen op level 100.
 app.post('/api/prestige', (req, res) => {
-  (async () => {
-    const account = await accountFor(bearer(req));
+  lockedMe(req, async (account) => {
     if (!account) return res.status(401).json({ error: 'Niet ingelogd.' });
     const result = req.body.kind === 'career' ? economy.prestigeCareer(account) : economy.prestigePass(account);
     if (result.error) return res.status(400).json({ error: result.error });
@@ -313,7 +344,7 @@ app.post('/api/prestige', (req, res) => {
     if (result.stats) patch.stats = result.stats;
     const saved = await db.updateAccount(account.id, patch);
     res.json({ account: publicAccount(saved), gained: result.gained || null });
-  })().catch(apiError(res));
+  }).catch(apiError(res));
 });
 
 // ---------- Vrienden ----------
@@ -376,29 +407,67 @@ app.post('/api/admin/ban', (req, res) => {
 });
 
 // Alles wat de beheerder kan weggeven: skins, klassen, emotes, stempels, accessoires, sporen en raakgeluiden.
+// Elk voorwerp met soort en zeldzaamheid, zodat de beheerpagina er plaatjes en filters bij kan maken.
 function giveable() {
-  const list = Catalog.SKINS.map((k) => ({ id: 'skin:' + k.id, name: `Skin ${k.name}` }))
+  const list = Catalog.SKINS.filter((k) => k.price || k.pass || k.own || k.locked).map((k) => ({ id: 'skin:' + k.id, name: `Skin ${k.name}` }))
     .concat({ id: 'skin:' + Catalog.storyFor().skin, name: `Skin ${Catalog.weekSkin(Catalog.storyFor().skin).name}` })
     .concat(Catalog.CLASSES.filter((c) => c.id !== 'allrounder').map((c) => ({ id: 'class:' + c.id, name: `Klasse ${c.name}` })))
     .concat(Catalog.EMOTE_NAMES.map((n, i) => ({ id: 'emote:' + i, name: `Emote ${n}` })).filter((e, i) => i > 4))
     .concat(Catalog.STAMP_NAMES.map((n, i) => ({ id: 'stamp:e' + i, name: `Stempel ${n}` })), { id: 'stamp:reeks7', name: 'Stempel Vlammenreeks' });
   for (const item of Catalog.SHOP) if (!list.some((x) => x.id === item.id)) list.push({ id: item.id, name: `${item.kind} ${item.name}` });
+  for (const x of list) {
+    x.kind = x.id.split(':')[0];
+    x.rarity = Catalog.itemRarity(x.id);
+  }
   return list;
 }
+// de lobbyspeler(s) van een account, om rangpunten ook in een lopend potje bij te werken
+const onlinePlayers = (username) => [...lobbies.values()].flatMap((l) => [...l.players.values()]).filter((p) => p.username === username);
 app.get('/api/admin/items', (req, res) => {
   if (!isAdmin(req, res)) return;
-  res.json({ items: giveable() });
+  // remote: accounts staan veilig in Supabase. Lokaal: in een bestand dat bij een herstart van de host verdwijnt.
+  res.json({ items: giveable(), storage: db.remote ? 'supabase' : 'local', online: presence.size, lobbies: lobbies.size });
 });
 app.post('/api/admin/give', (req, res) => {
   if (!isAdmin(req, res)) return;
   (async () => {
-    const account = await db.findAccount(String(req.body.name || '').trim().toLowerCase());
+    const username = String(req.body.name || '').trim().toLowerCase();
+    await withLock(username, async () => {
+    const account = await db.findAccount(username);
     if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
     const p = economy.wallet(account);
     const coins = Math.max(0, Math.min(100000, Math.floor(Number(req.body.coins) || 0)));
+    const levels = Math.max(-100, Math.min(100, Math.floor(Number(req.body.levels) || 0)));
+    const rp = Math.max(-5000, Math.min(5000, Math.floor(Number(req.body.rp) || 0)));
+    const tiers = Math.max(0, Math.min(50, Math.floor(Number(req.body.tiers) || 0)));
     const item = giveable().find((x) => x.id === req.body.id);
-    if (!item && !coins) return res.status(400).json({ error: 'Kies iets om te geven.' });
+    if (!item && !coins && !levels && !rp && !tiers) return res.status(400).json({ error: 'Kies iets om te geven.' });
     const gifts = [];
+    const patch = {};
+    if (levels) {
+      // level verhogen of verlagen: de XP precies op het begin van het nieuwe level zetten
+      const level = Math.max(1, Math.min(Catalog.CAREER_MAX, Catalog.careerOf(p.careerXp).level + levels));
+      p.careerXp = Catalog.careerXpFor(level);
+      gifts.push({ from: 'De beheerder', id: 'level', name: `${levels > 0 ? '+' : ''}${levels} level${Math.abs(levels) === 1 ? '' : 's'} (nu level ${level})` });
+    }
+    if (tiers) {
+      // battlepass-treden: als XP, zodat de beloningen van die treden ook echt uitgekeerd worden
+      const gained = { coins: 0, xp: 0, rewards: [], unlocked: [], daily: 0, ach: [], mastery: [], records: [], story: [], level: 0, items: [] };
+      const before = p.bpTier;
+      const pass = Catalog.buildPass((p.season - 1) % Catalog.THEMES.length);
+      p.xp = Math.min(pass.length * Catalog.XP_PER_TIER, p.xp + tiers * Catalog.XP_PER_TIER);
+      while (p.bpTier < Math.floor(p.xp / Catalog.XP_PER_TIER)) {
+        const reward = pass[p.bpTier++];
+        if (reward.coins) p.coins += reward.coins;
+        else if (!p.owned.includes(reward.id)) { p.owned.push(reward.id); p.origin[reward.id] = p.season; }
+      }
+      gifts.push({ from: 'De beheerder', id: 'tiers', name: `${p.bpTier - before} battlepass-treden` });
+    }
+    if (rp) {
+      patch.rank_points = Math.max(0, (account.rank_points || 0) + rp);
+      for (const pl of onlinePlayers(account.username)) pl.rp = patch.rank_points;
+      gifts.push({ from: 'De beheerder', id: 'rp', name: `${rp > 0 ? '+' : ''}${rp} rangpunten` });
+    }
     if (item) {
       const skin = item.id.startsWith('skin:') && Catalog.skinById(item.id.slice(5));
       // challenge-skins staan in "unlocked", al het andere in "owned"
@@ -414,10 +483,11 @@ app.post('/api/admin/give', (req, res) => {
       gifts.push({ from: 'De beheerder', id: 'coins', name: `${coins} munten` });
     }
     p.inbox = p.inbox.concat(gifts).slice(-20);
-    await db.updateAccount(account.id, { progress: p });
+    await db.updateAccount(account.id, Object.assign(patch, { progress: p }));
     const sock = presence.get(account.username);
     if (sock) sock.emit('gift', { from: 'De beheerder' });
     res.json({ ok: true, name: account.display, given: gifts.map((g) => g.name) });
+    });
   })().catch(apiError(res));
 });
 
@@ -429,11 +499,14 @@ app.get('/api/admin/account', (req, res) => {
     if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
     const p = economy.wallet(account);
     const names = new Map(giveable().map((x) => [x.id, x.name]));
-    const items = p.owned.map((id) => ({ id, name: names.get(id) || id }))
-      .concat(p.unlocked.map((id) => ({ id: 'skin:' + id, name: `Skin ${Catalog.skinById(id).name} (challenge)` })));
+    const items = p.owned.map((id) => ({ id, name: names.get(id) || id, kind: id.split(':')[0], rarity: Catalog.itemRarity(id), season: p.origin[id] || 0 }))
+      .concat(p.unlocked.map((id) => ({ id: 'skin:' + id, name: `Skin ${Catalog.skinById(id).name} (challenge)`, kind: 'skin', rarity: Catalog.itemRarity('skin:' + id) })));
+    const stats = account.stats || {};
     res.json({
-      name: account.display, coins: p.coins, banned: !!account.banned, rp: account.rank_points,
-      level: Catalog.careerOf(p.careerXp).level, warnings: p.warnings || [], items, online: presence.has(account.username)
+      name: account.display, coins: p.coins, banned: !!account.banned, rp: account.rank_points, rank: Catalog.rankOf(account.rank_points || 0).name,
+      level: Catalog.careerOf(p.careerXp).level, prestige: p.prestige, tier: p.bpTier, season: p.season, warnings: p.warnings || [], items,
+      online: presence.has(account.username), look: { skin: p.skin, acc: p.acc, cls: p.cls, title: p.title },
+      stats: { games: stats.games || 0, wins: stats.wins || 0, hits: stats.hits || 0, tackles: stats.tackles || 0 }
     });
   })().catch(apiError(res));
 });
@@ -441,8 +514,9 @@ app.get('/api/admin/account', (req, res) => {
 // Iets afpakken: een voorwerp en/of munten. Had de speler het aan, dan gaat hij terug naar het standaarduiterlijk.
 app.post('/api/admin/take', (req, res) => {
   if (!isAdmin(req, res)) return;
-  (async () => {
-    const account = await db.findAccount(String(req.body.name || '').trim().toLowerCase());
+  const username = String(req.body.name || '').trim().toLowerCase();
+  withLock(username, async () => {
+    const account = await db.findAccount(username);
     if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
     const p = economy.wallet(account);
     const id = String(req.body.id || '');
@@ -470,7 +544,7 @@ app.post('/api/admin/take', (req, res) => {
     if (!taken.length) return res.status(400).json({ error: 'Kies iets om af te pakken.' });
     await db.updateAccount(account.id, { progress: p });
     res.json({ ok: true, name: account.display, taken, coins: p.coins });
-  })().catch(apiError(res));
+  }).catch(apiError(res));
 });
 
 // Waarschuwing: de speler krijgt een melding die hij moet wegklikken. Online meteen, anders bij de volgende keer inloggen.
@@ -487,7 +561,9 @@ app.post('/api/admin/warn', (req, res) => {
       if (!sock.data.username) return res.json({ ok: true, name: 'gast', live: true });
       req.body.name = sock.data.username;
     }
-    const account = await db.findAccount(String(req.body.name || '').trim().toLowerCase());
+    const username = String(req.body.name || '').trim().toLowerCase();
+    await withLock(username, async () => {
+    const account = await db.findAccount(username);
     if (!account) return res.status(404).json({ error: 'Er is geen account met die naam.' });
     const p = economy.wallet(account);
     p.warnings = (Array.isArray(p.warnings) ? p.warnings : []).concat({ text, at: new Date().toISOString(), seen: false }).slice(-20);
@@ -496,6 +572,7 @@ app.post('/api/admin/warn', (req, res) => {
     if (sock) p.warnings[p.warnings.length - 1].seen = true;
     await db.updateAccount(account.id, { progress: p });
     res.json({ ok: true, name: account.display, live: !!sock, count: p.warnings.length });
+    });
   })().catch(apiError(res));
 });
 
@@ -2019,20 +2096,30 @@ function resultFor(lobby, p, { final, won, place, players }) {
       rankedGames: lobby.ranked && final ? 1 : 0, weeklyGames: lobby.weekly && final ? 1 : 0
     },
     maxes: { bestScore: lobby.practice ? 0 : Math.floor(p.score), bestHold: Math.floor(p.bestHold), farHit: Math.floor(p.farHit), mostHits: p.hits },
-    records: lobby.practice ? null : { score: Math.floor(p.score), hold: Math.floor(p.bestHold), far: Math.round(p.farHit * 10) / 10, hits: p.hits },
+    records: lobby.practice ? null : recordValues(p),
     rivals: p.rv
   };
 }
 
+// wat iemand in één potje heeft neergezet, voor de records
+const recordValues = (p) => ({
+  score: Math.floor(p.score), hold: Math.floor(p.bestHold), far: Math.round(p.farHit * 10) / 10, hits: p.hits, tackles: p.tackles, slaps: p.slaps,
+  pickups: p.pickups, bites: p.bites, catches: p.catches, lava: Math.floor(p.lavaSeconds), traps: p.trapHits, finds: p.finds, tables: p.tables,
+  jumps: p.cJumps, passes: p.passes
+});
 function saveRecords(lobby, p) {
-  const values = { hold: Math.floor(p.bestHold), far: Math.round(p.farHit * 10), score: Math.floor(p.score) };
+  const values = recordValues(p);
+  values.far = Math.round(p.farHit * 10); // in de tabel staan hele getallen
   for (const kind of RECORD_KINDS) {
     if (values[kind] > 0) db.recordSet(`rec:${lobby.map}:${kind}`, p.name, values[kind]).catch((e) => console.error('Record opslaan mislukt:', e.message));
   }
 }
 
 // Munten, XP, battlepass en prestaties voor een ingelogde speler.
-async function awardPlayer(p, result) {
+function awardPlayer(p, result) {
+  return withLock(p.username, () => awardUnlocked(p, result));
+}
+async function awardUnlocked(p, result) {
   try {
     let account = await db.findAccount(p.username);
     if (!account) return;
@@ -2213,7 +2300,21 @@ setInterval(() => {
     }
   }
   MapData.dynamic = [];
+  // meten hoe lang een ronde duurt: boven de 50 ms loopt het spel achter
+  const took = Date.now() - now;
+  loopStats.max = Math.max(loopStats.max, took);
+  loopStats.sum += took;
+  loopStats.n++;
+  loopStats.gap = Math.max(loopStats.gap, now - loopStats.last - TICK_MS);
+  loopStats.last = now;
+  if (now - loopStats.since > 10000) {
+    if (loopStats.max > 40 || loopStats.gap > 60) {
+      console.warn(`Trage server: langste ronde ${loopStats.max} ms, gemiddeld ${(loopStats.sum / loopStats.n).toFixed(1)} ms, grootste vertraging ${loopStats.gap} ms, ${lobbies.size} lobby's`);
+    }
+    Object.assign(loopStats, { max: 0, sum: 0, n: 0, gap: 0, since: now });
+  }
 }, TICK_MS);
+const loopStats = { max: 0, sum: 0, n: 0, gap: 0, last: Date.now(), since: Date.now() };
 
 function leaveLobby(socket) {
   const lobby = lobbies.get(socket.data.code);
@@ -2774,7 +2875,7 @@ io.on('connection', (socket) => {
 
   socket.on('emote', (e) => {
     const a = activePlayer();
-    if (!a || !Number.isInteger(e) || e < 0 || e > 10) return;
+    if (!a || !Number.isInteger(e) || e < 0 || e >= Catalog.EMOTE_NAMES.length) return;
     if (e) a.p.emotes++;
     emit(a.lobby, { type: 'emote', id: socket.id, e });
   });
@@ -2893,6 +2994,8 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`Kantine Royale draait op http://localhost:${PORT}`);
+  console.log(db.remote ? 'Accounts worden opgeslagen in Supabase.'
+    : 'LET OP: accounts staan in een lokaal bestand. Op een host als Render is dat na elke herstart weer leeg!');
   for (const list of Object.values(os.networkInterfaces())) {
     for (const net of list || []) {
       if (net.family === 'IPv4' && !net.internal) console.log(`Klasgenoten op hetzelfde netwerk: http://${net.address}:${PORT}`);

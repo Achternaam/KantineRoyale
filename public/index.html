@@ -38,6 +38,7 @@
     <div class="load-runner"><i></i></div>
     <div class="load-bar"><i id="load-fill"></i></div>
     <p id="load-tip"></p>
+    <p class="credit load-credit">Een spel van <b>Justin van Uum</b></p>
   </div>
 
   <!-- Verbinding kwijt -->
@@ -106,7 +107,7 @@
       <div class="feat-track">
         <button id="btn-weekly" class="feat weekly-card"><span class="label"><i data-ico="party"></i>Modus van de week</span><b id="weekly-name"></b><small id="weekly-state"></small></button>
         <button class="feat story-card" data-open="story"><span class="label"><i data-ico="book"></i>Weekverhaal</span><b id="story-title"></b><span class="bar"><i id="story-bar"></i></span><small id="story-next"></small></button>
-        <button class="feat pass-card" data-open="pass"><span class="label"><i data-ico="star"></i>Battlepass</span><b id="bp-tier"></b><span class="bar"><i id="bp-bar"></i></span><small id="bp-next"></small></button>
+        <button class="feat pass-card" data-open="pass"><span class="label"><i data-ico="star"></i>Battlepass</span><b id="bp-tier"></b><span class="bar"><i id="bp-bar"></i></span><small id="bp-next"></small><small id="bp-left" class="bp-left"></small></button>
       </div>
       <div class="feat-dots"><i class="on"></i><i></i><i></i></div>
     </div>
@@ -164,6 +165,7 @@
     <div class="hintbar">
       <span><b>Klik</b> op een plek naast je om iemand uit te nodigen</span>
       <span><b>Kluis</b> voor skins, uiterlijk, emotes en klasse</span>
+      <span class="credit hub-credit">Gemaakt door <b>Justin van Uum</b></span>
     </div>
   </section>
 
@@ -559,6 +561,8 @@
         <p class="hint">Klik op een toets en druk daarna de nieuwe toets in. Een controller werkt ook: sluit hem aan en druk op een knop.</p>
         <ul id="key-list" class="keys"></ul>
         <button id="btn-keys-reset" class="btn small">Standaardtoetsen terugzetten</button>
+        <div class="about"><svg class="about-crown" viewBox="0 0 24 24"><path d="M3 18h18v2.5H3z M3 16L2 7l5.5 4L12 4l4.5 7L22 7l-1 9z"/></svg>
+          <p><b>Kantine Royale</b> is bedacht en gemaakt door <b>Justin van Uum</b>.</p><small>Bedankt voor het spelen!</small></div>
       </div>
     </div>
   </section>
@@ -594,13 +598,17 @@
       <header class="panel-head"><i data-ico="cart"></i><span>Winkel</span><span class="head-coins"><i data-ico="coin"></i><b class="coins">0</b></span><button class="x" data-close><i data-ico="close"></i></button></header>
       <div class="shop-layout">
       <div class="shop-scroll">
-        <div id="gift-row" class="gift-row hidden"><i data-ico="gift"></i><span>Kopen voor</span><select id="gift-to"><option value="">Mezelf</option></select></div>
-        <p class="shop-title">Winkel van vandaag <span id="shop-timer"></span></p>
+        <div class="shop-head">
+          <p class="shop-title">Uitgelicht <span class="sale-chip">30% korting</span></p>
+          <label id="gift-row" class="gift-row hidden" title="Koop iets als cadeau voor een vriend">
+            <i data-ico="gift"></i><span class="gift-label"><small>Kopen voor</small><b id="gift-who">Mezelf</b></span>
+            <select id="gift-to"><option value="">Mezelf</option></select><i data-ico="chevron" class="gift-arrow"></i>
+          </label>
+        </div>
         <div id="shop-featured" class="tiles"></div>
+        <p class="shop-title">Dagaanbod <span id="shop-timer"></span></p>
         <div id="shop-grid" class="tiles"></div>
-        <p class="shop-title">Jouw spuitbus-stempel</p>
-        <div id="stamp-grid" class="chips"></div>
-        <button class="btn small" data-open="draw">Zelf een stempel tekenen</button>
+        <p class="hint">Je stempel kies je in de Kluis, onder Stempel.</p>
       </div>
       <aside class="shop-view"><canvas id="shop-canvas" width="300" height="440"></canvas><b id="shop-view-name"></b><small id="shop-view-kind">Beweeg over een artikel om het te passen</small></aside>
       </div>
@@ -609,7 +617,7 @@
 
   <section id="pass" class="screen page hidden">
     <div class="card panel xwide">
-      <header class="panel-head"><i data-ico="star"></i><span>Battlepass · Seizoen 1 · gratis</span><button class="x" data-close><i data-ico="close"></i></button></header>
+      <header class="panel-head"><i data-ico="star"></i><span id="pass-head">Battlepass</span><span class="head-coins season-chip" title="Daarna begint een nieuw seizoen met nieuwe beloningen"><i data-ico="moon"></i><small>Eindigt over</small><b id="pass-left"></b></span><button class="x" data-close><i data-ico="close"></i></button></header>
       <div class="pass-layout">
         <div class="pass-main">
           <div class="pass-top">
@@ -661,6 +669,7 @@
       <div class="welcome-top"><div class="logo-wrap" id="welcome-logo"></div></div>
       <div id="welcome-1" class="col">
         <h2>Welkom in de kantine!</h2>
+        <p class="credit welcome-credit">Een spel van <b>Justin van Uum</b></p>
         <ul class="welcome-list">
           <li><i data-ico="broodje"></i><span><b>Pak het frikandelbroodje</b> en houd het zo lang mogelijk vast.</span></li>
           <li><i data-ico="bolt"></i><span><b>Dash, gooi en klap</b> om het van anderen af te pakken.</span></li>

@@ -9,7 +9,7 @@
     acc: { hat: 'skin', face: 'geen', back: 'rugzak' },
     fx: { trail: 'geen', sound: 'standaard' },
     careerXp: 0, prestige: 0, passPrestige: 0, winRun: 0,
-    mastery: {}, ach: {}, records: {}, rivals: {}, inbox: [],
+    mastery: {}, ach: {}, records: {}, rivals: {}, inbox: [], origin: {},
     streak: { last: '', days: 0, best: 0 },
     story: { key: '', step: 0, value: 0 },
     rankPeak: { season: 0, index: -1 }
@@ -28,7 +28,7 @@
     p.inbox = Array.isArray(p.inbox) ? p.inbox.slice() : [];
     p.loadout = Array.isArray(p.loadout) ? p.loadout.slice(0, 3) : [1, 2, 3];
     for (const key of ['acc', 'fx', 'streak', 'story', 'rankPeak']) p[key] = Object.assign({}, BASE[key], obj(saved[key]));
-    for (const key of ['mastery', 'ach', 'records', 'rivals']) p[key] = JSON.parse(JSON.stringify(obj(saved[key])));
+    for (const key of ['mastery', 'ach', 'records', 'rivals', 'origin']) p[key] = JSON.parse(JSON.stringify(obj(saved[key])));
     for (const key of ['coins', 'xp', 'bpTier', 'careerXp', 'prestige', 'passPrestige', 'winRun']) p[key] = Math.max(0, Math.floor(Number(p[key]) || 0));
     rollSeason(p);
     return p;
@@ -71,7 +71,8 @@
     while (p.bpTier < tier) {
       const reward = pass[p.bpTier++];
       if (reward.coins) giveCoins(p, reward.coins, gained);
-      else if (!giveItem(p, reward.id, gained)) giveCoins(p, 15, gained); // had je al (na een prestige): munten
+      else if (giveItem(p, reward.id, gained)) p.origin[reward.id] = p.season; // onthouden uit welk seizoen het komt
+      else giveCoins(p, 15, gained); // had je al (na een prestige): munten
       gained.rewards.push(reward.label);
     }
     const before = Catalog.careerOf(p.careerXp).level;
@@ -176,7 +177,7 @@
     gained.streak = { days: p.streak.days, coins, reward };
   }
 
-  const RECORD_KEYS = ['score', 'hold', 'far', 'hits'];
+  const RECORD_KEYS = Catalog.RECORDS.map((r) => r.key);
   function addRecords(p, map, records, gained) {
     if (!map || !records) return;
     const mine = p.records[map] || {};
@@ -344,7 +345,7 @@
       if (sound && (!sound.price || p.owned.includes('sound:' + sound.id))) p.fx.sound = sound.id;
     }
     if (Array.isArray(incoming.loadout)) {
-      p.loadout = incoming.loadout.slice(0, 3).map((n) => (Number.isInteger(n) && n >= 1 && n <= 10 && (n <= 4 || p.owned.includes('emote:' + n)) ? n : 0));
+      p.loadout = incoming.loadout.slice(0, 3).map((n) => (Number.isInteger(n) && n >= 1 && n < Catalog.EMOTE_NAMES.length && (n <= 4 || p.owned.includes('emote:' + n)) ? n : 0));
     }
     if (['naam', 'custom'].includes(incoming.stamp) || p.owned.includes('stamp:' + incoming.stamp)) p.stamp = incoming.stamp;
     if (incoming.custom === null || (typeof incoming.custom === 'string' && incoming.custom.length < 40000 && incoming.custom.startsWith('data:image/png;base64,'))) {

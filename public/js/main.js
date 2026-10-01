@@ -93,7 +93,7 @@ const Economy = window.Economy;
 const {
   CLASSES, SKINS, THEMES, SEASON, THEME, seasonDaysLeft, ACCESSORIES, SLOT_NAMES, TITLES, RANK_NAMES, rankOf,
   EMOTE_NAMES, EMOTE_SOURCE, STAMP_ICON, XP_PER_TIER, BATTLEPASS, SHOP, DAILY_REWARD, CHALLENGES, MODE_INFO,
-  careerOf, masteryOf, CAREER_MAX, ACHIEVEMENTS, TIER_NAMES, TRAILS, SOUNDS, RARITY, MAP_NAMES
+  careerOf, masteryOf, CAREER_MAX, ACHIEVEMENTS, TIER_NAMES, TRAILS, SOUNDS, RARITY, MAP_NAMES, BUILDS, RECORDS, itemRarity
 } = Catalog;
 const { today, defs: dailyDefs } = Catalog.dailyFor();
 const TEAM_COLORS = [0xf26a1b, 0x7a3fb8];
@@ -190,14 +190,16 @@ async function api(path, body) {
   if (getToken()) headers.Authorization = 'Bearer ' + getToken();
   const res = await fetch(path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Er ging iets mis.');
+  if (!res.ok) throw Object.assign(new Error(data.error || 'Er ging iets mis.'), { status: res.status });
   return data;
 }
 // voortgang een paar seconden na de laatste wijziging naar de server sturen
 function scheduleSync() {
   if (!account) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => api('/api/save', { progress, stats, daily }).catch(() => {}), 2500);
+  // lukt het niet (verbinding even weg), dan nog een keer proberen
+  syncTimer = setTimeout(() => api('/api/save', { progress, stats, daily })
+    .catch((e) => { if (e.status !== 401 && e.status !== 400) syncTimer = setTimeout(scheduleSync, 8000); }), 2500);
 }
 // Na het inloggen: wat op het account staat is leidend. Een nieuw account krijgt wat je hier al had gespeeld.
 // Na het inloggen is wat de server zegt leidend: munten, XP, skins en statistieken rekent de server uit.
@@ -313,6 +315,19 @@ function sfx(name, pos) {
   else if (name === 'kwak') { tone(600, 250, 0.12, 'sawtooth', 0.25); tone(550, 230, 0.12, 'sawtooth', 0.25, 0.14); }
   else if (name === 'gong') { tone(110, 105, 1.2, 'sine', 0.4); tone(220, 210, 0.9, 'triangle', 0.15); }
   else if (name === 'laser') tone(1800, 200, 0.25, 'sawtooth', 0.18);
+  else if (name === 'piep') { tone(1400, 1900, 0.08, 'sine', 0.3); tone(1900, 1300, 0.12, 'sine', 0.25, 0.08); }
+  else if (name === 'kus') { noise(0.05, 0.7, 2200); tone(900, 1400, 0.09, 'sine', 0.2, 0.03); }
+  else if (name === 'blikje') { tone(1250, 1180, 0.4, 'triangle', 0.25); tone(1870, 1800, 0.3, 'triangle', 0.12); noise(0.06, 0.5, 4000); }
+  else if (name === 'fluit') tone(500, 1600, 0.45, 'sine', 0.3);
+  else if (name === 'robot') [880, 660, 990, 440].forEach((f, i) => tone(f, f, 0.06, 'square', 0.12, i * 0.07));
+  else if (name === 'scheet') { tone(95, 70, 0.4, 'sawtooth', 0.35); noise(0.35, 0.4, 180); }
+  else if (name === 'kassa') { noise(0.08, 0.5, 3000); [2093, 2637].forEach((f, i) => tone(f, f, 0.3, 'triangle', 0.18, 0.08 + i * 0.09)); }
+  else if (name === 'koekoek') { tone(784, 784, 0.18, 'sine', 0.3); tone(622, 622, 0.28, 'sine', 0.3, 0.22); }
+  else if (name === 'retro') [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, f, 0.05, 'square', 0.1, i * 0.045));
+  else if (name === 'tromgrap') { noise(0.08, 0.6, 200); noise(0.08, 0.6, 220, 0.14); noise(0.5, 0.45, 7000, 0.3); }
+  else if (name === 'harp') [523, 659, 784, 988, 1175, 1568].forEach((f, i) => tone(f, f, 0.35, 'triangle', 0.14, i * 0.04));
+  else if (name === 'applaus') for (let i = 0; i < 14; i++) noise(0.05, 0.35 + Math.random() * 0.3, 1500 + Math.random() * 2500, Math.random() * 0.7);
+  else if (name === 'explosie') { noise(0.9, 1, 120); noise(0.4, 0.7, 900); tone(90, 30, 0.8, 'sawtooth', 0.35); [1047, 1319].forEach((f, i) => tone(f, f * 1.5, 0.25, 'triangle', 0.1, 0.15 + i * 0.1)); }
   // nieuw: aftellen, omroeper, raken, fluitsignaal en menu's
   else if (name === 'count') tone(880, 880, 0.14, 'square', 0.18);
   else if (name === 'go') [523, 659, 784, 1047].forEach((f) => tone(f, f * 1.01, 0.45, 'square', 0.1));
@@ -1292,12 +1307,12 @@ function updateParticles(dt) {
       particles.splice(i, 1);
       continue;
     }
-    p.vy -= 16 * dt;
+    if (!p.size) p.vy -= 16 * dt; // spoordeeltjes zweven, andere deeltjes vallen
     p.m.position.x += p.vx * dt;
     p.m.position.y += p.vy * dt;
     p.m.position.z += p.vz * dt;
     p.m.rotation.x += dt * 9;
-    p.m.scale.setScalar(Math.min(0.14, p.life * 0.3));
+    p.m.scale.setScalar(p.size ? p.size * Math.min(1, p.life * 2.5) : Math.min(0.14, p.life * 0.3));
   }
 }
 
@@ -1392,6 +1407,14 @@ function addHat(g, skin, y) {
   } else if (skin.hat === 'antenna') {
     block(g, 0x55565c, 0.04, 0.3, 0.04, 0, y + 0.15, 0);
     block(g, c, 0.1, 0.1, 0.1, 0, y + 0.33, 0);
+  } else if (skin.hat === 'helm') {
+    // ridderhelm over het hele hoofd, met een kijkspleet en een pluim
+    block(g, c, 0.54, 0.5, 0.52, 0, y - 0.26, 0);
+    block(g, 0x1f2024, 0.36, 0.05, 0.02, 0, y - 0.27, 0.265, false);
+    block(g, 0x1f2024, 0.04, 0.18, 0.02, 0, y - 0.38, 0.265, false);
+    block(g, C.red, 0.08, 0.2, 0.34, 0, y + 0.06, -0.02);
+  } else if (skin.hat === 'kam') {
+    [-0.1, 0, 0.1].forEach((z, i) => block(g, c, 0.07, 0.12 + (i === 1 ? 0.05 : 0), 0.09, 0, y + 0.04, z + 0.04));
   }
 }
 
@@ -1450,56 +1473,221 @@ function makeBoard() {
 }
 
 // Voorkant van het model is +z. Armen en benen hangen aan een draaipunt zodat ze kunnen zwaaien.
+// De bouw van de skin (BUILDS) bepaalt hoe lang de benen zijn, hoe breed de romp en hoe groot het hoofd.
+const coneGeo = new THREE.ConeGeometry(1, 1, 10);
+const haloGeo = new THREE.TorusGeometry(0.22, 0.035, 6, 24);
+const ringGeo = new THREE.TorusGeometry(0.07, 0.014, 6, 16);
+const glowMats = new Map();
+const glowMat = (color) => glowMats.get(color) || glowMats.set(color, new THREE.MeshBasicMaterial({ color })).get(color);
 function makePlayerModel(info) {
   const skin = skinById(info.skin);
+  const B = BUILDS[skin.build] || BUILDS.normaal;
+  const parts = skin.parts || [];
+  const has = (part) => parts.includes(part);
   const g = new THREE.Group();
   g.rotation.order = 'YXZ';
+  const rig = new THREE.Group(); // alles van het poppetje zelf, los van naambordje en premie
+  g.add(rig);
+  const hip = 0.56 * B.leg;
+  const lift = hip - 0.56; // alles boven de heupen schuift mee met de lengte van de benen
+  const thick = B.width > 1.1 ? 1.15 : B.width < 0.9 ? 0.9 : 1;
   const pivotAt = (x, y) => {
     const pivot = new THREE.Group();
     pivot.position.set(x, y, 0);
-    g.add(pivot);
+    rig.add(pivot);
     return pivot;
   };
   // benen: korte broek, blote knie, sok en schoen
   const leg = (x) => {
-    const p = pivotAt(x, 0.56);
+    const p = pivotAt(x * Math.max(0.85, B.width), hip);
     block(p, skin.pants, 0.21, 0.26, 0.24, 0, -0.13, 0);
     block(p, skin.tone, 0.15, 0.2, 0.16, 0, -0.34, 0);
     block(p, 0xf2f0ea, 0.16, 0.06, 0.17, 0, -0.45, 0);
     block(p, 0x26262b, 0.19, 0.1, 0.3, 0, -0.51, 0.05);
     mergeStatic(p);
+    p.children.forEach((m) => m.scale.set(thick, B.leg, thick));
     return p;
   };
   // armen: mouw, witte manchet en hand
   const arm = (x) => {
-    const p = pivotAt(x, 1.26);
+    const p = pivotAt(x * B.width, 1.26 + lift);
     block(p, skin.shirt, 0.15, 0.42, 0.17, 0, -0.21, 0);
     block(p, 0xf2f0ea, 0.155, 0.04, 0.175, 0, -0.43, 0);
     block(p, skin.tone, 0.13, 0.13, 0.14, 0, -0.52, 0);
     mergeStatic(p);
+    p.children.forEach((m) => m.scale.set(thick, B.arm, thick));
     return p;
   };
   const legL = leg(-0.13), legR = leg(0.13);
   const armL = arm(-0.36), armR = arm(0.36);
-  const body = new THREE.Group();
-  // romp: jasje met wit overhemd, kraag en stropdas
-  block(body, skin.pants, 0.5, 0.16, 0.3, 0, 0.6, 0);
-  block(body, skin.shirt, 0.56, 0.62, 0.3, 0, 0.96, 0);
-  block(body, 0xf2f0ea, 0.16, 0.32, 0.02, 0, 1.09, 0.155, false);
-  block(body, skin.hatColor && skin.hatColor !== 0xffffff ? skin.hatColor : C.red, 0.06, 0.27, 0.02, 0, 1.07, 0.17, false);
-  block(body, 0xf2f0ea, 0.3, 0.06, 0.32, 0, 1.28, 0);
-  block(body, skin.tone, 0.16, 0.08, 0.16, 0, 1.31, 0);
-  // hoofd met haar, oren, ogen en mond
-  block(body, skin.tone, 0.46, 0.42, 0.44, 0, 1.54, 0);
-  block(body, skin.hair, 0.5, 0.12, 0.48, 0, 1.79, 0);
-  block(body, skin.hair, 0.5, 0.36, 0.1, 0, 1.6, -0.21);
-  block(body, skin.hair, 0.5, 0.08, 0.06, 0, 1.72, 0.22);
-  for (const side of [-1, 1]) {
-    block(body, skin.hair, 0.06, 0.22, 0.3, side * 0.24, 1.66, -0.04);
-    block(body, skin.tone, 0.04, 0.1, 0.08, side * 0.245, 1.5, 0.02);
+  const [hat, face, back] = (info.acc || 'skin.geen.rugzak').split('.');
+
+  // ----- romp: jasje met wit overhemd, kraag en stropdas (breedte en diepte volgen de bouw) -----
+  const torso = new THREE.Group();
+  block(torso, skin.pants, 0.5, 0.16, 0.3, 0, 0.6, 0);
+  block(torso, skin.shirt, 0.56, 0.62, 0.3, 0, 0.96, 0);
+  block(torso, 0xf2f0ea, 0.16, 0.32, 0.02, 0, 1.09, 0.155, false);
+  block(torso, skin.hatColor && skin.hatColor !== 0xffffff ? skin.hatColor : C.red, 0.06, 0.27, 0.02, 0, 1.07, 0.17, false);
+  block(torso, 0xf2f0ea, 0.3, 0.06, 0.32, 0, 1.28, 0);
+  block(torso, skin.tone, 0.16, 0.08, 0.16, 0, 1.31, 0);
+  if (has('jurk')) block(torso, skin.shirt, 0.64, 0.34, 0.4, 0, 0.47, 0); // rok of mantel over de broek
+  if (has('staart')) block(torso, skin.hair, 0.09, 0.09, 0.42, 0, 0.66, -0.32).rotation.x = -0.6;
+  if (has('staartje')) block(torso, 0xffffff, 0.15, 0.15, 0.15, 0, 0.64, -0.2);
+  if (has('drakenstaart')) {
+    block(torso, skin.shirt, 0.2, 0.18, 0.5, 0, 0.52, -0.38).rotation.x = 0.35;
+    block(torso, skin.hair, 0.08, 0.16, 0.16, 0, 0.5, -0.66);
   }
+  if (has('vin')) block(torso, skin.shirt, 0.06, 0.32, 0.26, 0, 1.24, -0.22).rotation.x = 0.35;
+  if (has('schild')) {
+    block(torso, 0x6b4a2e, 0.52, 0.62, 0.16, 0, 0.95, -0.22);
+    block(torso, 0x9a7a44, 0.3, 0.36, 0.04, 0, 0.95, -0.31);
+  }
+  // op de rug: rugzak in spelers- of teamkleur, of een accessoire
+  if (back === 'rugzak' && !has('schild')) {
+    block(torso, info.color, 0.44, 0.5, 0.2, 0, 0.98, -0.25);
+    block(torso, 0x55565c, 0.3, 0.2, 0.04, 0, 0.88, -0.36);
+    block(torso, info.color, 0.06, 0.5, 0.02, -0.19, 1.0, 0.156, false);
+    block(torso, info.color, 0.06, 0.5, 0.02, 0.19, 1.0, 0.156, false);
+  } else if (back === 'cape') {
+    block(torso, C.red, 0.56, 0.9, 0.05, 0, 0.82, -0.19);
+    block(torso, 0xf5c542, 0.3, 0.05, 0.34, 0, 1.27, 0);
+  } else if (back === 'gitaar') {
+    block(torso, 0xa5623a, 0.34, 0.4, 0.1, 0.05, 0.85, -0.22).rotation.z = 0.5;
+    block(torso, 0x3b2214, 0.08, 0.6, 0.06, -0.14, 1.2, -0.22).rotation.z = 0.5;
+  } else if (back === 'vleugels') {
+    for (const side of [-1, 1]) {
+      block(torso, 0xffffff, 0.5, 0.7, 0.05, side * 0.36, 1.1, -0.2).rotation.set(0, side * -0.5, side * -0.35);
+    }
+  } else if (back === 'zwaard') {
+    block(torso, 0xc5ccd3, 0.08, 0.86, 0.03, 0, 1.0, -0.2).rotation.z = 0.6;
+    block(torso, 0xf5c542, 0.3, 0.06, 0.06, -0.2, 0.68, -0.2).rotation.z = 0.6;
+    block(torso, 0x3b2214, 0.07, 0.18, 0.06, -0.28, 0.58, -0.2).rotation.z = 0.6;
+  } else if (back === 'jetpack') {
+    for (const side of [-1, 1]) {
+      mesh(cylGeo, mat(0x9aa3ad), torso, side * 0.13, 0.98, -0.28).scale.set(0.11, 0.5, 0.11);
+      mesh(coneGeo, mat(C.red), torso, side * 0.13, 1.29, -0.28).scale.set(0.11, 0.14, 0.11);
+    }
+    block(torso, 0x55565c, 0.4, 0.2, 0.1, 0, 1.0, -0.2);
+  } else if (back === 'schild') {
+    const sh = mesh(cylGeo, mat(0x2f6fde), torso, 0, 0.98, -0.23);
+    sh.scale.set(0.3, 0.05, 0.3);
+    sh.rotation.x = Math.PI / 2;
+    block(torso, 0xf5c542, 0.12, 0.12, 0.04, 0, 0.98, -0.27);
+  }
+  mergeStatic(torso);
+  torso.position.y = lift;
+  torso.scale.set(B.width, 1, B.depth);
+  rig.add(torso);
+  if (back === 'jetpack') {
+    // vlammetjes onder de jetpack, die blijven los zodat ze kunnen flakkeren
+    for (const side of [-1, 1]) {
+      const f = mesh(coneGeo, glowMat(0xffa53a), torso, side * 0.13, 0.66, -0.28, false);
+      f.scale.set(0.07, 0.18, 0.07);
+      f.rotation.x = Math.PI;
+    }
+  }
+
+  // ----- hoofd: alles op de echte hoogte gebouwd en daarna om de nek heen geschaald -----
+  const head = new THREE.Group();
+  head.position.y = 1.33 + lift;
+  head.scale.setScalar(B.head);
+  rig.add(head);
+  const hk = new THREE.Group();
+  hk.position.y = -1.33;
+  block(hk, skin.tone, 0.46, 0.42, 0.44, 0, 1.54, 0);
+  if (!has('stekels')) {
+    block(hk, skin.hair, 0.5, 0.12, 0.48, 0, 1.79, 0);
+    block(hk, skin.hair, 0.5, 0.08, 0.06, 0, 1.72, 0.22);
+  } else {
+    block(hk, skin.hair, 0.47, 0.05, 0.45, 0, 1.76, 0);
+    [-0.18, -0.06, 0.06, 0.18].forEach((z, i) => block(hk, skin.hair, 0.09, 0.16 + (i % 2) * 0.06, 0.1, 0, 1.84 + (i % 2) * 0.03, z));
+  }
+  block(hk, skin.hair, 0.5, 0.36, 0.1, 0, 1.6, -0.21);
+  for (const side of [-1, 1]) {
+    block(hk, skin.hair, 0.06, 0.22, 0.3, side * 0.24, 1.66, -0.04);
+    block(hk, skin.tone, 0.04, 0.1, 0.08, side * 0.245, 1.5, 0.02);
+  }
+  // extra's van de skin
+  for (const side of [-1, 1]) {
+    if (has('kattenoren')) {
+      block(hk, skin.hair, 0.13, 0.18, 0.07, side * 0.16, 1.9, 0).rotation.z = side * -0.3;
+      block(hk, 0xf7a8c0, 0.06, 0.1, 0.02, side * 0.16, 1.89, 0.04, false).rotation.z = side * -0.3;
+    }
+    if (has('berenoren')) {
+      block(hk, skin.hair, 0.15, 0.15, 0.07, side * 0.2, 1.86, 0);
+      block(hk, 0xe8c4a0, 0.08, 0.08, 0.02, side * 0.2, 1.86, 0.04, false);
+    }
+    if (has('konijnenoren')) {
+      block(hk, skin.hair, 0.1, 0.44, 0.06, side * 0.11, 2.04, -0.02).rotation.z = side * -0.12;
+      block(hk, 0xf7a8c0, 0.05, 0.32, 0.02, side * 0.11, 2.03, 0.02, false).rotation.z = side * -0.12;
+    }
+    if (has('hoorns')) block(hk, 0xf2e6c8, 0.08, 0.22, 0.08, side * 0.2, 1.9, 0).rotation.z = side * -0.45;
+    if (has('gewei')) {
+      block(hk, 0x8a5a3c, 0.05, 0.3, 0.05, side * 0.15, 1.97, 0);
+      block(hk, 0x8a5a3c, 0.18, 0.05, 0.05, side * 0.21, 2.03, 0);
+      block(hk, 0x8a5a3c, 0.05, 0.12, 0.05, side * 0.28, 2.09, 0);
+    }
+  }
+  if (has('snuit')) {
+    block(hk, skin.tone, 0.24, 0.15, 0.14, 0, 1.46, 0.27);
+    block(hk, 0x26262b, 0.09, 0.05, 0.03, 0, 1.51, 0.345, false);
+  }
+  if (has('snavel')) block(hk, 0xf4a020, 0.17, 0.07, 0.16, 0, 1.48, 0.29);
+  if (has('baard')) {
+    const beard = skin.hair === skin.tone ? 0xd9d5cb : skin.hair;
+    block(hk, beard, 0.46, 0.18, 0.06, 0, 1.39, 0.23, false);
+    block(hk, beard, 0.3, 0.12, 0.08, 0, 1.28, 0.2, false);
+  }
+  if (has('helm')) mesh(boxGeo, mat(0x9fd4f5, true), hk, 0, 1.6, 0, false).scale.set(0.64, 0.6, 0.62);
+  // op het hoofd: de hoed van de skin, of een eigen keuze
+  if (hat === 'skin') addHat(hk, skin, 1.85);
+  else if (hat === 'pet') addHat(hk, { hat: 'cap', hatColor: C.red }, 1.85);
+  else if (hat === 'muts') addHat(hk, { hat: 'beanie', hatColor: C.blue }, 1.85);
+  else if (hat === 'kroon') addHat(hk, { hat: 'crown', hatColor: 0xf5c542 }, 1.85);
+  else if (hat === 'hoed') {
+    block(hk, 0x1f2024, 0.62, 0.04, 0.62, 0, 1.87, 0);
+    block(hk, 0x1f2024, 0.4, 0.34, 0.4, 0, 2.06, 0);
+    block(hk, C.red, 0.41, 0.06, 0.41, 0, 1.93, 0);
+  } else if (hat === 'koptelefoon') {
+    block(hk, 0x1f2024, 0.54, 0.05, 0.08, 0, 1.88, 0);
+    for (const side of [-1, 1]) block(hk, C.red, 0.08, 0.2, 0.2, side * 0.27, 1.6, 0);
+  } else if (hat === 'feesthoed') {
+    const cone = mesh(coneGeo, mat(0xff5c8a), hk, 0.05, 2.04, 0);
+    cone.scale.set(0.15, 0.36, 0.15);
+    cone.rotation.z = -0.2;
+    block(hk, 0xfff200, 0.09, 0.09, 0.09, 0.09, 2.22, 0);
+  } else if (hat === 'piratenhoed') {
+    block(hk, 0x1f2024, 0.66, 0.1, 0.36, 0, 1.88, 0);
+    block(hk, 0x1f2024, 0.42, 0.18, 0.3, 0, 1.98, 0);
+    block(hk, 0xffffff, 0.08, 0.08, 0.02, 0, 1.97, 0.16, false);
+  } else if (hat === 'aureool') {
+    addHat(hk, skin, 1.85);
+    const halo = mesh(haloGeo, glowMat(0xffe27a), hk, 0, 2.2, 0, false);
+    halo.rotation.x = Math.PI / 2;
+  }
+  // voor het gezicht
+  if (face === 'bril' || face === 'zonnebril') {
+    const dark = face === 'zonnebril';
+    for (const side of [-1, 1]) block(hk, dark ? 0x1f2024 : 0x3b3d44, 0.16, dark ? 0.1 : 0.13, 0.02, side * 0.1, 1.56, 0.245, false);
+    block(hk, 0x1f2024, 0.5, 0.03, 0.02, 0, 1.6, 0.236, false);
+  } else if (face === 'snor') {
+    block(hk, 0x3b2214, 0.2, 0.05, 0.03, 0, 1.47, 0.235, false);
+  } else if (face === 'masker') {
+    block(hk, 0x9fd4f5, 0.34, 0.16, 0.03, 0, 1.44, 0.235, false);
+  } else if (face === 'clownsneus') {
+    block(hk, 0xe23b2e, 0.11, 0.1, 0.1, 0, 1.5, 0.26, false);
+  } else if (face === 'ooglapje') {
+    block(hk, 0x1f2024, 0.13, 0.11, 0.02, -0.1, 1.56, 0.245, false);
+    block(hk, 0x1f2024, 0.5, 0.025, 0.02, 0, 1.63, 0.236, false).rotation.z = 0.25;
+  } else if (face === 'monocle') {
+    mesh(ringGeo, mat(0xf5c542), hk, 0.1, 1.56, 0.245, false);
+    block(hk, 0xf5c542, 0.012, 0.2, 0.012, 0.165, 1.45, 0.24, false);
+  }
+  mergeStatic(hk);
+  head.add(hk);
   // gezicht los van de rest, zodat het kan knipperen en reageren
   const faceGroup = new THREE.Group();
+  faceGroup.position.y = -1.33;
   const eyes = [-1, 1].map((side) => {
     const eye = new THREE.Group();
     eye.position.set(side * 0.1, 1.56, 0.222);
@@ -1521,56 +1709,20 @@ function makePlayerModel(info) {
   });
   const openMouth = block(faceGroup, 0x3b1a14, 0.09, 0.07, 0.02, 0, 1.43, 0.223, false);
   openMouth.visible = false;
-  g.add(faceGroup);
-  const [hat, face, back] = (info.acc || 'skin.geen.rugzak').split('.');
-  // op de rug: rugzak in spelers- of teamkleur, of een accessoire
-  if (back === 'rugzak') {
-    block(body, info.color, 0.44, 0.5, 0.2, 0, 0.98, -0.25);
-    block(body, 0x55565c, 0.3, 0.2, 0.04, 0, 0.88, -0.36);
-    block(body, info.color, 0.06, 0.5, 0.02, -0.19, 1.0, 0.156, false);
-    block(body, info.color, 0.06, 0.5, 0.02, 0.19, 1.0, 0.156, false);
-  } else if (back === 'cape') {
-    block(body, C.red, 0.56, 0.9, 0.05, 0, 0.82, -0.19);
-    block(body, 0xf5c542, 0.3, 0.05, 0.34, 0, 1.27, 0);
-  } else if (back === 'gitaar') {
-    block(body, 0xa5623a, 0.34, 0.4, 0.1, 0.05, 0.85, -0.22).rotation.z = 0.5;
-    block(body, 0x3b2214, 0.08, 0.6, 0.06, -0.14, 1.2, -0.22).rotation.z = 0.5;
-  } else if (back === 'vleugels') {
-    for (const side of [-1, 1]) {
-      block(body, 0xffffff, 0.5, 0.7, 0.05, side * 0.36, 1.1, -0.2).rotation.set(0, side * -0.5, side * -0.35);
-    }
-  }
-  // op het hoofd: de hoed van de skin, of een eigen keuze
-  if (hat === 'skin') addHat(body, skin, 1.85);
-  else if (hat === 'pet') addHat(body, { hat: 'cap', hatColor: C.red }, 1.85);
-  else if (hat === 'muts') addHat(body, { hat: 'beanie', hatColor: C.blue }, 1.85);
-  else if (hat === 'kroon') addHat(body, { hat: 'crown', hatColor: 0xf5c542 }, 1.85);
-  else if (hat === 'hoed') {
-    block(body, 0x1f2024, 0.62, 0.04, 0.62, 0, 1.87, 0);
-    block(body, 0x1f2024, 0.4, 0.34, 0.4, 0, 2.06, 0);
-    block(body, C.red, 0.41, 0.06, 0.41, 0, 1.93, 0);
-  } else if (hat === 'koptelefoon') {
-    block(body, 0x1f2024, 0.54, 0.05, 0.08, 0, 1.88, 0);
-    for (const side of [-1, 1]) block(body, C.red, 0.08, 0.2, 0.2, side * 0.27, 1.6, 0);
-  }
-  // voor het gezicht
-  if (face === 'bril' || face === 'zonnebril') {
-    const dark = face === 'zonnebril';
-    for (const side of [-1, 1]) block(body, dark ? 0x1f2024 : 0x3b3d44, 0.16, dark ? 0.1 : 0.13, 0.02, side * 0.1, 1.56, 0.245, false);
-    block(body, 0x1f2024, 0.5, 0.03, 0.02, 0, 1.6, 0.236, false);
-  } else if (face === 'snor') {
-    block(body, 0x3b2214, 0.2, 0.05, 0.03, 0, 1.47, 0.235, false);
-  } else if (face === 'masker') {
-    block(body, 0x9fd4f5, 0.34, 0.16, 0.03, 0, 1.44, 0.235, false);
-  }
-  mergeStatic(body);
-  g.add(body);
+  // de traan voor de emote Huilbui
+  const tears = [-1, 1].map((side) => {
+    const t = block(faceGroup, 0x7fc4ee, 0.03, 0.05, 0.02, side * 0.1, 1.49, 0.235, false);
+    t.visible = false;
+    return t;
+  });
+  head.add(faceGroup);
   // de "L" op het voorhoofd voor Take the L
   const lSign = new THREE.Group();
+  lSign.position.y = -1.33;
   block(lSign, skin.tone, 0.07, 0.24, 0.06, 0.1, 1.7, 0.28);
   block(lSign, skin.tone, 0.17, 0.07, 0.06, 0.05, 1.615, 0.28);
   lSign.visible = false;
-  g.add(lSign);
+  head.add(lSign);
   const shield = block(armL, C.blue, 0.06, 0.5, 0.66, -0.1, -0.35, 0.05); // dienblad als schild
   shield.visible = false;
   const board = makeBoard(); // skateboard of step onder de voeten
@@ -1578,17 +1730,19 @@ function makePlayerModel(info) {
   const item = makeItem();
   item.position.set(0, -0.6, 0.12);
   armR.add(item);
+  const top = 1.33 + lift + 0.55 * B.head; // bovenkant van het hoofd
   const label = makeNameSprite(info.name, info);
+  label.position.y = top + 0.57;
   g.add(label);
   // premie: een gouden doelwit boven je hoofd
   const bountyMark = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture('target', '#f5c542'), depthTest: false }));
   bountyMark.scale.set(0.6, 0.6, 1);
-  bountyMark.position.y = 2.95;
+  bountyMark.position.y = top + 1.07;
   bountyMark.visible = false;
   g.add(bountyMark);
   return {
-    group: g, legL, legR, armL, armR, item, label, lSign, shield, board, bountyMark, walk: 0, emote: 0, emoteStart: 0, lean: 0, swingAt: 0, ragT: 0,
-    face: { eyes, brows, mouth, smile, openMouth, blinkAt: performance.now() + 1000 + Math.random() * 3000, expr: '' }
+    group: g, rig, head, legL, legR, armL, armR, item, label, lSign, shield, board, bountyMark, walk: 0, emote: 0, emoteStart: 0, lean: 0, swingAt: 0, ragT: 0,
+    face: { eyes, brows, mouth, smile, openMouth, tears, blinkAt: performance.now() + 1000 + Math.random() * 3000, expr: '' }
   };
 }
 // Uitdrukking op het gezicht: normaal, blij (broodje), boos (dash), duizelig (knock-out), verdrietig, verbaasd, kauwen.
@@ -1604,9 +1758,12 @@ function setFace(m, expr, now) {
     f.smile.forEach((c) => { c.visible = expr === 'happy'; });
     f.mouth.scale.x = 0.12 * (expr === 'happy' ? 1.5 : expr === 'angry' ? 0.8 : 1); // block() gebruikt de schaal als afmeting
     f.mouth.position.y = expr === 'sad' ? 1.405 : 1.42;
-    f.mouth.visible = !['dizzy', 'surprised', 'chew'].includes(expr);
-    f.openMouth.visible = ['dizzy', 'surprised', 'chew'].includes(expr);
+    f.mouth.visible = !['dizzy', 'surprised', 'chew', 'cry'].includes(expr);
+    f.openMouth.visible = ['dizzy', 'surprised', 'chew', 'cry'].includes(expr);
+    if (f.tears) f.tears.forEach((t) => { t.visible = expr === 'cry'; });
+    if (expr === 'cry') f.brows.forEach((b, i) => { b.visible = true; b.rotation.z = -0.35 * (i ? 1 : -1); });
   }
+  if (expr === 'cry' && f.tears) f.tears.forEach((t, i) => { t.position.y = 1.49 - ((now / 600 + i * 0.5) % 1) * 0.12; });
   if (expr === 'chew') f.openMouth.scale.y = 0.07 * (0.4 + Math.abs(Math.sin(now / 90)) * 0.8);
   // duizelig: de pupillen draaien rondjes
   f.eyes.forEach(({ pupil }, i) => {
@@ -1615,7 +1772,7 @@ function setFace(m, expr, now) {
   });
   // knipperen: om de paar seconden heel even dicht
   if (now > f.blinkAt + 120) f.blinkAt = now + 2000 + Math.random() * 3500;
-  const shut = now > f.blinkAt && expr !== 'dizzy';
+  const shut = expr === 'sleep' || (now > f.blinkAt && expr !== 'dizzy');
   f.eyes.forEach(({ eye }) => { eye.scale.y = shut ? 0.15 : expr === 'surprised' ? 1.25 : 1; });
 }
 const iconTextures = new Map();
@@ -1713,8 +1870,118 @@ function poseModel(m, swing, holding, emote, t) {
     m.armR.rotation.set(-2.35, 0, -0.55);
     return { hop: 0, roll: Math.sin(t * 3) * 0.06, spin: 0 };
   }
+  if (emote === 11) { // robotdans: stijve armen die in stapjes van stand wisselen
+    const beat = Math.floor(t * 4) % 4;
+    const a = [[-1.57, 0], [0, -1.57], [-1.57, -1.57], [0, 0]][beat];
+    m.armL.rotation.set(a[0], 0, beat === 3 ? -0.4 : 0);
+    m.armR.rotation.set(a[1], 0, beat === 3 ? 0.4 : 0);
+    m.legL.rotation.set(beat % 2 ? 0.3 : 0, 0, 0);
+    return { hop: 0, roll: 0, spin: [0, 0.4, 0, -0.4][beat] };
+  }
+  if (emote === 12) { // kippendans: ellebogen klapperen, hoofd heen en weer
+    const k = Math.sin(t * 16);
+    m.armL.rotation.set(-0.3, 0, -0.6 - k * 0.4);
+    m.armR.rotation.set(-0.3, 0, 0.6 + k * 0.4);
+    m.legL.rotation.set(0, 0, Math.max(0, k) * -0.3);
+    return { hop: Math.abs(k) * 0.05, roll: 0, spin: 0, lean: 0.25 + Math.sin(t * 8) * 0.12 };
+  }
+  if (emote === 13) { // paardje rijden: handen gekruist voor je, huppelen
+    const k = Math.abs(Math.sin(t * 7));
+    m.armL.rotation.set(-1.4, 0, 0.35);
+    m.armR.rotation.set(-1.4 + Math.sin(t * 14) * 0.3, 0, -0.35);
+    m.legL.rotation.set(-k * 0.6, 0, 0);
+    m.legR.rotation.set(k * 0.3, 0, 0);
+    return { hop: k * 0.2, roll: 0, spin: Math.sin(t * 1.5) * 0.4 };
+  }
+  if (emote === 14) { // opdrukken: plat voorover op je armen
+    const k = (Math.sin(t * 6) + 1) / 2;
+    m.armL.rotation.set(-1.57 - 0.4 + k * 0.5, 0, 0);
+    m.armR.rotation.set(-1.57 - 0.4 + k * 0.5, 0, 0);
+    return { hop: 0.15 + k * 0.15, roll: 0, spin: 0, lean: 1.38 };
+  }
+  if (emote === 15) { // applaus
+    const k = Math.abs(Math.sin(t * 12));
+    m.armL.rotation.set(-1.3, 0, -0.5 + k * 0.5);
+    m.armR.rotation.set(-1.3, 0, 0.5 - k * 0.5);
+    return { hop: 0, roll: 0, spin: 0 };
+  }
+  if (emote === 16) { // schaduwboksen: om en om stoten, op de bal van je voeten
+    const k = Math.sin(t * 9);
+    m.armL.rotation.set(k > 0 ? -1.6 : -0.9, 0, 0.2);
+    m.armR.rotation.set(k < 0 ? -1.6 : -0.9, 0, -0.2);
+    m.legL.rotation.set(0.25, 0, 0);
+    m.legR.rotation.set(-0.25, 0, 0);
+    return { hop: Math.abs(Math.sin(t * 9)) * 0.05, roll: k * 0.06, spin: k * 0.15 };
+  }
+  if (emote === 17) { // yoga: boompose op één been
+    m.armL.rotation.set(0, 0, -2.9);
+    m.armR.rotation.set(0, 0, 2.9);
+    m.legR.rotation.set(-0.4, 0, 1.0);
+    return { hop: 0, roll: Math.sin(t * 2) * 0.04, spin: 0 };
+  }
+  if (emote === 18) { // luchtgitaar
+    m.armL.rotation.set(-1.0, 0, 0.7);
+    m.armR.rotation.set(-0.6 + Math.sin(t * 18) * 0.35, 0, -0.5);
+    return { hop: Math.abs(Math.sin(t * 6)) * 0.05, roll: 0, spin: 0, lean: -0.25 };
+  }
+  if (emote === 19) { // salto achterover, steeds opnieuw
+    const k = (t % 1.2) / 1.2;
+    const up = Math.sin(k * Math.PI);
+    m.armL.rotation.set(-2.8 * up, 0, 0);
+    m.armR.rotation.set(-2.8 * up, 0, 0);
+    m.legL.rotation.set(-1.2 * up, 0, 0);
+    m.legR.rotation.set(-1.2 * up, 0, 0);
+    return { hop: up * 1.3, roll: 0, spin: 0, lean: -k * Math.PI * 2 };
+  }
+  if (emote === 20) { // powernap: plat op je rug
+    m.armL.rotation.set(0, 0, -0.3);
+    m.armR.rotation.set(-2.6, 0, 0.3);
+    return { hop: 0.14 + Math.sin(t * 2) * 0.01, roll: 0, spin: 0, lean: -1.5 };
+  }
+  if (emote === 21) { // discokoorts: arm wijst omhoog en omlaag
+    const up = Math.sin(t * 6) > 0;
+    m.armR.rotation.set(up ? -2.7 : -0.3, 0, up ? -0.4 : 0.6);
+    m.armL.rotation.set(0, 0, -0.2);
+    m.legL.rotation.set(0, 0, up ? -0.25 : 0);
+    return { hop: 0, roll: up ? 0.12 : -0.08, spin: 0 };
+  }
+  if (emote === 22) { // huilbui: handen voor je ogen
+    m.armL.rotation.set(-2.5, 0, 0.5);
+    m.armR.rotation.set(-2.5, 0, -0.5);
+    return { hop: Math.abs(Math.sin(t * 14)) * 0.03, roll: Math.sin(t * 14) * 0.04, spin: 0, lean: 0.2 };
+  }
+  if (emote === 23) { // droogzwemmen: borstcrawl op het droge
+    m.armL.rotation.set(-t * 7, 0, -0.2);
+    m.armR.rotation.set(-t * 7 + Math.PI, 0, 0.2);
+    m.legL.rotation.set(Math.sin(t * 12) * 0.4, 0, 0);
+    m.legR.rotation.set(-Math.sin(t * 12) * 0.4, 0, 0);
+    return { hop: 0, roll: Math.sin(t * 3.5) * 0.15, spin: 0, lean: 0.55 };
+  }
+  if (emote === 24) { // breakdance: op je hoofd draaien
+    m.armL.rotation.set(0, 0, -2.6);
+    m.armR.rotation.set(0, 0, 2.6);
+    m.legL.rotation.set(0, 0, -0.6);
+    m.legR.rotation.set(0, 0, 0.6);
+    return { hop: 2.05, roll: 0, spin: t * 9, lean: Math.PI };
+  }
+  if (emote === 25) { // ik win: vuisten in de lucht en springen
+    const k = Math.abs(Math.sin(t * 7));
+    m.armL.rotation.set(0, 0, -2.7 - k * 0.2);
+    m.armR.rotation.set(0, 0, 2.7 + k * 0.2);
+    return { hop: k * 0.35, roll: 0, spin: Math.floor(t * 7 / Math.PI) % 2 ? 0.3 : -0.3 };
+  }
+  if (emote === 26) { // zombieloop: armen recht vooruit, schuifelen
+    const k = Math.sin(t * 4);
+    m.armL.rotation.set(-1.57 + k * 0.08, 0, 0);
+    m.armR.rotation.set(-1.57 - k * 0.08, 0, 0);
+    m.legL.rotation.set(k * 0.3, 0, 0);
+    m.legR.rotation.set(-k * 0.3, 0, 0);
+    return { hop: 0, roll: k * 0.12, spin: 0, lean: 0.15 };
+  }
   return { hop: 0, roll: 0, spin: 0 };
 }
+// gezicht bij een emote (anders het gewone gezicht)
+const EMOTE_FACE = { 1: 'happy', 6: 'sad', 11: 'surprised', 16: 'angry', 19: 'surprised', 20: 'sleep', 22: 'cry', 24: 'happy', 25: 'happy', 26: 'dizzy' };
 const activeEmote = (m, now) => (m.emote && now - m.emoteStart < EMOTE_MS ? m.emote : 0);
 
 const remotes = new Map();
@@ -1733,9 +2000,21 @@ const fxOf = (id) => {
   return { trail: TRAILS.find((t) => t.id === trail) || TRAILS[0], sound };
 };
 // dash-spoor: een paar kleine blokjes in de kleuren van het spoor
-function trailPuff(x, y, z, colors) {
-  const m = block(scene, colors[Math.floor(Math.random() * colors.length)], 0.16, 0.16, 0.16, x + (Math.random() - 0.5) * 0.5, y + Math.random() * 0.8, z + (Math.random() - 0.5) * 0.5, false);
-  particles.push({ m, life: 0.6, vx: 0, vy: 0.6, vz: 0 });
+// vy: stijgen of vallen, size: hoe groot, glow: zelf licht geven (sterren, vuur, neon)
+function trailPuff(x, y, z, trail) {
+  const colors = trail.colors;
+  const color = colors[Math.floor(Math.random() * colors.length)];
+  const size = (trail.size || 0.16) * (0.7 + Math.random() * 0.6);
+  const px = x + (Math.random() - 0.5) * 0.5, py = y + Math.random() * 0.8, pz = z + (Math.random() - 0.5) * 0.5;
+  let m;
+  if (trail.glow) {
+    m = mesh(boxGeo, glowMat(color), scene, px, py, pz, false);
+    m.scale.setScalar(size);
+  } else {
+    m = block(scene, color, size, size, size, px, py, pz, false);
+  }
+  m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+  particles.push({ m, size, life: 0.6, vx: (Math.random() - 0.5) * 0.4, vy: trail.vy ?? 0.6, vz: (Math.random() - 0.5) * 0.4 });
 }
 function clearRemotes() {
   for (const r of remotes.values()) removeRemote(r);
@@ -1787,7 +2066,7 @@ function updateRemotes(dt) {
 
     const speed = Math.hypot(mx, mz) / Math.max(dt, 0.001);
     // uitdrukking: duizelig als lappenpop, boos bij een dash, blij met het broodje, kauwen bij een hap
-    setFace(r, r.stunned ? 'dizzy' : r.biting ? 'chew' : r.dashing ? 'angry' : r.holding ? 'happy' : 'normal', now);
+    setFace(r, r.stunned ? 'dizzy' : EMOTE_FACE[activeEmote(r, now)] || (r.biting ? 'chew' : r.dashing ? 'angry' : r.holding ? 'happy' : 'normal'), now);
     // uitrekken bij een sprong, inzakken bij de landing, met een stofwolkje
     const vy = (r.ty - (r.prevTy ?? r.ty)) / Math.max(dt, 0.001);
     r.prevTy = r.ty;
@@ -1834,7 +2113,7 @@ function updateRemotes(dt) {
     r.group.rotation.y = r.yaw + pose.spin;
     r.group.rotation.z = pose.roll;
     r.label.visible = settings.names;
-    if (r.dashing && r.trail.colors) trailPuff(p.x, p.y, p.z, r.trail.colors);
+    if (r.dashing && r.trail.colors) trailPuff(p.x, p.y, p.z, r.trail);
   }
 }
 
@@ -2437,6 +2716,7 @@ function updateLocal(dt) {
     const pose = poseModel(selfModel, 0, 0, myEmote, (now - myEmoteStart) / 1000);
     selfModel.group.position.set(me.x, me.y + pose.hop, me.z);
     selfModel.group.rotation.set(pose.lean || 0, facing + pose.spin, pose.roll);
+    setFace(selfModel, EMOTE_FACE[myEmote] || 'happy', now);
   } else if (stunned) {
     selfModel.ragT += dt;
     const rag = ragdollPose(selfModel, selfModel.ragT);
@@ -2451,7 +2731,7 @@ function updateLocal(dt) {
     selfProp.rotation.y = Math.atan2(fwd.x, fwd.z);
   }
   // eigen dash-spoor
-  if (dashLeft > 0 && myTrail().colors) trailPuff(me.x, me.y, me.z, myTrail().colors);
+  if (dashLeft > 0 && myTrail().colors) trailPuff(me.x, me.y, me.z, myTrail());
 
   const targetFov = settings.fov + (dashLeft > 0 ? 18 : Math.min(8, Math.max(0, speed - RUN_SPEED) * 1.2));
   if (Math.abs(camera.fov - targetFov) > 0.1) {
@@ -3265,7 +3545,7 @@ function miniView(canvasId, w, h) {
     const pose = poseModel(v.model, 0, 0, v.emote || (t % 7 < 1.6 ? 3 : 0), t);
     v.model.group.position.y = pose.hop;
     v.model.group.rotation.set(pose.lean || 0, -0.35 + Math.sin(t * 0.6) * 0.3 + pose.spin, pose.roll);
-    setFace(v.model, 'happy', performance.now());
+    setFace(v.model, EMOTE_FACE[v.emote] || 'happy', performance.now());
     v.renderer.render(v.scene, v.camera);
   };
   return v;
@@ -3278,23 +3558,38 @@ const LOCKER = [
   { id: 'back', name: 'Rug', icon: 'flag' }, { id: 'trail', name: 'Spoor', icon: 'bolt' }, { id: 'sound', name: 'Raakgeluid', icon: 'note' },
   { id: 'class', name: 'Klasse', icon: 'shield' }, { id: 'stamp', name: 'Stempel', icon: 'spray' }, { id: 'emote', name: 'Emote', icon: 'emote' }
 ];
-// alle spullen van één soort die je hebt: { id, name, source, look?, emote?, art }
+// Waar komt iets vandaan? Battlepass-spullen onthouden uit welk seizoen ze komen.
+const seasonName = (n) => `seizoen ${n} · ${THEMES[(n - 1) % THEMES.length]}`;
+function sourceOf(rid, fallback) {
+  const season = (progress.origin || {})[rid];
+  return season ? `Battlepass ${seasonName(season)}` : fallback;
+}
+// alle spullen van één soort die je hebt: { id, rid, name, source, look?, emote?, art }
 function lockerItems(cat) {
   if (cat === 'skin') {
     const weekly = progress.owned.filter((id) => id.startsWith('skin:wk')).map((id) => Catalog.weekSkin(id.slice(5))).filter(Boolean);
-    return SKINS.concat(weekly).filter(isUnlocked).map((k) => ({ id: k.id, name: k.name, source: k.source || (k.price ? 'Winkel' : k.pass ? 'Battlepass' : k.locked ? 'Challenge' : 'Standaard'), skin: k.id }));
+    return SKINS.concat(weekly).filter(isUnlocked).map((k) => ({
+      id: k.id, rid: 'skin:' + k.id, name: k.name, skin: k.id,
+      source: sourceOf('skin:' + k.id, k.source || (k.price ? 'Winkel' : k.pass ? `Battlepass ${THEMES[k.season]}` : k.locked ? 'Challenge' : 'Standaard'))
+    }));
   }
   if (['hat', 'face', 'back'].includes(cat)) {
-    return ACCESSORIES[cat].filter((a) => !a.price || owns('acc:' + a.id)).map((a) => ({ id: a.id, name: a.name, source: a.price ? 'Winkel' : 'Standaard', acc: { [cat]: a.id } }));
+    return ACCESSORIES[cat].filter((a) => !a.price || owns('acc:' + a.id)).map((a) => ({ id: a.id, rid: 'acc:' + a.id, name: a.name, source: a.price ? 'Winkel' : 'Standaard', acc: { [cat]: a.id } }));
   }
-  if (cat === 'trail') return TRAILS.filter((t) => !t.price || owns('trail:' + t.id)).map((t) => ({ id: t.id, name: t.name, source: t.price ? 'Winkel' : 'Standaard', colors: t.colors }));
-  if (cat === 'sound') return SOUNDS.filter((t) => !t.price || owns('sound:' + t.id)).map((t) => ({ id: t.id, name: t.name, source: t.price ? 'Winkel' : 'Standaard' }));
-  if (cat === 'class') return CLASSES.filter((c) => c.id === 'allrounder' || owns('class:' + c.id)).map((c) => ({ id: c.id, name: c.name, source: c.desc, icon: c.icon }));
+  if (cat === 'trail') return TRAILS.filter((t) => !t.price || owns('trail:' + t.id)).map((t) => ({ id: t.id, rid: 'trail:' + t.id, name: t.name, source: t.price ? 'Winkel' : 'Standaard', colors: t.colors }));
+  if (cat === 'sound') return SOUNDS.filter((t) => !t.price || owns('sound:' + t.id)).map((t) => ({ id: t.id, rid: 'sound:' + t.id, name: t.name, source: t.price ? 'Winkel · klik om te horen' : 'Standaard' }));
+  if (cat === 'class') return CLASSES.filter((c) => c.id === 'allrounder' || owns('class:' + c.id)).map((c) => ({ id: c.id, rid: 'class:' + c.id, name: c.name, source: sourceOf('class:' + c.id, c.desc), desc: c.desc, icon: c.icon }));
   if (cat === 'stamp') {
     return ['naam'].concat(progress.custom ? ['custom'] : [], progress.owned.filter((id) => id.startsWith('stamp:')).map((id) => id.slice(6)))
-      .map((id) => ({ id, name: id === 'naam' ? 'Naam' : id === 'custom' ? 'Eigen tekening' : (Catalog.STAMP_NAMES[Number(id.slice(1))] || id), source: 'Spuitbus', icon: STAMP_ICON[id] || 'spray' }));
+      .map((id) => {
+        const shop = SHOP.find((x) => x.id === 'stamp:' + id);
+        const name = id === 'naam' ? 'Je naam' : id === 'custom' ? 'Eigen tekening' : id === 'reeks7' ? 'Vlammenreeks' : shop ? shop.name : (Catalog.STAMP_NAMES[Number(id.slice(1))] || id);
+        const source = id === 'naam' || id === 'custom' ? 'Spuitbus' : id === 'reeks7' ? '7 dagen op rij spelen' : sourceOf('stamp:' + id, shop ? 'Winkel' : 'Battlepass');
+        return { id, rid: 'stamp:' + id, name, source, stamp: id };
+      });
   }
-  return EMOTE_NAMES.map((n, i) => i).filter((i) => i && (i <= 4 || owns('emote:' + i))).map((i) => ({ id: i, name: EMOTE_NAMES[i], source: EMOTE_SOURCE(i) || 'Standaard', emote: i }));
+  return EMOTE_NAMES.map((n, i) => i).filter((i) => i && (i <= 4 || owns('emote:' + i)))
+    .map((i) => ({ id: i, rid: 'emote:' + i, name: EMOTE_NAMES[i], source: sourceOf('emote:' + i, EMOTE_SOURCE(i) || 'Standaard'), emote: i }));
 }
 function equipped(cat, slot) {
   if (cat === 'skin') return progress.skin;
@@ -3304,13 +3599,34 @@ function equipped(cat, slot) {
   if (cat === 'stamp') return progress.stamp;
   return progress.loadout[slot];
 }
+// plaatje van een stempel zoals hij op de muur komt
+const stampArts = new Map();
+function stampArt(id) {
+  if (id === 'custom') return picture(progress.custom);
+  const name = $('name').value.trim() || (account && account.name) || 'Speler';
+  const key = id === 'naam' ? 'naam:' + name : id;
+  if (!stampArts.has(key)) {
+    const tex = id === 'naam' ? sprayTexture(name, '#ffffff') : stampTexture(id, '#ffffff');
+    stampArts.set(key, tex.image.toDataURL());
+    tex.dispose();
+  }
+  return picture(stampArts.get(key));
+}
 function itemArt(cat, item) {
   if (item.skin) return picture(thumb(item.skin, 0, accString(), false, true));
   if (item.acc) return picture(thumb(progress.skin, 0, accString(Object.assign({}, progress.acc, item.acc)), cat === 'back', true));
   if (item.emote) return picture(thumb(progress.skin, item.emote));
+  if (item.stamp) return stampArt(item.stamp);
   if (cat === 'trail') return trailArt(item.colors);
   if (cat === 'sound') return bigIcon('note');
   return bigIcon(item.icon || 'star');
+}
+// zeldzaamheid als kleur op een tegel (randje, achtergrond en een streep onderaan)
+function paintRarity(el, rid) {
+  const r = RARITY[itemRarity(rid)] || RARITY[0];
+  el.style.setProperty('--rarity', hex(r.color));
+  el.classList.add('rar-' + r.id);
+  return r;
 }
 function lockerTile(cat, item, label) {
   const b = document.createElement('button');
@@ -3318,6 +3634,11 @@ function lockerTile(cat, item, label) {
   b.innerHTML = '<span class="lk-art"></span><span class="lk-name"></span>';
   b.querySelector('.lk-art').append(item ? itemArt(cat, item) : bigIcon(LOCKER.find((l) => l.id === cat).icon));
   b.querySelector('.lk-name').textContent = label || (item ? item.name : '');
+  if (item && item.rid) {
+    paintRarity(b, item.rid);
+    const season = (progress.origin || {})[item.rid];
+    if (season) b.querySelector('.lk-art').insertAdjacentHTML('beforeend', `<em class="lk-season" title="Battlepass ${seasonName(season)}">S${season}</em>`);
+  }
   return b;
 }
 function renderLocker() {
@@ -3348,9 +3669,12 @@ function lockerShow(view, cat, item) {
   const isHome = view === lockerView;
   const look = item && item.acc ? accString(Object.assign({}, progress.acc, item.acc)) : accString();
   view.set(item && item.skin ? item.skin : progress.skin, look, item && item.emote ? item.emote : 0);
-  $(isHome ? 'locker-kind' : 'pick-kind').textContent = LOCKER.find((l) => l.id === cat).name;
+  const rar = item && item.rid ? RARITY[itemRarity(item.rid)] : null;
+  const kind = $(isHome ? 'locker-kind' : 'pick-kind');
+  kind.textContent = (rar ? rar.name + ' · ' : '') + LOCKER.find((l) => l.id === cat).name;
+  kind.style.color = rar ? hex(rar.color) : '';
   $(isHome ? 'locker-name' : 'pick-name').textContent = item ? item.name : 'Leeg';
-  $(isHome ? 'locker-source' : 'pick-source').textContent = item ? item.source : '';
+  $(isHome ? 'locker-source' : 'pick-source').textContent = item ? (item.desc && item.source !== item.desc ? `${item.source} · ${item.desc}` : item.source) : '';
   if (cat === 'sound' && item && !isHome) sfx(item.id === 'standaard' ? 'hit' : item.id);
 }
 let pickCat = 'skin', pickSlot = 0;
@@ -3384,6 +3708,14 @@ function renderPick() {
     t.addEventListener('click', () => { equip(cat, item); renderPick(); lockerShow(pickView, cat, item); });
     return t;
   }));
+  // stempels: hier teken je ook je eigen stempel
+  if (cat === 'stamp') {
+    const draw = lockerTile('stamp', null, progress.custom ? 'Opnieuw tekenen' : 'Zelf tekenen');
+    draw.querySelector('.lk-art').replaceChildren(bigIcon('spray'));
+    draw.classList.add('lk-draw');
+    draw.addEventListener('click', () => { openDraw(); $('draw').classList.remove('hidden'); });
+    $('pick-grid').append(draw);
+  }
   lockerShow(pickView, cat, items.find((x) => String(x.id) === String(current)));
 }
 // iets aantrekken: opslaan, en in een lobby meteen aan de anderen laten zien
@@ -3635,6 +3967,7 @@ function renderMenuSide() {
   $('bp-tier').textContent = `Trede ${tier} / ${BATTLEPASS.length}`;
   $('bp-bar').style.width = `${(into / XP_PER_TIER) * 100}%`;
   $('bp-next').textContent = tier >= BATTLEPASS.length ? 'Alles vrijgespeeld!' : `Volgende: ${BATTLEPASS[tier].label}`;
+  updateSeasonTimer();
 }
 const PASS_PAGE = 10;
 let passPage = -1;
@@ -3650,7 +3983,9 @@ function renderPass() {
   const pages = Math.ceil(total / PASS_PAGE);
   const into = tier >= total ? XP_PER_TIER : progress.xp % XP_PER_TIER;
   $('pass-tier').textContent = tier;
-  $('pass-season').textContent = `Seizoen ${SEASON} · ${THEMES[THEME]} · nog ${seasonDaysLeft()} dagen`;
+  $('pass-season').textContent = `Seizoen ${SEASON} · ${THEMES[THEME]}. Alles wat je hier vrijspeelt houdt voor altijd het label "seizoen ${SEASON}".`;
+  $('pass-head').textContent = `Battlepass · Seizoen ${SEASON}`;
+  updateSeasonTimer();
   $('pass-bar').style.width = `${(into / XP_PER_TIER) * 100}%`;
   $('pass-xp').textContent = tier >= total ? 'Alles vrijgespeeld' : `${into} / ${XP_PER_TIER} XP tot trede ${tier + 1}`;
   $('pass-page').textContent = `Pagina ${passPage + 1} / ${pages}`;
@@ -3662,6 +3997,7 @@ function renderPass() {
     const i = from + k;
     const cell = document.createElement('button');
     cell.className = `slot k-${r.type}` + (i < tier ? ' done' : i === tier ? ' next' : ' locked') + (i === passSel ? ' selected' : '');
+    if (r.id) paintRarity(cell, r.id);
     cell.innerHTML = `<span class="num">${i + 1}</span><span class="art"></span><span class="mark">${icon(i < tier ? 'check' : 'lock')}</span>`;
     cell.querySelector('.art').append(r.type === 'coins' ? bigIcon('coin') : visualFor(r.id));
     if (r.type === 'coins') cell.querySelector('.art').append(Object.assign(document.createElement('b'), { textContent: r.coins }));
@@ -3678,12 +4014,25 @@ function renderPass() {
   show.className = 'k-' + r.type;
   show.innerHTML = '<span class="art"></span><small></small><b></b><p></p>';
   show.querySelector('.art').append(r.type === 'coins' ? bigIcon('coin') : visualFor(r.id));
-  show.querySelector('small').textContent = `Trede ${passSel + 1} · ${{ skin: 'Skin', emote: 'Emote', stamp: 'Spuitbus-stempel', coins: 'Munten', class: 'Klasse' }[r.type]}`;
+  const rar = r.id ? RARITY[itemRarity(r.id)] : null;
+  show.querySelector('small').textContent = `Trede ${passSel + 1} · ${rar ? rar.name + ' ' : ''}${{ skin: 'Skin', emote: 'Emote', stamp: 'Spuitbus-stempel', coins: 'Munten', class: 'Klasse' }[r.type]}`;
+  show.style.setProperty('--rarity', rar ? hex(rar.color) : '#ffd34d');
   show.querySelector('b').textContent = r.name;
   $('btn-pass-prestige').classList.toggle('hidden', tier < total);
-  show.querySelector('p').textContent = passSel < tier ? 'Vrijgespeeld'
-    : `Nog ${(passSel + 1) * XP_PER_TIER - progress.xp} XP`;
+  show.querySelector('p').textContent = (passSel < tier ? 'Vrijgespeeld'
+    : `Nog ${(passSel + 1) * XP_PER_TIER - progress.xp} XP`) + (r.id ? ` · label: Battlepass seizoen ${SEASON}` : '');
 }
+// hoe lang het seizoen nog duurt, tot op de minuut
+function seasonLeft() {
+  const ms = Math.max(0, Catalog.seasonEnd(SEASON) - Date.now());
+  const d = Math.floor(ms / 86400000), h = Math.floor((ms % 86400000) / 3600000), m = Math.floor((ms % 3600000) / 60000);
+  return d ? `${d}d ${h}u ${m}m` : `${h}u ${m}m`;
+}
+function updateSeasonTimer() {
+  $('pass-left').textContent = seasonLeft();
+  $('bp-left').textContent = `Seizoen eindigt over ${seasonLeft()}`;
+}
+setInterval(() => { if (!$('pass').classList.contains('hidden') || !$('menu').classList.contains('hidden')) updateSeasonTimer(); }, 20000);
 $('pass-prev').addEventListener('click', () => { passPage--; renderPass(); });
 $('pass-next').addEventListener('click', () => { passPage++; renderPass(); });
 
@@ -3733,18 +4082,35 @@ function slideTo(id) {
   const from = NAV_ORDER.indexOf(currentPage), to = NAV_ORDER.indexOf(id);
   if (from === to) return;
   const dir = to > from ? 'from-right' : 'from-left';
+  // de oude pagina schuift de andere kant op weg terwijl de nieuwe binnenkomt
+  const leaving = currentPage !== 'play' ? $(currentPage) : null;
   currentPage = id;
   PAGES.forEach((p) => {
     const el = $(p);
-    el.classList.toggle('hidden', p !== id);
-    el.classList.remove('from-right', 'from-left');
+    if (el !== leaving && p !== id) el.classList.add('hidden');
+    el.classList.remove('from-right', 'from-left', 'to-left', 'to-right');
   });
+  if (leaving) {
+    leaving.classList.add(dir === 'from-right' ? 'to-left' : 'to-right');
+    clearTimeout(leaving.leaveTimer);
+    leaving.leaveTimer = setTimeout(() => {
+      leaving.classList.remove('to-left', 'to-right');
+      if (currentPage !== leaving.id) leaving.classList.add('hidden');
+    }, 380);
+  }
   document.body.classList.toggle('paged', id !== 'play');
   const target = id === 'play' ? document.querySelector('#menu.hub') : $(id);
   if (target) {
+    clearTimeout(target.leaveTimer);
+    if (id !== 'play') target.classList.remove('hidden');
     target.classList.remove('from-right', 'from-left');
     void target.offsetWidth;
     target.classList.add(dir);
+    // na het binnenschuiven de klasse weghalen, anders spelen de tegels bij elke klik hun intro opnieuw af
+    if (id !== 'play') {
+      clearTimeout(target.settleTimer);
+      target.settleTimer = setTimeout(() => target.classList.remove('from-right', 'from-left'), 700);
+    }
   }
   document.querySelectorAll('.top-nav .nav').forEach((n) => n.classList.toggle('on', (n.dataset.open || n.dataset.nav) === id));
   sfx('whoosh');
@@ -4992,7 +5358,7 @@ function showGained(gained) {
   if ((gained.items || []).length) setTimeout(() => queueShowcase(gained.items), playing ? 0 : 7800);
 }
 const masteryName = (key) => (key.startsWith('cls:') ? (CLASSES.find((c) => c.id === key.slice(4)) || { name: key }).name : (M.maps[key.slice(4)] || { name: key }).name);
-const recordLabel = (key, value) => ({ score: `${value} punten`, hold: `${value} s broodje vast`, far: `worp van ${value} m`, hits: `${value} keer raak` }[key]);
+const recordLabel = (key, value) => `${value} ${(RECORDS.find((r) => r.key === key) || { unit: '' }).unit}`;
 
 // beloning van de server na een potje (ingelogd)
 socket.on('wallet', ({ account: data, gained, result }) => {
@@ -5143,23 +5509,24 @@ function say(id, text) {
 // ---------- Winkel: elke dag een ander aanbod, met zeldzaamheid ----------
 const priceOf = (item) => Catalog.priceOf(item);
 let confirmId = null; // eerste klik vraagt om bevestiging, tweede klik koopt
-function shopTile(item, deal) {
+function shopTile(item, sale) {
   const price = priceOf(item);
   const giftTo = $('gift-to').value;
   const owned = !giftTo && owns(item.id);
   const rarity = RARITY[item.rarity];
-  let footer = owned ? 'In bezit' : icon('coin') + price;
-  if (!owned && item.id === deal.id) footer = `<s>${item.price}</s> ` + footer;
+  let footer = owned ? icon('check') + 'In bezit' : icon('coin') + price;
+  if (!owned && sale) footer = `<s>${item.price}</s> ` + footer;
   if (confirmId === item.id) footer = giftTo ? 'Nog een keer klikken om te geven' : 'Nog een keer klikken om te kopen';
   const el = tile(kindOf(item.id), visualFor(item.id), item.name, footer);
   el.style.setProperty('--rarity', hex(rarity.color));
   el.classList.add('rar-' + rarity.id);
-  el.querySelector('.art').insertAdjacentHTML('beforeend', `<em>${item.kind}</em><em class="rar">${rarity.name}</em>`);
+  el.querySelector('.art').insertAdjacentHTML('beforeend', `<em>${item.kind}</em><em class="rar">${rarity.name}</em>${sale ? '<em class="sale">-30%</em>' : ''}`);
   if (owned) el.classList.add('owned');
   else if (progress.coins < price) el.classList.add('poor');
   el.addEventListener('pointerenter', () => shopPreview(item));
   el.addEventListener('click', () => {
     shopPreview(item);
+    if (kindOf(item.id) === 'sound') sfx(item.id.slice(6)); // eerst even horen
     if (owned || progress.coins < price) return;
     if (confirmId !== item.id) {
       confirmId = item.id;
@@ -5234,7 +5601,7 @@ function updateShopView() {
   const pose = poseModel(shopView.model, 0, 0, shopView.emote || (t % 6 < 1.5 ? 3 : 0), t);
   shopView.model.group.position.y = pose.hop;
   shopView.model.group.rotation.set(pose.lean || 0, Math.sin(t * 0.8) * 0.5 + pose.spin, pose.roll);
-  setFace(shopView.model, 'happy', performance.now());
+  setFace(shopView.model, EMOTE_FACE[shopView.emote] || 'happy', performance.now());
   shopView.renderer.render(shopView.scene, shopView.camera);
 }
 let giftFriends = null;
@@ -5249,23 +5616,11 @@ function renderShop() {
       $('gift-to').replaceChildren(new Option('Mezelf', ''), ...friends.map((f) => new Option(f.name, f.username || f.name.toLowerCase())));
     }).catch(() => {});
   }
-  $('shop-featured').replaceChildren(shopTile(today.deal, today.deal));
-  $('shop-grid').replaceChildren(...today.items.filter((x) => x.id !== today.deal.id).map((x) => shopTile(x, today.deal)));
-  // alle stempels die je hebt, uit de winkel, de battlepass en de inlogreeks
-  const stamps = ['naam'].concat(progress.custom ? ['custom'] : [],
-    progress.owned.filter((id) => id.startsWith('stamp:')).map((id) => id.slice(6)));
-  $('stamp-grid').replaceChildren(...stamps.map((id) => {
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (progress.stamp === id ? ' active' : '');
-    if (STAMP_ICON[id]) chip.innerHTML = icon(STAMP_ICON[id]);
-    else chip.textContent = id === 'naam' ? 'Naam' : 'Eigen tekening';
-    chip.addEventListener('click', () => {
-      progress.stamp = id;
-      save('kr-progress', progress);
-      renderShop();
-    });
-    return chip;
-  }));
+  $('shop-featured').replaceChildren(...today.deals.map((x) => shopTile(x, true)));
+  $('shop-grid').replaceChildren(...today.items.filter((x) => !today.deals.includes(x)).map((x) => shopTile(x, false)));
+  const giftTo = $('gift-to');
+  $('gift-row').classList.toggle('on', !!giftTo.value);
+  $('gift-who').textContent = giftTo.value ? giftTo.selectedOptions[0].textContent : 'Mezelf';
 }
 $('gift-to').addEventListener('change', () => { confirmId = null; renderShop(); });
 // aftellen tot de volgende aanbieding (middernacht)
@@ -5323,7 +5678,7 @@ $('btn-draw-save').addEventListener('click', () => {
   progress.stamp = 'custom';
   save('kr-progress', progress);
   $('draw').classList.add('hidden');
-  renderShop();
+  if (!$('locker-pick').classList.contains('hidden')) renderPick();
 });
 
 // ---------- Ranglijst van de week ----------
@@ -5455,6 +5810,7 @@ function thumb(skinId, emote = 0, acc = 'skin.geen.rugzak', fromBehind = false, 
     const m = makePlayerModel({ name: '', skin: skinId, acc, color: 0x3aa655 });
     m.label.visible = false;
     const pose = poseModel(m, 0, 0, emote, 0.55);
+    setFace(m, EMOTE_FACE[emote] || 'happy', 0);
     m.group.position.y = pose.hop;
     m.group.rotation.set(pose.lean || 0, fromBehind ? 2.6 : 0.45, pose.roll);
     if (preview.model) preview.model.group.visible = false;
@@ -5543,18 +5899,18 @@ async function renderRecords(map) {
   }));
   const mine = progress.records[map] || {};
   const body = $('record-body');
-  body.innerHTML = '<p class="shop-title">Jouw records</p><ul class="list mine"></ul><p class="shop-title">Beste van iedereen</p><div class="record-top">Laden…</div>';
-  body.querySelector('.mine').replaceChildren(...['hold', 'far', 'score', 'hits'].map((k) =>
-    row(0xf26a1b, { hold: 'Langst ongeraakt vastgehouden', far: 'Verste rake worp', score: 'Hoogste score', hits: 'Meeste keer raak' }[k],
-      badge(mine[k] ? recordLabel(k, mine[k]) : 'nog geen', 'pts'))));
+  body.innerHTML = '<p class="shop-title">Jouw records in één potje</p><ul class="list mine record-mine"></ul><p class="shop-title">Beste van iedereen</p><div class="record-top">Laden…</div>';
+  body.querySelector('.mine').replaceChildren(...RECORDS.map((r) =>
+    row(mine[r.key] ? 0xf26a1b : 0xc9c3b6, r.title, badge(mine[r.key] ? recordLabel(r.key, mine[r.key]) : 'nog geen', 'pts'))));
   try {
     const data = await (await fetch(`/api/records?map=${map}`)).json();
     if (recordMap !== map) return;
     const top = body.querySelector('.record-top');
     top.replaceChildren();
-    for (const [k, title] of [['hold', 'Langste broodjestijd'], ['far', 'Verste worp'], ['score', 'Hoogste score']]) {
+    for (const { key: k, title } of RECORDS) {
       const list = (data.records && data.records[k]) || [];
       const col = document.createElement('div');
+      col.className = 'record-card';
       col.innerHTML = `<b>${title}</b>`;
       const ol = document.createElement('ol');
       ol.className = 'list';
@@ -5935,8 +6291,11 @@ function openWheel() {
     const seg = document.createElement('div');
     seg.className = 'seg';
     const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    seg.style.left = `calc(50% + ${Math.cos(a) * 130}px)`;
-    seg.style.top = `calc(50% + ${Math.sin(a) * 130}px)`;
+    // met veel emotes wordt het wiel groter en de plaatjes kleiner
+    const radius = Math.min(230, Math.max(130, n * 11));
+    seg.style.left = `calc(50% + ${Math.cos(a) * radius}px)`;
+    seg.style.top = `calc(50% + ${Math.sin(a) * radius}px)`;
+    if (n > 12) seg.classList.add('small');
     seg.append(picture(thumb(progress.skin, e)));
     if (touchMode) seg.addEventListener('touchstart', (ev) => { ev.preventDefault(); wheel.pick = i; closeWheel(true); }, { passive: false });
     return seg;
@@ -6376,9 +6735,19 @@ setTimeout(bootLoading, 50);
 localStorage.setItem('kr-seen', '1');
 refreshAccountUi(); // haalt ook beloningen op die nog niet waren uitgekeerd
 socket.on('connect', () => { if (getToken()) socket.emit('hello', getToken()); });
-if (getToken()) {
-  api('/api/me').then(handleMe).catch(() => localStorage.removeItem('kr-token'));
+// Alleen uitloggen als de server zegt dat je sessie echt niet meer geldig is. Bij een haperende verbinding of een
+// server die net opstart (Render slaapt na een tijdje) blijf je ingelogd en proberen we het later opnieuw.
+function loadMe(attempt = 0) {
+  api('/api/me').then(handleMe).catch((e) => {
+    if (e.status === 401) {
+      localStorage.removeItem('kr-token');
+      toast('Je bent uitgelogd. Log opnieuw in om verder te gaan met je account.', 4000);
+    } else if (attempt < 6) {
+      setTimeout(() => loadMe(attempt + 1), 3000 + attempt * 3000);
+    }
+  });
 }
+if (getToken()) loadMe();
 
 // ---------- Besturing op een telefoon ----------
 if (touchMode) {

@@ -450,6 +450,10 @@ function move(lobby, p, now, dt, api) {
         const d = Math.hypot(next.x - p.x, next.z - p.z) || 1;
         wx = (next.x - p.x) / d;
         wz = (next.z - p.z) / d;
+      } else if (direct > 0.3) {
+        // geen route gevonden (doel op een onbereikbare plek): toch rechtstreeks die kant op, niet stilstaan
+        wx = (goal.x - p.x) / direct;
+        wz = (goal.z - p.z) / direct;
       }
     }
   }

@@ -33,7 +33,21 @@
     { id: 'disco', name: 'Disco', shirt: 0xd9d5cb, pants: 0x9b6bd1, tone: 0x8a5a3c, hair: 0x1a1a1a, hat: 'band', hatColor: 0xf5c542, price: 140 },
     { id: 'tovenaar', name: 'Tovenaar', shirt: 0x3a2a78, pants: 0x3a2a78, tone: 0xf0c39a, hair: 0xd9d5cb, hat: 'beanie', hatColor: 0x3a2a78, price: 160 },
     { id: 'superheld', name: 'Superheld', shirt: 0x2f6fde, pants: 0xe23b2e, tone: 0xf0c39a, hair: 0x1a1a1a, hat: 'band', hatColor: 0xe23b2e, price: 180 },
-    { id: 'draak', name: 'Draak', shirt: 0x2c7a3a, pants: 0x1f4d26, tone: 0x62c25c, hair: 0xe23b2e, hat: 'crown', hatColor: 0xf26a1b, price: 300, rarity: 3 }
+    { id: 'draak', name: 'Draak', shirt: 0x2c7a3a, pants: 0x1f4d26, tone: 0x62c25c, hair: 0xe23b2e, hat: 'crown', hatColor: 0xf26a1b, price: 300, rarity: 3 },
+    // nieuw in de winkel: andere bouw en andere lichaamsdelen
+    { id: 'haai', name: 'Haai', shirt: 0x5f7f9c, pants: 0xe8eef2, tone: 0x8fa9bf, hair: 0x5f7f9c, price: 280, rarity: 3 },
+    { id: 'kikker', name: 'Kikker', shirt: 0x3aa655, pants: 0x2c7a3a, tone: 0x7ed957, hair: 0x3aa655, price: 120 },
+    { id: 'paashaas', name: 'Paashaas', shirt: 0xf2f0ea, pants: 0xf7b6d2, tone: 0xffffff, hair: 0xf2f0ea, price: 140 },
+    { id: 'ridder', name: 'Ridder', shirt: 0xa8b0b8, pants: 0x55565c, tone: 0xe8b88f, hair: 0x5a3a22, hat: 'helm', hatColor: 0xc5ccd3, price: 220, rarity: 3 },
+    { id: 'schildpad', name: 'Schildpad', shirt: 0x6b8f3a, pants: 0x4a6b2a, tone: 0x9ccf6a, hair: 0x6b8f3a, price: 160 },
+    { id: 'kip', name: 'Kip', shirt: 0xffffff, pants: 0xf4c430, tone: 0xffffff, hair: 0xffffff, hat: 'kam', hatColor: 0xe23b2e, price: 110 },
+    { id: 'teddy', name: 'Teddybeer', shirt: 0xa5703f, pants: 0x8a5a3c, tone: 0xc98d5e, hair: 0xa5703f, price: 130 },
+    { id: 'alien', name: 'Alien', shirt: 0x5b3fa8, pants: 0x3b2470, tone: 0x8ce06a, hair: 0x8ce06a, hat: 'antenna', hatColor: 0x8ce06a, price: 190 },
+    { id: 'viking', name: 'Viking', shirt: 0x7a4a2a, pants: 0x55565c, tone: 0xf0c39a, hair: 0xe0a04a, price: 200 },
+    { id: 'prinses', name: 'Prinses', shirt: 0xf08cc0, pants: 0xf08cc0, tone: 0xf0c39a, hair: 0xf3d27a, hat: 'crown', hatColor: 0xf5c542, price: 150 },
+    { id: 'worstelaar', name: 'Worstelaar', shirt: 0xe23b2e, pants: 0x2f6fde, tone: 0xc98d5e, hair: 0x1a1a1a, hat: 'band', hatColor: 0xf4c430, price: 170 },
+    { id: 'badeend', name: 'Badeend', shirt: 0xf4c430, pants: 0xf4c430, tone: 0xffe066, hair: 0xf4c430, price: 90 },
+    { id: 'uil', name: 'Uil', shirt: 0x8a5a3c, pants: 0x6e3a1c, tone: 0xc9a27a, hair: 0x8a5a3c, price: 120 }
   ];
   // vrij te spelen in de battlepass
   SKINS.push(
@@ -87,6 +101,45 @@
       hat: 'band', hatColor: 0xffffff, own: true, source: `Meesterschap ${name} niveau 10`
     }));
   SKINS.push({ id: 'stamgast', name: 'Stamgast', shirt: 0xf26a1b, pants: 0x3b3d44, tone: 0xf0c39a, hair: 0x5a3a22, hat: 'cap', hatColor: 0xf5c542, own: true, source: '30 dagen op rij spelen' });
+
+  // ---------- Bouw en extra lichaamsdelen ----------
+  // Zo is niet elke skin hetzelfde poppetje in een ander kleurtje. Alleen het uiterlijk verandert:
+  // iedereen is in het spel even groot en even snel.
+  const BUILDS = {
+    normaal: { leg: 1, width: 1, depth: 1, head: 1, arm: 1 },
+    stevig: { leg: 0.94, width: 1.24, depth: 1.15, head: 0.94, arm: 1.12 },
+    slank: { leg: 1.12, width: 0.82, depth: 0.86, head: 0.98, arm: 1.04 },
+    klein: { leg: 0.66, width: 0.96, depth: 1, head: 1.22, arm: 0.84 },
+    lang: { leg: 1.26, width: 0.9, depth: 0.9, head: 0.9, arm: 1.14 },
+    rond: { leg: 0.82, width: 1.36, depth: 1.42, head: 1, arm: 0.94 },
+    reus: { leg: 1.12, width: 1.3, depth: 1.2, head: 0.86, arm: 1.22 },
+    groothoofd: { leg: 0.86, width: 0.94, depth: 0.94, head: 1.38, arm: 0.92 }
+  };
+  // [bouw, onderdelen...]
+  const LOOKS = {
+    frikandel: ['rond'], conc: ['stevig', 'baard'], kok: ['rond'], atleet: ['slank'], robot: ['stevig'], koning: ['rond', 'baard'],
+    goud: ['stevig'], ninja: ['slank'], clown: ['rond'], astronaut: ['stevig', 'helm'], punker: ['slank', 'stekels'], surfer: ['lang'],
+    tovenaar: ['lang', 'baard', 'jurk'], superheld: ['stevig'], draak: ['stevig', 'hoorns', 'snuit', 'drakenstaart'],
+    haai: ['stevig', 'vin', 'snuit', 'staart'], kikker: ['klein'], paashaas: ['klein', 'konijnenoren', 'staartje'], ridder: ['stevig'],
+    schildpad: ['klein', 'schild'], kip: ['rond', 'snavel'], teddy: ['rond', 'berenoren', 'snuit'], alien: ['groothoofd'],
+    viking: ['reus', 'baard', 'hoorns'], prinses: ['slank', 'jurk'], worstelaar: ['reus'], badeend: ['rond', 'snavel'], uil: ['rond', 'kattenoren', 'snavel'],
+    piraat: ['stevig', 'baard'], zombie: ['slank'], gamer: ['klein'], dokter: ['lang'], voetballer: ['slank'], agent: ['stevig'], bakker: ['rond'],
+    neon: ['slank'], ijsbeer: ['rond', 'berenoren', 'snuit'], lava: ['stevig', 'stekels'], schaduw: ['lang'], diamant: ['reus'],
+    pompoen: ['groothoofd'], spook: ['normaal', 'jurk'], vampier: ['lang'], heks: ['slank', 'jurk'], skelet: ['slank'], mummie: ['lang'],
+    weerwolf: ['reus', 'kattenoren', 'snuit', 'staart'], vleermuis: ['klein', 'kattenoren'], kat: ['slank', 'kattenoren', 'staart'], slijm: ['rond'],
+    spin: ['klein'], geest: ['reus'],
+    sneeuwpop: ['rond'], rendier: ['slank', 'gewei', 'snuit'], elf: ['klein'], kerstman: ['rond', 'baard'], pinguin: ['rond', 'snavel'],
+    ijs: ['slank', 'jurk'], skier: ['lang'], peperkoek: ['klein'], kerstboom: ['lang'], yeti: ['reus', 'berenoren'], cadeau: ['rond'], noorderlicht: ['slank'],
+    markeerstift: ['lang'], slaper: ['klein'], docent: ['normaal', 'baard'], koffie: ['rond'], rekenmachine: ['stevig'], tien: ['groothoofd'],
+    inkt: ['slank'], geslaagd: ['lang'],
+    rkdiamant: ['stevig'], rkelite: ['stevig'], rkkampioen: ['reus'], rklegende: ['reus'], gdtank: ['reus'], gdsprinter: ['slank'], gdspringer: ['klein']
+  };
+  for (const k of SKINS) {
+    const look = LOOKS[k.id];
+    if (!look) continue;
+    k.build = look[0];
+    k.parts = look.slice(1);
+  }
   const THEMES = ['Schoolstart', 'Halloween', 'Winter', 'Examenweek'];
   const SEASON_MS = 14 * 86400000;
   const SEASON_EPOCH = Date.UTC(2026, 8, 28); // maandag 28 september 2026
@@ -100,15 +153,18 @@
   const ACCESSORIES = {
     hat: [
       { id: 'skin', name: 'Van je skin' }, { id: 'geen', name: 'Niets' }, { id: 'pet', name: 'Pet' }, { id: 'muts', name: 'Muts' },
-      { id: 'koptelefoon', name: 'Koptelefoon', price: 80 }, { id: 'hoed', name: 'Hoge hoed', price: 100 }, { id: 'kroon', name: 'Kroon', price: 150 }
+      { id: 'koptelefoon', name: 'Koptelefoon', price: 80 }, { id: 'hoed', name: 'Hoge hoed', price: 100 }, { id: 'kroon', name: 'Kroon', price: 150 },
+      { id: 'feesthoed', name: 'Feesthoedje', price: 50 }, { id: 'piratenhoed', name: 'Piratenhoed', price: 110 }, { id: 'aureool', name: 'Aureool', price: 260 }
     ],
     face: [
       { id: 'geen', name: 'Niets' }, { id: 'bril', name: 'Bril' }, { id: 'snor', name: 'Snor', price: 40 },
-      { id: 'zonnebril', name: 'Zonnebril', price: 60 }, { id: 'masker', name: 'Mondkapje', price: 80 }
+      { id: 'zonnebril', name: 'Zonnebril', price: 60 }, { id: 'masker', name: 'Mondkapje', price: 80 },
+      { id: 'clownsneus', name: 'Clownsneus', price: 45 }, { id: 'ooglapje', name: 'Ooglapje', price: 70 }, { id: 'monocle', name: 'Monocle', price: 120 }
     ],
     back: [
       { id: 'rugzak', name: 'Rugzak' }, { id: 'geen', name: 'Niets' }, { id: 'cape', name: 'Cape', price: 100 },
-      { id: 'gitaar', name: 'Gitaar', price: 120 }, { id: 'vleugels', name: 'Vleugels', price: 150 }
+      { id: 'gitaar', name: 'Gitaar', price: 120 }, { id: 'vleugels', name: 'Vleugels', price: 150 },
+      { id: 'zwaard', name: 'Zwaard', price: 130 }, { id: 'jetpack', name: 'Jetpack', price: 240 }, { id: 'schild', name: 'Ridderschild', price: 90 }
     ]
   };
   const SLOT_NAMES = { hat: 'Hoofd', face: 'Gezicht', back: 'Rug' };
@@ -187,12 +243,22 @@
     };
   }
 
-  const EMOTE_NAMES = ['', 'Take the L', 'Dab', 'Zwaai', 'Dans', 'Floss', 'Facepalm', 'Jumping jacks', 'Buiging', 'Helikopter', 'Saluut'];
-  const EMOTE_SOURCE = (n) => (n <= 4 ? '' : n <= 6 ? 'Winkel' : 'Battlepass');
+  // Emotes: 1-4 heeft iedereen, de rest komt uit de winkel (met prijs) of de battlepass.
+  const EMOTES = [
+    [''], ['Take the L'], ['Dab'], ['Zwaai'], ['Dans'], ['Floss', 100], ['Facepalm', 80], ['Jumping jacks'], ['Buiging'], ['Helikopter'], ['Saluut'],
+    ['Robotdans', 120], ['Kippendans', 90], ['Paardje rijden', 110], ['Opdrukken'], ['Applaus', 60], ['Schaduwboksen', 100], ['Yoga'],
+    ['Luchtgitaar'], ['Salto'], ['Powernap'], ['Discokoorts'], ['Huilbui'], ['Droogzwemmen'], ['Breakdance'], ['Ik win!', 150], ['Zombieloop', 90]
+  ];
+  const EMOTE_NAMES = EMOTES.map((e) => e[0]);
+  const EMOTE_PRICE = (n) => (EMOTES[n] && EMOTES[n][1]) || 0;
+  const EMOTE_SOURCE = (n) => (n <= 4 ? '' : EMOTE_PRICE(n) ? 'Winkel' : 'Battlepass');
+  // per seizoensthema vier emotes in de battlepass
+  const PASS_EMOTES = [[7, 8, 9, 10], [19, 22, 24, 20], [23, 18, 21, 8], [20, 17, 14, 7]];
   const STAMP_ICONS = ['star', 'fire', 'skull', 'pizza', 'gamepad', 'eye', 'rocket', 'ghost', 'smiley', 'diamond', 'moon', 'trophy', 'note', 'bomb'];
   const STAMP_NAMES = ['Ster', 'Vuur', 'Schedel', 'Pizza', 'Controller', 'Oog', 'Raket', 'Spook', 'Smiley', 'Diamant', 'Maan', 'Beker', 'Muziek', 'Bom'];
   // welk icoon hoort bij welke stempel (e0..e13 uit de battlepass, de rest uit de winkel)
-  const STAMP_ICON = { kroon: 'crown', broodje: 'broodje', hart: 'heart', bliksem: 'bolt' };
+  const STAMP_ICON = { kroon: 'crown', broodje: 'broodje', hart: 'heart', bliksem: 'bolt', banaan: 'banana', feest: 'party', robot: 'robot',
+    cadeau: 'gift', roos: 'target', skate: 'skate', medaille: 'medal', magneet: 'magnet' };
   STAMP_ICONS.forEach((name, i) => { STAMP_ICON['e' + i] = name; });
   const XP_PER_TIER = 100;
   // 50 treden: 12 skins, 5 klassen, 4 emotes, 14 stempels en 15 keer munten
@@ -211,7 +277,7 @@
         const k = PASS_SKINS[skinTiers.indexOf(t)];
         BATTLEPASS.push({ type: 'skin', id: 'skin:' + k.id, name: k.name, label: 'Skin ' + k.name });
       } else if (emoteTiers.includes(t)) {
-        const n = 7 + emoteTiers.indexOf(t);
+        const n = PASS_EMOTES[theme % PASS_EMOTES.length][emoteTiers.indexOf(t)];
         BATTLEPASS.push({ type: 'emote', id: 'emote:' + n, name: EMOTE_NAMES[n], label: 'Emote ' + EMOTE_NAMES[n] });
       } else if (stampTiers.includes(t)) {
         const i = stampTiers.indexOf(t);
@@ -227,44 +293,93 @@
 
   // ---------- Sporen en raakgeluiden ----------
   // Een spoor zie je achter je aan als je dasht, het raakgeluid hoort iedereen als jij iemand raakt.
+  // vy: hoe snel de blokjes stijgen (negatief: ze vallen), size: hoe groot ze zijn
   const TRAILS = [
     { id: 'geen', name: 'Geen spoor' },
-    { id: 'bubbels', name: 'Bubbels', colors: [0x9fd4f5, 0xffffff], price: 60 },
+    { id: 'bubbels', name: 'Bubbels', colors: [0x9fd4f5, 0xffffff], price: 60, vy: 1.4, size: 0.2 },
     { id: 'confetti', name: 'Confetti', colors: [0xe23b2e, 0xf4c430, 0x3aa655, 0x2f6fde], price: 80 },
-    { id: 'sterren', name: 'Sterren', colors: [0xf5c542, 0xfff2a0], price: 100 },
-    { id: 'vuur', name: 'Vuur', colors: [0xf26a1b, 0xe23b2e, 0xf4c430], price: 120 },
-    { id: 'regenboog', name: 'Regenboog', colors: [0xe23b2e, 0xf26a1b, 0xf4c430, 0x3aa655, 0x2f6fde, 0x9b6bd1], price: 250, rarity: 3 }
+    { id: 'sterren', name: 'Sterren', colors: [0xf5c542, 0xfff2a0], price: 100, glow: true },
+    { id: 'vuur', name: 'Vuur', colors: [0xf26a1b, 0xe23b2e, 0xf4c430], price: 120, vy: 2.4, glow: true },
+    { id: 'regenboog', name: 'Regenboog', colors: [0xe23b2e, 0xf26a1b, 0xf4c430, 0x3aa655, 0x2f6fde, 0x9b6bd1], price: 250, rarity: 3 },
+    { id: 'hartjes', name: 'Hartjes', colors: [0xff5c8a, 0xff9ec0, 0xffffff], price: 70, vy: 1.1 },
+    { id: 'herfst', name: 'Herfstblad', colors: [0xd9540f, 0xe0a417, 0x8a4b26, 0xb0284e], price: 60, vy: -0.8, size: 0.2 },
+    { id: 'sneeuw', name: 'Sneeuwvlok', colors: [0xffffff, 0xe8f6ff, 0xbfe6ff], price: 70, vy: -0.5, size: 0.11 },
+    { id: 'bliksem', name: 'Bliksem', colors: [0xfff200, 0xffffff, 0x7fe3ff], price: 140, vy: 0, size: 0.1, glow: true },
+    { id: 'slijm', name: 'Slijmspoor', colors: [0x7ed957, 0x3aa655, 0xb6f58f], price: 90, vy: -1.6, size: 0.22 },
+    { id: 'goud', name: 'Goudkoorts', colors: [0xf5c542, 0xffe27a, 0xd9a520], price: 220, rarity: 3, glow: true },
+    { id: 'heelal', name: 'Heelal', colors: [0x1d1240, 0x5b3fa8, 0xffffff, 0x7fe3ff], price: 200, glow: true },
+    { id: 'snoep', name: 'Suikerspin', colors: [0xff9ec0, 0x9fd4f5, 0xfff2a0], price: 80, vy: 0.9, size: 0.24 },
+    { id: 'pizza', name: 'Pizzakruimels', colors: [0xf4c430, 0xe23b2e, 0xe0a04a], price: 50, vy: -1.2, size: 0.12 },
+    { id: 'neon', name: 'Neonlicht', colors: [0x39ff14, 0xff2bd6, 0x00e5ff], price: 160, glow: true },
+    { id: 'rook', name: 'Rookwolk', colors: [0x8d9299, 0xb9bec4, 0x55565c], price: 70, vy: 0.5, size: 0.3 }
   ];
+  // de klank zelf staat in main.js (sfx); hier alleen naam en prijs
   const SOUNDS = [
     { id: 'standaard', name: 'Standaard' },
     { id: 'toeter', name: 'Toeter', price: 50 },
     { id: 'boing', name: 'Boing', price: 50 },
     { id: 'kwak', name: 'Kwak', price: 60 },
     { id: 'gong', name: 'Gong', price: 80 },
-    { id: 'laser', name: 'Laser', price: 100 }
+    { id: 'laser', name: 'Laser', price: 100 },
+    { id: 'piep', name: 'Piepeendje', price: 40 },
+    { id: 'kus', name: 'Dikke kus', price: 45 },
+    { id: 'blikje', name: 'Blikje', price: 50 },
+    { id: 'fluit', name: 'Glijfluit', price: 60 },
+    { id: 'robot', name: 'Robotpiep', price: 60 },
+    { id: 'scheet', name: 'Scheetkussen', price: 70 },
+    { id: 'kassa', name: 'Kassa', price: 80 },
+    { id: 'koekoek', name: 'Koekoeksklok', price: 80 },
+    { id: 'retro', name: 'Retrogame', price: 90 },
+    { id: 'tromgrap', name: 'Ba-dum-tss', price: 100 },
+    { id: 'harp', name: 'Harp', price: 120 },
+    { id: 'applaus', name: 'Applaus', price: 140 },
+    { id: 'explosie', name: 'Mega-knal', price: 220, rarity: 3 }
   ];
 
-  // ---------- Winkel: zeldzaamheid en een wisselend aanbod ----------
+  // ---------- Zeldzaamheid ----------
+  // Elk voorwerp heeft een zeldzaamheid: de kleur van de tegel in de kluis, de winkel en de battlepass.
   const RARITY = [
     { id: 'gewoon', name: 'Gewoon', color: 0x8d9299 },
     { id: 'zeldzaam', name: 'Zeldzaam', color: 0x2f6fde },
     { id: 'episch', name: 'Episch', color: 0x9b6bd1 },
-    { id: 'legendarisch', name: 'Legendarisch', color: 0xf26a1b }
+    { id: 'legendarisch', name: 'Legendarisch', color: 0xf26a1b },
+    { id: 'mythisch', name: 'Mythisch', color: 0xf5c542 }
   ];
   const rarityOf = (price) => (price <= 60 ? 0 : price <= 100 ? 1 : price <= 180 ? 2 : 3);
-  const SHOP = SKINS.filter((k) => k.price).map((k) => ({ id: 'skin:' + k.id, kind: 'Skin', name: k.name, price: k.price, rarity: k.rarity })).concat([
-    { id: 'emote:5', kind: 'Emote', name: 'Floss', price: 100 },
-    { id: 'emote:6', kind: 'Emote', name: 'Facepalm', price: 80 },
-    { id: 'stamp:kroon', kind: 'Stempel', name: 'Kroon', price: 60 },
-    { id: 'stamp:broodje', kind: 'Stempel', name: 'Frikandelbroodje', price: 60 },
-    { id: 'stamp:hart', kind: 'Stempel', name: 'Hartje', price: 40 },
-    { id: 'stamp:bliksem', kind: 'Stempel', name: 'Bliksem', price: 40 }
-  ], Object.keys(ACCESSORIES).flatMap((slot) => ACCESSORIES[slot].filter((a) => a.price)
+  const EXTRA_STAMPS = [['kroon', 'Kroon', 60], ['broodje', 'Frikandelbroodje', 60], ['hart', 'Hartje', 40], ['bliksem', 'Bliksem', 40],
+    ['banaan', 'Bananenschil', 45], ['feest', 'Feestje', 50], ['robot', 'Robot', 70], ['cadeau', 'Cadeautje', 50], ['roos', 'Roos', 60],
+    ['skate', 'Skateboard', 80], ['medaille', 'Medaille', 90], ['magneet', 'Magneet', 70]];
+  const SHOP = SKINS.filter((k) => k.price).map((k) => ({ id: 'skin:' + k.id, kind: 'Skin', name: k.name, price: k.price, rarity: k.rarity })).concat(
+    EMOTES.map((e, n) => e[1] && { id: 'emote:' + n, kind: 'Emote', name: e[0], price: e[1] }).filter(Boolean),
+    EXTRA_STAMPS.map(([id, name, price]) => ({ id: 'stamp:' + id, kind: 'Stempel', name, price })),
+    Object.keys(ACCESSORIES).flatMap((slot) => ACCESSORIES[slot].filter((a) => a.price)
     .map((a) => ({ id: 'acc:' + a.id, kind: 'Accessoire', name: a.name, price: a.price, slot }))),
   TRAILS.filter((t) => t.price).map((t) => ({ id: 'trail:' + t.id, kind: 'Spoor', name: t.name, price: t.price, rarity: t.rarity })),
-  SOUNDS.filter((t) => t.price).map((t) => ({ id: 'sound:' + t.id, kind: 'Raakgeluid', name: t.name, price: t.price })));
+  SOUNDS.filter((t) => t.price).map((t) => ({ id: 'sound:' + t.id, kind: 'Raakgeluid', name: t.name, price: t.price, rarity: t.rarity })));
   SHOP.forEach((item) => { if (item.rarity === undefined) item.rarity = rarityOf(item.price); });
   STAMP_ICON.reeks7 = 'fire';
+  // zeldzaamheid van elk voorwerp, ook van wat je niet kunt kopen ("skin:ninja", "emote:7", ...)
+  function itemRarity(id) {
+    const shop = SHOP.find((x) => x.id === id);
+    if (shop) return shop.rarity;
+    const [kind, key] = String(id).split(':');
+    if (kind === 'skin') {
+      if (/^wk\d+$/.test(key)) return 3;
+      const k = SKINS.find((x) => x.id === key);
+      if (!k) return 0;
+      if (k.own) return 4;
+      if (k.pass) {
+        const i = SKINS.filter((x) => x.pass && x.season === k.season).indexOf(k);
+        return i < 4 ? 1 : i < 9 ? 2 : 3;
+      }
+      if (k.locked) return ['koning', 'goud'].includes(k.id) ? 2 : 1;
+      return 0;
+    }
+    if (kind === 'class') return 2;
+    if (kind === 'emote') return Number(key) <= 4 ? 0 : 2;
+    if (kind === 'stamp') return key === 'reeks7' ? 3 : /^e\d+$/.test(key) ? 1 : 0;
+    return 0;
+  }
 
   const DAILIES = [
     { desc: 'Raak 5 keer iemand met een voorwerp.', stat: 'hits', goal: 5 },
@@ -492,7 +607,8 @@
   }
 
   // ---------- Winkel van vandaag ----------
-  // Zes artikelen per dag. Een legendarisch artikel komt maar eens per dertig dagen langs.
+  // Elke dag twee uitgelichte artikelen in de aanbieding (30% korting) en acht artikelen daaronder.
+  // Het aanbod volgt uit de datum, zodat de server en iedere browser dezelfde winkel zien.
   function shopFor(date) {
     const day = dayOf(date);
     let seed = day * 2654435761 >>> 0;
@@ -502,26 +618,54 @@
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
-    const legendary = SHOP.filter((x) => x.rarity === 3);
-    const items = legendary.filter((x, i) => (day + i * 11) % 30 === 0);
-    const weights = [6, 3, 1.4];
-    const pool = SHOP.filter((x) => x.rarity < 3);
-    while (items.length < 6 && pool.length) {
+    // willekeurig één uit de lijst halen, zeldzame dingen minder vaak (weights per zeldzaamheid)
+    const take = (pool, weights) => {
       const total = pool.reduce((a, x) => a + weights[x.rarity], 0);
       let r = rnd() * total;
       const i = pool.findIndex((x) => (r -= weights[x.rarity]) <= 0);
-      const item = pool.splice(i < 0 ? 0 : i, 1)[0];
-      // hooguit twee van dezelfde soort, zodat er elke dag wat te kiezen is
-      if (items.filter((x) => x.kind === item.kind).length < 2) items.push(item);
+      return pool.splice(i < 0 ? 0 : i, 1)[0];
+    };
+    // uitgelicht: een skin, en een skin, emote of spoor van episch of hoger
+    const skins = SHOP.filter((x) => x.kind === 'Skin' && x.rarity >= 1);
+    const flashy = SHOP.filter((x) => ['Skin', 'Emote', 'Spoor', 'Accessoire'].includes(x.kind) && x.rarity >= 2);
+    const deals = [take(skins, [0, 1, 2, 2])];
+    const rest = flashy.filter((x) => x !== deals[0]);
+    deals.push(take(rest, [0, 0, 2, 1.5]));
+    const pool = SHOP.filter((x) => !deals.includes(x));
+    const items = [];
+    while (items.length < 8 && pool.length) {
+      const item = take(pool, [6, 3.5, 1.6, 0.5]);
+      // hooguit drie van dezelfde soort, zodat er elke dag van alles te kiezen is
+      if (items.filter((x) => x.kind === item.kind).length < 3) items.push(item);
     }
-    return { day, deal: items[items.length - 1], items };
+    return { day, deals, deal: deals[0], items: deals.concat(items) };
   }
   const dealFor = (date) => shopFor(date).deal;
   const inShop = (id, date) => shopFor(date).items.some((x) => x.id === id);
-  const priceOf = (item, date) => (item.id === dealFor(date).id ? Math.round((item.price * 0.7) / 5) * 5 : item.price);
+  const onSale = (id, date) => shopFor(date).deals.some((x) => x.id === id);
+  const salePrice = (price) => Math.round((price * 0.7) / 5) * 5;
+  const priceOf = (item, date) => (onSale(item.id, date) ? salePrice(item.price) : item.price);
+
+  // XP die je nodig hebt om level n te halen (voor de beheerder)
+  function careerXpFor(level) {
+    let xp = 0;
+    for (let l = 1; l < Math.min(CAREER_MAX, level); l++) xp += careerNeed(l);
+    return xp;
+  }
+  // waar een seizoen eindigt
+  const seasonEnd = (season) => SEASON_EPOCH + (season || SEASON) * SEASON_MS;
+
+  // Records per potje: [sleutel, omschrijving in de lijst, label achter een waarde]
+  const RECORDS = [
+    ['score', 'Hoogste score', 'punten'], ['hold', 'Langst ongeraakt vastgehouden', 's broodje vast'], ['far', 'Verste rake worp', 'm ver'],
+    ['hits', 'Meeste keer raak', 'keer raak'], ['tackles', 'Meeste tackles', 'tackles'], ['slaps', 'Meeste klappen', 'klappen'],
+    ['pickups', 'Vaakst het broodje gepakt', 'keer gepakt'], ['bites', 'Meeste happen', 'happen'], ['catches', 'Meeste vangballen', 'keer gevangen'],
+    ['lava', 'Langst op de lava overleefd', 's op de lava'], ['traps', 'Meeste mensen in je val', 'in je val'], ['finds', 'Meeste verstoppers gevonden', 'gevonden'],
+    ['tables', 'Meeste tafels omgegooid', 'tafels'], ['jumps', 'Meeste sprongen', 'sprongen'], ['passes', 'Meeste overgooiers', 'keer overgegooid']
+  ].map(([key, title, unit]) => ({ key, title, unit }));
 
   Object.assign(exports, {
-    dealFor, priceOf, CLASSES, SKINS, THEMES, SEASON_MS, SEASON_EPOCH, seasonAt, SEASON, THEME, seasonDaysLeft, PASS_SKINS, ACCESSORIES, SLOT_NAMES,
+    dealFor, priceOf, onSale, salePrice, careerXpFor, seasonEnd, RECORDS, BUILDS, EMOTES, EMOTE_PRICE, PASS_EMOTES, itemRarity, CLASSES, SKINS, THEMES, SEASON_MS, SEASON_EPOCH, seasonAt, SEASON, THEME, seasonDaysLeft, PASS_SKINS, ACCESSORIES, SLOT_NAMES,
     TITLES, titleOpen, MAP_NAMES, RANK_STEPS, RANK_NAMES, RANK_COLORS, RANK_GROUPS, rankOf, EMOTE_NAMES, EMOTE_SOURCE, STAMP_ICONS, STAMP_NAMES, STAMP_ICON,
     XP_PER_TIER, buildPass, BATTLEPASS, SHOP, RARITY, shopFor, inShop, TRAILS, SOUNDS, DAILIES, DAILY_REWARD, DAILY_XP, CHALLENGES, dailyFor,
     ACHIEVEMENTS, TIER_NAMES, ACH_COINS, ACH_XP, YEARS, CAREER_MAX, CAREER_TOTAL, careerOf, MASTERY_MAX, masteryOf,
