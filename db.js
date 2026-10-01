@@ -81,6 +81,26 @@ module.exports = {
     return (local.reports || []).slice().reverse().slice(0, 100);
   },
 
+  // nieuwsberichten van de beheerder, nieuwste eerst
+  async newsList() {
+    if (remote) return rest('GET', 'news?order=created_at.desc&limit=30');
+    return (local.news || []).slice().reverse().slice(0, 30);
+  },
+
+  async newsAdd(post) {
+    if (remote) return (await rest('POST', 'news', post))[0];
+    const row = Object.assign({ id: Date.now(), created_at: new Date().toISOString() }, post);
+    local.news = (local.news || []).concat(row).slice(-100);
+    flush();
+    return row;
+  },
+
+  async newsDelete(id) {
+    if (remote) return rest('DELETE', `news?id=eq.${enc(id)}`, null, 'return=minimal');
+    local.news = (local.news || []).filter((n) => String(n.id) !== String(id));
+    flush();
+  },
+
   // beste tien op rangpunten
   async topRanked() {
     if (remote) return rest('GET', 'accounts?select=display,rank_points&rank_points=gt.0&order=rank_points.desc&limit=10');
@@ -132,6 +152,24 @@ module.exports = {
   async recordTop(key) {
     if (remote) return rest('GET', `leaderboard?week=eq.${enc(key)}&order=points.desc&limit=5`);
     return local.leaderboard.filter((r) => r.week === key).sort((a, b) => b.points - a.points).slice(0, 5);
+  },
+
+  // Racetijden staan ook in de ranglijsttabel ("race:rgym" en "race:rgym:2026-W40"), in milliseconden.
+  // Lager is beter: per speler telt alleen zijn snelste tijd.
+  async timeSet(key, name, ms) {
+    let row;
+    if (remote) row = (await rest('GET', `leaderboard?week=eq.${enc(key)}&name=eq.${enc(name)}&limit=1`))[0];
+    else row = local.leaderboard.find((r) => r.week === key && r.name === name);
+    if (row && row.points > 0 && row.points <= ms) return;
+    const entry = { week: key, name, points: Math.round(ms), wins: 0, games: 1 };
+    if (remote) return rest('POST', 'leaderboard?on_conflict=week,name', [entry], 'resolution=merge-duplicates,return=minimal');
+    local.leaderboard = local.leaderboard.filter((r) => r.week !== key || r.name !== name).concat(entry);
+    flush();
+  },
+
+  async timeTop(key, limit = 10) {
+    if (remote) return rest('GET', `leaderboard?week=eq.${enc(key)}&points=gt.0&order=points.asc&limit=${limit}`);
+    return local.leaderboard.filter((r) => r.week === key && r.points > 0).sort((a, b) => a.points - b.points).slice(0, limit);
   },
 
   async boardTop(week) {

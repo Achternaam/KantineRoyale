@@ -182,7 +182,8 @@
     { id: 'kampioen', name: 'Kampioen', stat: 'wins', goal: 25, how: 'Win 25 potjes' },
     { id: 'kunstenaar', name: 'Kunstenaar', stat: 'sprays', goal: 50, how: 'Zet 50 stempels' },
     { id: 'smulpaap', name: 'Smulpaap', stat: 'bites', goal: 100, how: 'Neem 100 happen' },
-    { id: 'lavaloper', name: 'Lavaloper', stat: 'lavaSeconds', goal: 600, how: 'Overleef 600 seconden lava' },
+    { id: 'chefkok', name: 'Chef-kok', stat: 'served', goal: 300, how: 'Serveer 300 gerechten in Kantinedienst' },
+    { id: 'raceheld', name: 'Raceheld', stat: 'raceFinishes', goal: 50, how: 'Kom 50 keer over de finish van een race' },
     { id: 'kameleon', name: 'Kameleon', stat: 'hideWins', goal: 10, how: 'Blijf 10 keer verstopt tot het einde' },
     { id: 'premiejager', name: 'Premiejager', stat: 'bounties', goal: 5, how: 'Pak 5 premies' },
     { id: 'wraakengel', name: 'Wraakengel', stat: 'revenges', goal: 10, how: 'Neem 10 keer wraak op je rivaal' },
@@ -203,7 +204,7 @@
   // ---------- Schoolloopbaan: 100 levels van brugklas tot examenklas ----------
   const YEARS = ['Brugklas', '2e klas', '3e klas', '4e klas', 'Examenklas'];
   const CAREER_MAX = 100;
-  const careerNeed = (level) => 60 + 6 * level; // XP van dit level naar het volgende
+  const careerNeed = (level) => 100 + 10 * level; // XP van dit level naar het volgende
   function careerOf(xp) {
     let level = 1, left = Math.max(0, xp || 0);
     while (level < CAREER_MAX && left >= careerNeed(level)) {
@@ -260,7 +261,7 @@
   const STAMP_ICON = { kroon: 'crown', broodje: 'broodje', hart: 'heart', bliksem: 'bolt', banaan: 'banana', feest: 'party', robot: 'robot',
     cadeau: 'gift', roos: 'target', skate: 'skate', medaille: 'medal', magneet: 'magnet' };
   STAMP_ICONS.forEach((name, i) => { STAMP_ICON['e' + i] = name; });
-  const XP_PER_TIER = 100;
+  const XP_PER_TIER = 200;
   // 50 treden: 12 skins, 5 klassen, 4 emotes, 14 stempels en 15 keer munten
   function buildPass(theme) {
     const BATTLEPASS = [];
@@ -382,94 +383,101 @@
   }
 
   const DAILIES = [
-    { desc: 'Raak 5 keer iemand met een voorwerp.', stat: 'hits', goal: 5 },
-    { desc: 'Pak 3 keer het broodje.', stat: 'pickups', goal: 3 },
-    { desc: 'Tackel 3 keer de broodjesdrager.', stat: 'tackles', goal: 3 },
-    { desc: 'Spring 50 keer.', stat: 'jumps', goal: 50 },
-    { desc: 'Speel 2 potjes uit.', stat: 'games', goal: 2 },
-    { desc: 'Houd 40 seconden het broodje vast.', stat: 'holdSeconds', goal: 40 },
-    { desc: 'Gooi 15 keer iets.', stat: 'throws', goal: 15 },
-    { desc: 'Haal 3 power-ups uit een automaat.', stat: 'powerups', goal: 3 },
-    { desc: 'Doe 5 emotes.', stat: 'emotes', goal: 5 },
-    { desc: 'Neem 3 keer de lift.', stat: 'lifts', goal: 3 },
-    { desc: 'Zet 3 keer je stempel op een muur.', stat: 'sprays', goal: 3 },
-    { desc: 'Win een potje.', stat: 'wins', goal: 1 },
-    { desc: 'Pak 6 keer het broodje.', stat: 'pickups', goal: 6 },
-    { desc: 'Raak 10 keer iemand met een voorwerp.', stat: 'hits', goal: 10 },
-    { desc: 'Neem 5 happen van het broodje.', stat: 'bites', goal: 5 },
-    { desc: 'Gooi het broodje 3 keer over.', stat: 'passes', goal: 3 },
-    { desc: 'Geef 10 klappen.', stat: 'slaps', goal: 10 },
-    { desc: 'Zet 3 vallen neer.', stat: 'traps', goal: 3 }
+    { desc: 'Raak 25 keer iemand met een voorwerp.', stat: 'hits', goal: 25 },
+    { desc: 'Pak 12 keer het broodje.', stat: 'pickups', goal: 12 },
+    { desc: 'Tackel 12 keer de broodjesdrager.', stat: 'tackles', goal: 12 },
+    { desc: 'Spring 300 keer.', stat: 'jumps', goal: 300 },
+    { desc: 'Speel 5 potjes uit.', stat: 'games', goal: 5 },
+    { desc: 'Houd in totaal 180 seconden het broodje vast.', stat: 'holdSeconds', goal: 180 },
+    { desc: 'Gooi 60 keer iets.', stat: 'throws', goal: 60 },
+    { desc: 'Haal 10 power-ups uit een automaat.', stat: 'powerups', goal: 10 },
+    { desc: 'Doe 15 emotes.', stat: 'emotes', goal: 15 },
+    { desc: 'Neem 8 keer de lift.', stat: 'lifts', goal: 8 },
+    { desc: 'Zet 8 keer je stempel op een muur.', stat: 'sprays', goal: 8 },
+    { desc: 'Win 3 potjes.', stat: 'wins', goal: 3 },
+    { desc: 'Pak 20 keer het broodje.', stat: 'pickups', goal: 20 },
+    { desc: 'Raak 40 keer iemand met een voorwerp.', stat: 'hits', goal: 40 },
+    { desc: 'Neem 20 happen van het broodje.', stat: 'bites', goal: 20 },
+    { desc: 'Gooi het broodje 10 keer over.', stat: 'passes', goal: 10 },
+    { desc: 'Geef 50 klappen.', stat: 'slaps', goal: 50 },
+    { desc: 'Zet 10 vallen neer.', stat: 'traps', goal: 10 },
+    { desc: 'Eindig 4 keer in de top 3.', stat: 'podiums', goal: 4 },
+    { desc: 'Gooi 25 tafels om.', stat: 'tables', goal: 25 },
+    { desc: 'Kom 4 keer over de finish van een race.', stat: 'raceFinishes', goal: 4 },
+    { desc: 'Serveer 25 gerechten in Kantinedienst.', stat: 'served', goal: 25 }
   ];
-  const DAILY_REWARD = 50;
-  const DAILY_XP = 60;
+  const DAILY_REWARD = 60;
+  const DAILY_XP = 100;
 
   const CHALLENGES = [
-    { id: 'hap', title: 'Eerste hap', desc: 'Pak het frikandelbroodje op.', stat: 'pickups', goal: 1, skin: 'frikandel' },
-    { id: 'tackle', title: 'Tackelkoning', desc: 'Tackel de broodjesdrager 10 keer.', stat: 'tackles', goal: 10, skin: 'conc' },
-    { id: 'gooi', title: 'Pizzabakker', desc: 'Raak 15 keer iemand met een voorwerp.', stat: 'hits', goal: 15, skin: 'kok' },
-    { id: 'spring', title: 'Springveer', desc: 'Spring 200 keer.', stat: 'jumps', goal: 200, skin: 'atleet' },
-    { id: 'vaak', title: 'Vaste klant', desc: 'Speel 5 potjes uit.', stat: 'games', goal: 5, skin: 'robot' },
-    { id: 'win', title: 'Kantinekoning', desc: 'Win een potje met minstens 2 spelers.', stat: 'wins', goal: 1, skin: 'koning' },
-    { id: 'baas', title: 'Broodjesbaas', desc: 'Houd het broodje in totaal 120 seconden vast.', stat: 'holdSeconds', goal: 120, skin: 'goud' }
+    { id: 'hap', title: 'Broodjesjager', desc: 'Pak 50 keer het frikandelbroodje op.', stat: 'pickups', goal: 50, skin: 'frikandel' },
+    { id: 'tackle', title: 'Tackelkoning', desc: 'Tackel de broodjesdrager 100 keer.', stat: 'tackles', goal: 100, skin: 'conc' },
+    { id: 'gooi', title: 'Pizzabakker', desc: 'Raak 250 keer iemand met een voorwerp.', stat: 'hits', goal: 250, skin: 'kok' },
+    { id: 'spring', title: 'Springveer', desc: 'Spring 3000 keer.', stat: 'jumps', goal: 3000, skin: 'atleet' },
+    { id: 'vaak', title: 'Vaste klant', desc: 'Speel 50 potjes uit.', stat: 'games', goal: 50, skin: 'robot' },
+    { id: 'win', title: 'Kantinekoning', desc: 'Win 25 potjes.', stat: 'wins', goal: 25, skin: 'koning' },
+    { id: 'baas', title: 'Broodjesbaas', desc: 'Houd het broodje in totaal 30 minuten vast.', stat: 'holdSeconds', goal: 1800, skin: 'goud' }
   ];
 
   // ---------- Prestaties: elk in brons, zilver en goud ----------
   // [id, naam, statistiek, [brons, zilver, goud], omschrijving met {n}]. Statistieken met "max" zijn een record, geen optelsom.
   const ACHIEVEMENTS = [
-    ['potjes', 'Vaste bezoeker', 'games', [10, 100, 500], 'Speel {n} potjes'],
-    ['winst', 'Winnaar', 'wins', [5, 50, 250], 'Win {n} potjes'],
-    ['podium', 'Podiumplek', 'podiums', [10, 100, 500], 'Eindig {n} keer in de top 3'],
-    ['raak', 'Scherpschutter', 'hits', [25, 250, 1000], 'Raak {n} keer iemand'],
-    ['tackle', 'Tackelaar', 'tackles', [20, 200, 800], 'Tackel {n} keer de drager'],
-    ['vast', 'Broodjesbewaker', 'holdSeconds', [300, 3000, 15000], 'Houd het broodje in totaal {n} seconden vast'],
-    ['pak', 'Grijper', 'pickups', [25, 250, 1000], 'Pak {n} keer het broodje'],
-    ['vang', 'Vanger', 'catches', [5, 50, 250], 'Vang het broodje {n} keer uit de lucht'],
-    ['gooi', 'Werparm', 'throws', [100, 1000, 5000], 'Gooi {n} keer iets'],
-    ['automaat', 'Automaatfan', 'powerups', [20, 200, 800], 'Haal {n} power-ups uit een automaat'],
-    ['emote', 'Showman', 'emotes', [25, 250, 1000], 'Doe {n} emotes'],
-    ['spray', 'Graffitiheld', 'sprays', [10, 100, 500], 'Zet {n} stempels op een muur'],
-    ['tafel', 'Sloper', 'tables', [25, 250, 1000], 'Gooi {n} tafels om'],
-    ['glas', 'Glasbreker', 'glass', [5, 50, 250], 'Gooi {n} glasplaten kapot'],
-    ['spring', 'Kangoeroe', 'jumps', [500, 5000, 25000], 'Spring {n} keer'],
-    ['lift', 'Liftboy', 'lifts', [10, 100, 400], 'Neem {n} keer de lift'],
-    ['board', 'Skater', 'rides', [5, 50, 250], 'Stap {n} keer op een skateboard of step'],
-    ['hap', 'Smulpaap', 'bites', [10, 100, 500], 'Neem {n} happen van het broodje'],
-    ['op', 'Opeter', 'eaten', [3, 30, 150], 'Eet het broodje {n} keer helemaal op'],
-    ['pass', 'Spelverdeler', 'passes', [10, 100, 500], 'Gooi het broodje {n} keer over'],
-    ['schijn', 'Schijnbeweger', 'feints', [10, 100, 400], 'Maak {n} schijnbewegingen'],
-    ['klap', 'Klapper', 'slaps', [50, 500, 2000], 'Geef {n} klappen'],
-    ['val', 'Vallenzetter', 'traps', [10, 100, 400], 'Zet {n} vallen neer'],
-    ['gevangen', 'In de val gelokt', 'trapHits', [5, 50, 250], 'Laat {n} keer iemand in jouw val lopen'],
-    ['pop', 'Lappenpop', 'knocked', [25, 250, 1000], 'Vlieg {n} keer door de lucht'],
-    ['lava', 'Lavaloper', 'lavaSeconds', [120, 1200, 6000], 'Overleef {n} seconden op de lava'],
-    ['zoek', 'Speurneus', 'finds', [10, 100, 400], 'Vind {n} verstopte spelers'],
-    ['verstop', 'Kameleon', 'hideWins', [3, 30, 150], 'Blijf {n} keer verstopt tot het einde'],
-    ['stoel', 'Stoelendanser', 'chairs', [5, 50, 250], 'Bemachtig {n} keer een stoel bij de stoelendans'],
-    ['tref', 'Trefbalkoning', 'trefHits', [25, 250, 1000], 'Raak {n} keer iemand bij trefbal'],
-    ['basis', 'Teamspeler', 'captures', [3, 30, 150], 'Breng het broodje {n} keer naar je basis'],
-    ['duo', 'Beste maatjes', 'duoWins', [3, 30, 150], "Win {n} keer bij Duo's"],
-    ['feest', 'Feestbeest', 'partyWins', [1, 10, 50], 'Win {n} keer het pauzefeest'],
-    ['premie', 'Premiejager', 'bounties', [1, 10, 50], 'Pak {n} premies'],
-    ['wraak', 'Wraakengel', 'revenges', [3, 30, 150], 'Neem {n} keer wraak op je rivaal'],
-    ['brand', 'Brandweer', 'fireSafe', [3, 30, 150], 'Sta {n} keer op tijd buiten bij het brandalarm'],
+    ['potjes', 'Vaste bezoeker', 'games', [25, 250, 1000], 'Speel {n} potjes'],
+    ['winst', 'Winnaar', 'wins', [15, 100, 500], 'Win {n} potjes'],
+    ['podium', 'Podiumplek', 'podiums', [25, 200, 1000], 'Eindig {n} keer in de top 3'],
+    ['raak', 'Scherpschutter', 'hits', [100, 750, 3000], 'Raak {n} keer iemand'],
+    ['tackle', 'Tackelaar', 'tackles', [60, 500, 2000], 'Tackel {n} keer de drager'],
+    ['vast', 'Broodjesbewaker', 'holdSeconds', [900, 7500, 30000], 'Houd het broodje in totaal {n} seconden vast'],
+    ['pak', 'Grijper', 'pickups', [75, 600, 2500], 'Pak {n} keer het broodje'],
+    ['vang', 'Vanger', 'catches', [20, 150, 600], 'Vang het broodje {n} keer uit de lucht'],
+    ['gooi', 'Werparm', 'throws', [400, 3000, 12000], 'Gooi {n} keer iets'],
+    ['automaat', 'Automaatfan', 'powerups', [60, 500, 2000], 'Haal {n} power-ups uit een automaat'],
+    ['emote', 'Showman', 'emotes', [75, 600, 2500], 'Doe {n} emotes'],
+    ['spray', 'Graffitiheld', 'sprays', [30, 250, 1000], 'Zet {n} stempels op een muur'],
+    ['tafel', 'Sloper', 'tables', [75, 600, 2500], 'Gooi {n} tafels om'],
+    ['glas', 'Glasbreker', 'glass', [20, 150, 600], 'Gooi {n} glasplaten kapot'],
+    ['spring', 'Kangoeroe', 'jumps', [2000, 15000, 60000], 'Spring {n} keer'],
+    ['lift', 'Liftboy', 'lifts', [30, 250, 1000], 'Neem {n} keer de lift'],
+    ['board', 'Skater', 'rides', [20, 150, 600], 'Stap {n} keer op een skateboard of step'],
+    ['hap', 'Smulpaap', 'bites', [40, 300, 1200], 'Neem {n} happen van het broodje'],
+    ['op', 'Opeter', 'eaten', [10, 75, 300], 'Eet het broodje {n} keer helemaal op'],
+    ['pass', 'Spelverdeler', 'passes', [30, 250, 1000], 'Gooi het broodje {n} keer over'],
+    ['schijn', 'Schijnbeweger', 'feints', [40, 300, 1000], 'Maak {n} schijnbewegingen'],
+    ['klap', 'Klapper', 'slaps', [200, 1500, 6000], 'Geef {n} klappen'],
+    ['val', 'Vallenzetter', 'traps', [30, 250, 1000], 'Zet {n} vallen neer'],
+    ['gevangen', 'In de val gelokt', 'trapHits', [15, 120, 500], 'Laat {n} keer iemand in jouw val lopen'],
+    ['pop', 'Lappenpop', 'knocked', [75, 600, 2500], 'Vlieg {n} keer door de lucht'],
+    ['race', 'Raceheld', 'raceFinishes', [10, 75, 300], 'Kom {n} keer over de finish van een race'],
+    ['racewin', 'Snelste van de school', 'raceWins', [5, 40, 150], 'Win {n} races'],
+    ['ober', 'Ober', 'served', [50, 400, 1500], 'Serveer {n} gerechten in Kantinedienst'],
+    ['bestelling', 'Snelle bediening', 'ordersDone', [20, 150, 600], 'Rond {n} bestellingen helemaal af'],
+    ['zoek', 'Speurneus', 'finds', [30, 250, 1000], 'Vind {n} verstopte spelers'],
+    ['verstop', 'Kameleon', 'hideWins', [10, 60, 250], 'Blijf {n} keer verstopt tot het einde'],
+    ['stoel', 'Stoelendanser', 'chairs', [20, 150, 600], 'Bemachtig {n} keer een stoel bij de stoelendans'],
+    ['tref', 'Trefbalkoning', 'trefHits', [75, 600, 2500], 'Raak {n} keer iemand bij trefbal'],
+    ['basis', 'Teamspeler', 'captures', [10, 75, 300], 'Breng het broodje {n} keer naar je basis'],
+    ['duo', 'Beste maatjes', 'duoWins', [10, 60, 250], "Win {n} keer bij Duo's"],
+    ['feest', 'Feestbeest', 'partyWins', [3, 25, 100], 'Win {n} keer het pauzefeest'],
+    ['premie', 'Premiejager', 'bounties', [3, 25, 100], 'Pak {n} premies'],
+    ['wraak', 'Wraakengel', 'revenges', [10, 75, 300], 'Neem {n} keer wraak op je rivaal'],
+    ['brand', 'Brandweer', 'fireSafe', [10, 75, 300], 'Sta {n} keer op tijd buiten bij het brandalarm'],
     ['cadeau', 'Gulle gever', 'gifts', [1, 5, 25], 'Geef {n} cadeaus'],
-    ['ranked', 'Ranked-strijder', 'rankedGames', [10, 100, 500], 'Speel {n} ranked-potjes'],
-    ['week', 'Weekendspeler', 'weeklyGames', [3, 30, 150], 'Speel {n} potjes in de modus van de week'],
-    ['dag', 'Plichtsgetrouw', 'dailies', [10, 100, 365], 'Haal {n} dagelijkse challenges'],
+    ['ranked', 'Ranked-strijder', 'rankedGames', [25, 200, 1000], 'Speel {n} ranked-potjes'],
+    ['week', 'Weekendspeler', 'weeklyGames', [10, 60, 250], 'Speel {n} potjes in de modus van de week'],
+    ['dag', 'Plichtsgetrouw', 'dailies', [15, 100, 365], 'Haal {n} dagelijkse challenges'],
     ['verhaal', 'Verhalenverteller', 'storySteps', [5, 25, 100], 'Rond {n} hoofdstukken van een weekverhaal af'],
-    ['reeks', 'Stamgast', 'streakDays', [3, 7, 30], 'Speel {n} dagen op rij', 'max'],
-    ['score', 'Topscore', 'bestScore', [50, 120, 200], 'Haal {n} punten in één potje', 'max'],
-    ['ongeraakt', 'Onaantastbaar', 'bestHold', [20, 40, 60], 'Houd het broodje {n} seconden vast zonder het kwijt te raken', 'max'],
-    ['ver', 'Verre worp', 'farHit', [15, 25, 35], 'Raak iemand van {n} meter afstand', 'max'],
-    ['kanon', 'Kanon', 'mostHits', [5, 10, 20], 'Raak {n} keer iemand in één potje', 'max'],
-    ['serie', 'Onverslaanbaar', 'winStreak', [2, 3, 5], 'Win {n} potjes op rij', 'max'],
+    ['reeks', 'Stamgast', 'streakDays', [7, 30, 100], 'Speel {n} dagen op rij', 'max'],
+    ['score', 'Topscore', 'bestScore', [70, 140, 220], 'Haal {n} punten in één potje', 'max'],
+    ['ongeraakt', 'Onaantastbaar', 'bestHold', [30, 60, 90], 'Houd het broodje {n} seconden vast zonder het kwijt te raken', 'max'],
+    ['ver', 'Verre worp', 'farHit', [20, 30, 38], 'Raak iemand van {n} meter afstand', 'max'],
+    ['kanon', 'Kanon', 'mostHits', [10, 20, 35], 'Raak {n} keer iemand in één potje', 'max'],
+    ['serie', 'Onverslaanbaar', 'winStreak', [3, 5, 10], 'Win {n} potjes op rij', 'max'],
     ['zilverrand', 'Diplomahouder', 'prestiges', [1, 2, 5], 'Haal {n} keer je diploma', 'max'],
-    ['mvp', 'Publiekslieveling', 'honors', [1, 10, 50], 'Word {n} keer gekozen tot speler van het potje']
+    ['mvp', 'Publiekslieveling', 'honors', [5, 25, 100], 'Word {n} keer gekozen tot speler van het potje']
   ].map(([id, name, stat, goals, text, max]) => ({ id, name, stat, goals, text, max: !!max }));
   const TIER_NAMES = ['Brons', 'Zilver', 'Goud'];
   const ACH_COINS = [20, 50, 100];
-  const ACH_XP = [50, 120, 250];
+  const ACH_XP = [25, 75, 200];
 
   // ---------- Kalender: dag, week en weekend (Nederlandse tijd) ----------
   const dateIn = (date) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(date || new Date());
@@ -498,23 +506,23 @@
   // ---------- Weekverhaal: vijf hoofdstukken, samen een skin die daarna nooit meer terugkomt ----------
   const STORIES = [
     { title: 'De verdwenen frikandel', skin: ['Speurneus', 0x6b4a2e, 0x3b3d44, 0xf0c39a, 0x3b2214, 'cap', 0x6b4a2e], steps: [
-      ['Zoek sporen: pak 3 keer het broodje.', 'pickups', 3], ['Ondervraag verdachten: tackel 4 keer de drager.', 'tackles', 4],
-      ['Volg de kruimels: neem 5 happen.', 'bites', 5], ['Val de bende aan: raak 10 keer iemand.', 'hits', 10], ['Ontmasker de dader: win een potje.', 'wins', 1]] },
+      ['Zoek sporen: pak 12 keer het broodje.', 'pickups', 12], ['Ondervraag verdachten: tackel 15 keer de drager.', 'tackles', 15],
+      ['Volg de kruimels: neem 20 happen.', 'bites', 20], ['Val de bende aan: raak 40 keer iemand.', 'hits', 40], ['Ontmasker de dader: win 3 potjes.', 'wins', 3]] },
     { title: 'Het spook van de aula', skin: ['Spookjager', 0x3aa655, 0x26262b, 0xf0c39a, 0x1a1a1a, 'antenna', 0x3aa655], steps: [
-      ['Hoor gekraak: speel 2 potjes.', 'games', 2], ['Zet vallen voor het spook: zet 3 vallen neer.', 'traps', 3],
-      ['Schijn met je zaklamp: doe 5 emotes.', 'emotes', 5], ['Vang het spook: pak 5 keer het broodje.', 'pickups', 5], ['Jaag het de school uit: geef 15 klappen.', 'slaps', 15]] },
+      ['Hoor gekraak: speel 6 potjes.', 'games', 6], ['Zet vallen voor het spook: zet 10 vallen neer.', 'traps', 10],
+      ['Schijn met je zaklamp: doe 15 emotes.', 'emotes', 15], ['Vang het spook: pak 15 keer het broodje.', 'pickups', 15], ['Jaag het de school uit: geef 60 klappen.', 'slaps', 60]] },
     { title: 'Staking in de kantine', skin: ['Kantinebaas', 0xffffff, 0xe23b2e, 0xc98d5e, 0x222222, 'chef', 0xffffff], steps: [
-      ['Leg het werk neer: gooi 5 tafels om.', 'tables', 5], ['Maak een spandoek: zet 3 stempels.', 'sprays', 3],
-      ['Deel broodjes uit: gooi het broodje 3 keer over.', 'passes', 3], ['Houd de kassa bezet: houd 60 seconden het broodje vast.', 'holdSeconds', 60], ['Win de onderhandeling: win een potje.', 'wins', 1]] },
+      ['Leg het werk neer: gooi 25 tafels om.', 'tables', 25], ['Maak een spandoek: zet 10 stempels.', 'sprays', 10],
+      ['Deel broodjes uit: gooi het broodje 10 keer over.', 'passes', 10], ['Houd de kassa bezet: houd 240 seconden het broodje vast.', 'holdSeconds', 240], ['Win de onderhandeling: win 3 potjes.', 'wins', 3]] },
     { title: 'De gymleraar is zoek', skin: ['Gymheld', 0xe23b2e, 0x1f2024, 0x8a5a3c, 0x1a1a1a, 'band', 0xffffff], steps: [
-      ['Warm op: spring 80 keer.', 'jumps', 80], ['Doe de bleep-test: haal 3 power-ups.', 'powerups', 3],
-      ['Trefbal-training: raak 12 keer iemand.', 'hits', 12], ['Zoek in de kleedkamer: speel 3 potjes.', 'games', 3], ['Vind de gymleraar: eindig 2 keer in de top 3.', 'podiums', 2]] },
+      ['Warm op: spring 400 keer.', 'jumps', 400], ['Doe de bleep-test: haal 10 power-ups.', 'powerups', 10],
+      ['Trefbal-training: raak 40 keer iemand.', 'hits', 40], ['Zoek in de kleedkamer: speel 8 potjes.', 'games', 8], ['Vind de gymleraar: eindig 6 keer in de top 3.', 'podiums', 6]] },
     { title: 'Het examenlek', skin: ['Examenkraker', 0x1d2f6b, 0x1d2f6b, 0xe8b88f, 0x5a3a22, 'cap', 0xf5c542], steps: [
-      ['Vind de envelop: pak 4 keer het broodje.', 'pickups', 4], ['Misleid de surveillant: maak 3 schijnbewegingen.', 'feints', 3],
-      ['Ren door de gang: neem 2 keer de lift.', 'lifts', 2], ['Verstop de antwoorden: gooi 20 keer iets.', 'throws', 20], ['Haal je diploma: win een potje.', 'wins', 1]] },
+      ['Vind de envelop: pak 15 keer het broodje.', 'pickups', 15], ['Misleid de surveillant: maak 12 schijnbewegingen.', 'feints', 12],
+      ['Ren door de gang: neem 6 keer de lift.', 'lifts', 6], ['Verstop de antwoorden: gooi 80 keer iets.', 'throws', 80], ['Haal je diploma: win 3 potjes.', 'wins', 3]] },
     { title: 'Operatie Automaat', skin: ['Automaatkoning', 0xf4c430, 0x3b3d44, 0xf0c39a, 0xe23b2e, 'crown', 0xf4c430], steps: [
-      ['Zoek kleingeld: speel 2 potjes.', 'games', 2], ['Schud de automaat: haal 4 power-ups.', 'powerups', 4],
-      ['Leg een bananenschil: zet 2 vallen neer.', 'traps', 2], ['Bescherm de buit: tackel 5 keer de drager.', 'tackles', 5], ['Proost: houd 40 seconden het broodje vast.', 'holdSeconds', 40]] }
+      ['Zoek kleingeld: speel 6 potjes.', 'games', 6], ['Schud de automaat: haal 12 power-ups.', 'powerups', 12],
+      ['Leg een bananenschil: zet 8 vallen neer.', 'traps', 8], ['Bescherm de buit: tackel 15 keer de drager.', 'tackles', 15], ['Proost: houd 180 seconden het broodje vast.', 'holdSeconds', 180]] }
   ];
   function storyFor(date) {
     const key = weekKeyOf(date);
@@ -537,12 +545,12 @@
     klassiek: { name: 'Klassiek', desc: 'Houd het broodje vast: 1 punt per seconde.' },
     teams: { name: 'Teams', desc: 'Oranje tegen Paars. Breng het broodje naar je basis voor +15.' },
     duo: { name: "Duo's", desc: 'Speel met z\'n tweeën. Gooi het broodje naar je maat met G.' },
-    voedsel: { name: 'Voedselgevecht', desc: 'Geen broodje. Elke rake worp is een punt.' },
     broodjes: { name: 'Broodjesbar', desc: 'Elke 40 seconden een ander broodje: kaassoufflé glijdt, saucijs is zwaar, pizzabroodje laat een glad spoor achter.' },
     prophunt: { name: 'Verstoppertje', desc: 'Verstoppers vermommen zich als stoel of prullenbak, zoekers slaan ze eruit.' },
-    lava: { name: 'De vloer is lava', desc: 'De vloer wordt rood. Blijf op tafels, trappen en banken en sla anderen eraf.' },
+    race: { name: 'Race', desc: 'Ren via de checkpoints naar de finish. Val je eraf, dan begin je bij je laatste checkpoint.' },
     stoelen: { name: 'Stoelendans', desc: 'Als de muziek stopt, zoek een stoel. Wie er geen heeft, ligt eruit.' },
-    trefbal: { name: 'Trefbal', desc: 'Alleen ballen. Elke rake worp is een punt.' }
+    trefbal: { name: 'Trefbal', desc: 'Alleen ballen. Elke rake worp is een punt.' },
+    dienst: { name: 'Kantinedienst', desc: 'Klanten bestellen eten. Haal het in de keuken en breng het als eerste naar de goede tafel.' }
   };
   const MODE_IDS = Object.keys(MODE_INFO);
 
@@ -588,12 +596,13 @@
 
   // ---------- Modus van de week: alleen in het weekend open ----------
   const WEEKLY = [
-    { mode: 'lava', name: 'Lava op de maan', desc: 'De vloer is lava, met lage zwaartekracht.', rules: { grav: 1 } },
+    { mode: 'race', name: 'Race op de maan', desc: 'Racen met lage zwaartekracht: hoger en verder springen.', rules: { grav: 1 } },
     { mode: 'prophunt', name: 'Verstoppertje XL', desc: 'Verstoppertje waarin iedereen hoger springt.', rules: { jump: 1 } },
     { mode: 'broodjes', name: 'Broodjesbar op topsnelheid', desc: 'Wisselende broodjes, iedereen rent sneller.', rules: { speed: 2, dash: 1 } },
     { mode: 'trefbal', name: 'Trefbal met superspringen', desc: 'Alleen ballen en superhoge sprongen.', rules: { jump: 2, items: 64 } },
     { mode: 'stoelen', name: 'Stoelendans', desc: 'Als de muziek stopt, zoek een stoel.', rules: {} },
-    { mode: 'duo', name: "Duo's zonder einde", desc: "Duo's waarin het broodje nooit op is.", rules: { life: 2 } }
+    { mode: 'duo', name: "Duo's zonder einde", desc: "Duo's waarin het broodje nooit op is.", rules: { life: 2 } },
+    { mode: 'dienst', name: 'Kantinedienst in de spits', desc: 'Kantinedienst waarin iedereen sneller rent.', rules: { speed: 2 } }
   ];
   // Vrijdag, zaterdag en zondag (Nederlandse tijd) is de modus van de week open.
   function weeklyFor(date, forceOpen) {
@@ -660,11 +669,20 @@
     ['score', 'Hoogste score', 'punten'], ['hold', 'Langst ongeraakt vastgehouden', 's broodje vast'], ['far', 'Verste rake worp', 'm ver'],
     ['hits', 'Meeste keer raak', 'keer raak'], ['tackles', 'Meeste tackles', 'tackles'], ['slaps', 'Meeste klappen', 'klappen'],
     ['pickups', 'Vaakst het broodje gepakt', 'keer gepakt'], ['bites', 'Meeste happen', 'happen'], ['catches', 'Meeste vangballen', 'keer gevangen'],
-    ['lava', 'Langst op de lava overleefd', 's op de lava'], ['traps', 'Meeste mensen in je val', 'in je val'], ['finds', 'Meeste verstoppers gevonden', 'gevonden'],
+    ['traps', 'Meeste mensen in je val', 'in je val'], ['finds', 'Meeste verstoppers gevonden', 'gevonden'],
     ['tables', 'Meeste tafels omgegooid', 'tafels'], ['jumps', 'Meeste sprongen', 'sprongen'], ['passes', 'Meeste overgooiers', 'keer overgegooid']
   ].map(([key, title, unit]) => ({ key, title, unit }));
 
+  // racetijd in milliseconden als 1:02,34
+  function raceTime(ms) {
+    if (!(ms > 0)) return '-';
+    const cs = Math.round(ms / 10);
+    const m = Math.floor(cs / 6000), sec = Math.floor((cs % 6000) / 100), rest = cs % 100;
+    return `${m}:${String(sec).padStart(2, '0')},${String(rest).padStart(2, '0')}`;
+  }
+
   Object.assign(exports, {
+    raceTime,
     dealFor, priceOf, onSale, salePrice, careerXpFor, seasonEnd, RECORDS, BUILDS, EMOTES, EMOTE_PRICE, PASS_EMOTES, itemRarity, CLASSES, SKINS, THEMES, SEASON_MS, SEASON_EPOCH, seasonAt, SEASON, THEME, seasonDaysLeft, PASS_SKINS, ACCESSORIES, SLOT_NAMES,
     TITLES, titleOpen, MAP_NAMES, RANK_STEPS, RANK_NAMES, RANK_COLORS, RANK_GROUPS, rankOf, EMOTE_NAMES, EMOTE_SOURCE, STAMP_ICONS, STAMP_NAMES, STAMP_ICON,
     XP_PER_TIER, buildPass, BATTLEPASS, SHOP, RARITY, shopFor, inShop, TRAILS, SOUNDS, DAILIES, DAILY_REWARD, DAILY_XP, CHALLENGES, dailyFor,

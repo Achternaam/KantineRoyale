@@ -400,13 +400,14 @@ const SONGS = {
   klassiek: { bpm: 120, bass: [110, 110, 131, 98], lead: [440, 523, 659, 523, 587, 523, 440, 392, 440, 659, 784, 659, 587, 494, 440, 392], wave: 'triangle' },
   broodjes: { bpm: 128, bass: [98, 131, 147, 110], lead: [392, 494, 587, 494, 659, 587, 494, 440, 392, 494, 587, 784, 659, 587, 494, 392], wave: 'square', leadVol: 0.05 },
   teams: { bpm: 124, bass: [110, 147, 131, 165], lead: [440, 0, 440, 523, 587, 0, 523, 440, 659, 0, 587, 523, 494, 0, 440, 0], wave: 'sawtooth', leadVol: 0.045 },
-  voedsel: { bpm: 132, bass: [131, 131, 175, 196], lead: [523, 659, 784, 659, 523, 659, 784, 1047, 880, 784, 659, 523, 587, 659, 523, 0], wave: 'square', leadVol: 0.05 },
-  lava: { bpm: 140, heavy: true, bass: [110, 110, 117, 104], lead: [440, 523, 659, 523, 440, 523, 622, 523, 440, 523, 659, 784, 740, 659, 622, 523], wave: 'sawtooth', leadVol: 0.05 },
+  trefbal: { bpm: 132, bass: [131, 131, 175, 196], lead: [523, 659, 784, 659, 523, 659, 784, 1047, 880, 784, 659, 523, 587, 659, 523, 0], wave: 'square', leadVol: 0.05 },
+  dienst: { bpm: 112, bass: [131, 165, 147, 98], lead: [523, 0, 659, 0, 784, 659, 523, 0, 587, 0, 698, 0, 659, 587, 523, 0], wave: 'triangle', leadVol: 0.07 },
+  race: { bpm: 150, heavy: true, bass: [110, 110, 147, 131], lead: [440, 0, 523, 659, 0, 659, 784, 659, 523, 0, 587, 659, 0, 784, 880, 784], wave: 'sawtooth', leadVol: 0.045 },
   prophunt: { bpm: 96, drums: 'light', staccato: true, bass: [98, 98, 92, 104], lead: [392, 0, 466, 0, 523, 0, 466, 0, 392, 0, 349, 0, 392, 466, 392, 0], wave: 'triangle', leadVol: 0.11 },
   stoelen: { bpm: 150, waltz: true, bass: [131, 98, 131, 98], lead: [659, 587, 523, 587, 659, 659, 659, 0, 587, 587, 587, 0, 659, 784, 784, 0], wave: 'square', leadVol: 0.05 }
 };
 SONGS.duo = SONGS.teams;
-SONGS.trefbal = SONGS.voedsel;
+SONGS.warm = SONGS.trefbal;
 let musicStep = 0;
 let musicNext = 0;
 setInterval(() => {
@@ -821,17 +822,15 @@ function buildProps() {
   });
   resetProps();
 }
-// rechtopstaande tafels en hele glasplaten zijn obstakels (zelfde regel als op de server)
-let crateList = []; // De vloer is lava: extra kratten, alleen in die modus
-let crateAll = [];  // alle kisten van dit potje, ook de weggesmolten
-let raftList = [];  // borden die als vlot op de lava drijven
+// rechtopstaande tafels en hele glasplaten zijn obstakels (zelfde regel als op de server);
+// in een race komen daar elk frame de bewegende blokken bij (zie updateRace)
+let baseDynamic = [];
 function refreshDynamic() {
   const t = M.PROP.table;
-  M.dynamic = props.filter((p) => p.def.type === 'table' && !p.tip)
+  baseDynamic = props.filter((p) => p.def.type === 'table' && !p.tip)
     .map((p) => ({ x: p.x, z: p.z, r: t.r, y0: p.y, y1: p.y + t.h }))
-    .concat(M.panels.filter((g, i) => !broken[i]).map(M.panelSolid))
-    .concat(crateList.map(([x, y, z, w, h]) => ({ minX: x - w / 2, maxX: x + w / 2, minZ: z - w / 2, maxZ: z + w / 2, y0: y, y1: y + h })))
-    .concat(raftList.map(([, x, y, z]) => ({ minX: x - 0.7, maxX: x + 0.7, minZ: z - 0.7, maxZ: z + 0.7, y0: y, y1: y + 0.25 })));
+    .concat(M.panels.filter((g, i) => !broken[i]).map(M.panelSolid));
+  M.dynamic = baseDynamic;
 }
 function resetProps() {
   for (const p of props) {
@@ -958,7 +957,12 @@ function makeItem() {
   const ball = new THREE.Group();
   mesh(ballGeo, mat(C.red), ball, 0, 0, 0).scale.setScalar(0.24);
   mesh(cylGeo, mat(0xffffff), ball, 0, 0, 0).scale.set(0.245, 0.05, 0.245);
-  const kinds = [pizza, plate, plant, milk, fries, can, ball];
+  // frikandelbroodje (Kantinedienst)
+  const bun = new THREE.Group();
+  block(bun, 0xe0a04a, 0.42, 0.14, 0.2, 0, 0, 0);
+  block(bun, 0x7a3b1d, 0.46, 0.09, 0.1, 0, 0.09, 0);
+  block(bun, 0xf3c877, 0.36, 0.03, 0.06, 0, 0.14, 0);
+  const kinds = [pizza, plate, plant, milk, fries, can, ball, bun];
   g.add(...kinds);
   g.userData.setKind = (kind) => kinds.forEach((k, i) => { k.visible = kind === i + 1; });
   g.userData.setKind(0);
@@ -975,27 +979,7 @@ function ring(x, y, z, r, color) {
 }
 
 let itemPickups = [];
-let crateGroup = null;
-// kratten voor De vloer is lava: houten kisten met donkere randen
-function setCrates(list, gone) {
-  if (!gone) crateAll = list || [];
-  if (crateGroup) mapRoot.remove(crateGroup);
-  crateGroup = null;
-  crateList = gone ? crateAll.filter((c, i) => !gone.includes(i)) : crateAll.slice();
-  if (crateList.length) {
-    crateGroup = new THREE.Group();
-    for (const [x, y, z, w, h] of crateList) {
-      block(crateGroup, 0xc98d5e, w, h, w, x, y + h / 2, z);
-      block(crateGroup, 0x8a5a3c, w + 0.04, 0.08, w + 0.04, x, y + h - 0.04, z);
-      block(crateGroup, 0x8a5a3c, w + 0.04, 0.08, w + 0.04, x, y + 0.04, z);
-      block(crateGroup, 0x8a5a3c, 0.1, h, w + 0.04, x, y + h / 2, z);
-    }
-    mergeStatic(crateGroup);
-    mapRoot.add(crateGroup);
-  }
-  refreshDynamic();
-}
-// waar de gooibare spullen liggen: normaal op de vaste plekken van de map, bij lava op tafels en kratten
+// waar de gooibare spullen liggen: normaal op de vaste plekken van de map, in een race zonder hinderen nergens
 function setItemSpots(spots) {
   for (const it of itemPickups) mapRoot.remove(it.g, it.ring);
   itemPickups = (spots || M.ITEM_SPAWNS).map((s) => {
@@ -2319,10 +2303,10 @@ const MODE_TIPS = {
   klassiek: ['Pak het broodje en houd het vast: 1 punt per seconde', 'Dash (Shift) tegen de drager om het af te pakken', 'B = hap (+5) · G = overgooien · H = schijnbeweging'],
   teams: ['Oranje tegen Paars', 'Breng het broodje naar je eigen basis voor +15', 'Gooi het broodje over naar een teamgenoot met G'],
   duo: ['Speel met z\'n tweeën, jullie punten tellen samen', 'Gooi het broodje naar je maat met G', 'Bescherm elkaar met klappen en worpen'],
-  voedsel: ['Geen broodje: elke rake worp is een punt', 'Pak spullen van de paarse ringen', 'Drie keer raak op rij = pizzadoos'],
   broodjes: ['Elke 40 seconden een ander broodje', 'Kaassoufflé glijdt, saucijs is van voren niet te tackelen', 'Pizzabroodje laat een glad spoor achter'],
   prophunt: ['Verstoppers: R = vermomming, E = vastzetten en rondkijken, Q = geluidje (+3 punten)', 'Zoekers: klik om te slaan, raak een verstopper om hem te vinden', 'Gevonden? Dan zoek je mee'],
-  lava: ['Na 15 seconden wordt de vloer lava: klim op tafels en kisten', 'Het gouden eiland geeft 3 punten per seconde', 'Niet stilstaan: hete voeten, smeltende plekken en lavaballen!'],
+  dienst: ['Loop langs een post in de keuken om eten te pakken (hooguit twee dingen)', 'Breng het naar de tafel die het wil: hoe sneller, hoe meer fooi', 'Een klap laat iemands eten vallen · verkeerd gepakt? Prullenbak'],
+  race: ['Ren door de gekleurde poortjes, het volgende licht op', 'Val je eraf? Dan begin je bij je laatste checkpoint', 'Blauwe trampolines lanceren je omhoog · je spook is je beste tijd'],
   stoelen: ['Blijf in de buurt van de gele ringen', 'Stopt de muziek? Loop naar een vrije stoel en ga zitten', 'Wie zit, is veilig; klap anderen weg voordat ze zitten'],
   trefbal: ['Alleen ballen: elke rake worp is een punt', 'Ballen stuiteren tegen muren', 'Ontwijk door te springen en te dashen']
 };
@@ -2711,6 +2695,17 @@ function updateLocal(dt) {
   } else {
     me.onGround = false;
   }
+  // race: een trampoline lanceert je, en wie valt gaat terug naar zijn laatste checkpoint
+  if (M.RACE && mode === 'race') {
+    const pad = me.onGround && !counting() ? M.padAt(me.x, me.z, me.y) : null;
+    if (pad) {
+      me.vy = pad.power * Math.sqrt(rules.grav);
+      me.onGround = false;
+      sfx('boing');
+      puff(me.x, me.y + 0.2, me.z, 0xf4c430, 6);
+    }
+    if (me.y < M.RACE.killY) raceRespawn();
+  }
   // van de map af gevallen (het dak): terug naar een startplek
   if (me.y < M.BOUNDS.minY - 6) {
     const sp = M.SPAWNS[Math.floor(Math.random() * M.SPAWNS.length)];
@@ -2865,44 +2860,306 @@ function updateBroodje(dt, time) {
   beacon.position.set(broodje.position.x, (top + broodje.position.y) / 2, broodje.position.z);
 }
 
-// ---------- Modi: lava, stoelendans, verstoppertje ----------
-let lavaGroup = null;
-const lavaMat = new THREE.MeshBasicMaterial({ color: 0xff4a1a, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-// een gloeiende laag over elk stuk vloer; tafels, trappen, banken en podia blijven veilig
-function buildLava() {
-  clearLava();
-  lavaGroup = new THREE.Group();
-  for (const f of M.solids.filter((x) => x.floor)) {
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(f.maxX - f.minX, f.maxZ - f.minZ), lavaMat);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.set((f.minX + f.maxX) / 2, f.y1 + 0.02, (f.minZ + f.maxZ) / 2);
-    lavaGroup.add(plane);
+// ---------- Kantinedienst: posten in de keuken, klanten aan tafel en wat iedereen draagt ----------
+const FOOD = { 1: 'Pizza', 4: 'Melk', 5: 'Friet', 6: 'Cola', 8: 'Frikandelbroodje' };
+const serve = { group: null, stations: [], tables: [], carry: [], open: 0 };
+const CUSTOMER_SKINS = ['leerling', 'sporter', 'hoodie', 'brugklasser', 'surfer', 'punker', 'gamer', 'dokter', 'kok', 'atleet'];
+function buildServe() {
+  clearServe();
+  const D = M.SERVE;
+  if (!D) return;
+  serve.group = new THREE.Group();
+  serve.stations = D.stations.map((st) => {
+    const item = makeItem();
+    item.userData.setKind(st.kind);
+    item.scale.setScalar(2.2);
+    item.position.set(st.x, 2.3, st.z - 1.2);
+    serve.group.add(item);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture(st.name, '#ffd34d', null, 512, 96, 54), depthTest: false }));
+    label.scale.set(3.2, 0.6, 1);
+    label.position.set(st.x, 3.1, st.z - 1.2);
+    serve.group.add(label);
+    serve.group.add(ring(st.x, 0, st.z, 0.9, 0xffd34d));
+    return { st, item };
+  });
+  serve.tables = D.tables.map((t) => {
+    const patience = new THREE.Mesh(new THREE.RingGeometry(1.75, 2.05, 32), new THREE.MeshBasicMaterial({ color: 0x3aa655, transparent: true, opacity: 0.7, depthWrite: false }));
+    patience.rotation.x = -Math.PI / 2;
+    patience.position.set(t.x, 0.03, t.z);
+    patience.visible = false;
+    serve.group.add(patience);
+    const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, transparent: true }));
+    bubble.scale.set(3.4, 1.1, 1);
+    bubble.position.set(t.x, 3.2, t.z);
+    bubble.visible = false;
+    serve.group.add(bubble);
+    return { t, patience, bubble, order: null, key: '', guest: null };
+  });
+  scene.add(serve.group);
+}
+function clearServe() {
+  if (serve.group) scene.remove(serve.group);
+  for (const tb of serve.tables) if (tb.guest) scene.remove(tb.guest.group);
+  Object.assign(serve, { group: null, stations: [], tables: [], carry: [], open: 0 });
+}
+// tekstballon met de bestelling; wat je zelf draagt en de klant wil, kleurt groen
+function bubbleTexture(o, mine) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 160;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.strokeStyle = '#26262b';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 496, 120, 30);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(236, 126);
+  ctx.lineTo(256, 154);
+  ctx.lineTo(276, 126);
+  ctx.fill();
+  ctx.font = '900 44px "Avenir Next", "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const parts = o.items.map((k, i) => ({ text: (o.done[i] ? '✓ ' : '') + FOOD[k], done: o.done[i], match: !o.done[i] && mine.includes(k) }));
+  const width = parts.reduce((a, p) => a + ctx.measureText(p.text).width, 0) + (parts.length - 1) * 40;
+  const scale = Math.min(1, 440 / width);
+  ctx.font = `900 ${Math.floor(44 * scale)}px "Avenir Next", "Segoe UI", sans-serif`;
+  let x = 256 - (width * scale) / 2;
+  for (const p of parts) {
+    const w = ctx.measureText(p.text).width;
+    ctx.fillStyle = p.done ? '#9a9aa2' : p.match ? '#2e9a4a' : '#26262b';
+    ctx.fillText(p.text, x + w / 2, 68);
+    x += w + 40 * scale;
   }
-  scene.add(lavaGroup);
+  return new THREE.CanvasTexture(c);
 }
-function clearLava() {
-  if (!lavaGroup) return;
-  lavaGroup.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-  scene.remove(lavaGroup);
-  lavaGroup = null;
+function updateServe(dt, time) {
+  if (!serve.group) return;
+  const x = lastState && lastState.x;
+  const orders = (x && x.od) || [];
+  const carried = new Map(((x && x.cr) || []).map(([id, list]) => [id, list]));
+  serve.carry = carried.get(socket.id) || [];
+  serve.open = orders.length;
+  serve.stations.forEach(({ item }, i) => {
+    item.rotation.y = time * 1.5 + i;
+    item.position.y = 2.3 + Math.sin(time * 2 + i) * 0.1;
+  });
+  serve.tables.forEach((tb, i) => {
+    const raw = orders.find((o) => o[1] === i);
+    const o = raw && { id: raw[0], items: raw[2], done: raw[3], left: raw[4], total: raw[5] };
+    if (!o) {
+      tb.patience.visible = tb.bubble.visible = false;
+      if (tb.guest) tb.guest.group.visible = false;
+      tb.order = null;
+      return;
+    }
+    // een nieuwe klant aan deze tafel
+    if (!tb.order || tb.order.id !== o.id) {
+      if (tb.guest) scene.remove(tb.guest.group);
+      const skin = CUSTOMER_SKINS[(o.id * 7 + i) % CUSTOMER_SKINS.length];
+      tb.guest = makePlayerModel({ name: `Tafel ${tb.t.n}`, skin, color: 0x999999 });
+      tb.guest.group.position.set(tb.t.x, 0.42, tb.t.z + 1.35);
+      tb.guest.group.rotation.y = Math.PI;
+      tb.guest.label.visible = false;
+      sitPose(tb.guest);
+      scene.add(tb.guest.group);
+    }
+    tb.guest.group.visible = true;
+    const key = o.done.join('') + '|' + serve.carry.join(',');
+    if (key !== tb.key || !tb.order || tb.order.id !== o.id) {
+      tb.key = key;
+      if (tb.bubble.material.map) tb.bubble.material.map.dispose();
+      tb.bubble.material.map = bubbleTexture(o, serve.carry);
+      tb.bubble.material.needsUpdate = true;
+    }
+    tb.order = o;
+    const share = o.total ? o.left / o.total : 0;
+    tb.bubble.visible = tb.patience.visible = true;
+    tb.bubble.position.y = 3.2 + Math.sin(time * 3 + i) * 0.06;
+    tb.patience.material.color.setHex(share > 0.5 ? 0x3aa655 : share > 0.25 ? 0xf4c430 : 0xe23b2e);
+    tb.patience.scale.setScalar(0.6 + share * 0.4);
+    if (share < 0.25) tb.patience.material.opacity = 0.5 + Math.sin(time * 14) * 0.3;
+    else tb.patience.material.opacity = 0.7;
+  });
+  // wat de anderen dragen, zie je in hun hand
+  for (const [id, r] of remotes) {
+    const list = carried.get(id);
+    if (list && list.length) r.item.userData.setKind(list[0]);
+  }
 }
+
+// ---------- Modi: race, stoelendans, verstoppertje ----------
+// ---------- Race: poortjes, trampolines, bewegende blokken, je tijd en je spook ----------
+const race = { group: null, gates: [], movers: [], cp: 0, finishMs: 0, place: -1, rows: [], total: 0, last: false, ghost: null, run: null, rec: [], recAt: 0 };
+const gateGlowMat = new THREE.MeshBasicMaterial({ color: 0x7fe3ff, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide });
+const GATE_COLORS = [0xf26a1b, 0x9b6bd1, 0x2f6fde, 0x3aa655, 0xe23b2e];
+function buildRace() {
+  clearRace();
+  const R = M.RACE;
+  if (!R) return;
+  race.group = new THREE.Group();
+  R.gates.forEach((g, i) => {
+    const finish = i === R.gates.length - 1;
+    const along = g.w >= g.d; // poortje dwars over de x-richting
+    const len = along ? g.w : g.d;
+    const color = finish ? 0xffffff : GATE_COLORS[i % GATE_COLORS.length];
+    const H = 4.2;
+    const at = (o) => (along ? [g.x + o, g.z] : [g.x, g.z + o]);
+    for (const side of [-1, 1]) {
+      const [px, pz] = at((side * len) / 2);
+      block(race.group, color, 0.35, H, 0.35, px, g.y + H / 2, pz);
+    }
+    // bovenbalk; de finish in zwart-wit
+    const parts = finish ? Math.max(4, Math.round(len / 0.8)) : 1;
+    for (let k = 0; k < parts; k++) {
+      const [bx, bz] = at(-len / 2 + (len / parts) * (k + 0.5));
+      const c = finish ? (k % 2 ? 0x1f2024 : 0xffffff) : color;
+      block(race.group, c, along ? len / parts : 0.3, 0.7, along ? 0.3 : len / parts, bx, g.y + H + 0.35, bz);
+    }
+    // doorzichtig gordijn: het volgende poortje licht op
+    const curtain = new THREE.Mesh(new THREE.PlaneGeometry(len, H), gateGlowMat.clone());
+    curtain.position.set(g.x, g.y + H / 2, g.z);
+    if (!along) curtain.rotation.y = Math.PI / 2;
+    race.group.add(curtain);
+    race.gates.push(curtain);
+  });
+  // trampolines: gele rand en een pijl omhoog
+  for (const p of R.pads) {
+    block(race.group, 0xf4c430, p.w, 0.06, 0.18, p.x, p.top + 0.02, p.z - p.d / 2 + 0.09, false);
+    block(race.group, 0xf4c430, p.w, 0.06, 0.18, p.x, p.top + 0.02, p.z + p.d / 2 - 0.09, false);
+    block(race.group, 0xf4c430, 0.18, 0.06, p.d, p.x - p.w / 2 + 0.09, p.top + 0.02, p.z, false);
+    block(race.group, 0xf4c430, 0.18, 0.06, p.d, p.x + p.w / 2 - 0.09, p.top + 0.02, p.z, false);
+    block(race.group, 0xffffff, 0.3, 0.05, Math.min(p.w, p.d) * 0.5, p.x, p.top + 0.03, p.z, false);
+  }
+  race.movers = R.movers.map((def) => {
+    const g = new THREE.Group();
+    block(g, def.color, def.w, def.h, def.d, 0, def.h / 2, 0);
+    block(g, 0xf4c430, def.w + 0.02, 0.25, def.d + 0.02, 0, def.h * 0.75, 0, false);
+    race.group.add(g);
+    return { def, g };
+  });
+  scene.add(race.group);
+}
+function clearRace() {
+  if (race.group) {
+    race.group.traverse((o) => { if (o.isMesh && o.geometry !== boxGeo) o.geometry.dispose(); });
+    scene.remove(race.group);
+  }
+  if (race.ghost) scene.remove(race.ghost.group);
+  Object.assign(race, { group: null, gates: [], movers: [], cp: 0, finishMs: 0, place: -1, rows: [], total: 0, last: false, ghost: null, run: null, rec: [], recAt: 0 });
+  M.dynamic = baseDynamic;
+}
+const raceClock = () => Math.max(0, (performance.now() - goTime) / 1000);
+const raceGates = () => M.raceGates(M.id);
+// je spook: de snelste race die je op deze baan hebt gereden, als doorzichtig poppetje
+function ghostKey() { return `kr-ghost-${M.id}`; }
+function startGhost() {
+  const best = load(ghostKey(), null);
+  if (!best || !Array.isArray(best.path) || best.path.length < 2) return;
+  const model = makePlayerModel(Object.assign(modelInfo(socket.id), { name: `Je beste tijd · ${Catalog.raceTime(best.ms)}` }));
+  model.group.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    o.material = o.material.clone();
+    o.material.transparent = true;
+    o.material.opacity = 0.32;
+    o.material.depthWrite = false;
+  });
+  model.ghostBest = best;
+  scene.add(model.group);
+  race.ghost = model;
+}
+function updateRace(dt) {
+  if (!race.group) return;
+  const t = raceClock();
+  // bewegende blokken: zelfde formule als de server
+  const solids = race.movers.map(({ def, g }) => {
+    const m = M.moverAt(def, t);
+    g.position.set(m.x, def.y, m.z);
+    return m;
+  });
+  M.dynamic = solids.length ? baseDynamic.concat(solids) : baseDynamic;
+  const R = M.RACE;
+  const next = race.finishMs ? -1 : race.cp % R.gates.length;
+  const pulse = 0.22 + Math.sin(performance.now() / 180) * 0.08;
+  race.gates.forEach((c, i) => { c.material.opacity = i === next ? pulse : 0.035; });
+  // spook afspelen
+  const ghost = race.ghost;
+  if (ghost) {
+    const path = ghost.ghostBest.path;
+    let i = 0;
+    while (i < path.length - 2 && path[i + 1][0] < t) i++;
+    const a = path[i], b = path[i + 1];
+    const k = Math.max(0, Math.min(1, (t - a[0]) / Math.max(0.001, b[0] - a[0])));
+    const x = a[1] + (b[1] - a[1]) * k, y = a[2] + (b[2] - a[2]) * k, z = a[3] + (b[3] - a[3]) * k;
+    const moving = Math.hypot(b[1] - a[1], b[3] - a[3]) > 0.05;
+    poseModel(ghost, moving ? Math.sin(t * 12) * 0.7 : 0, false, 0, t);
+    ghost.group.position.set(x, y, z);
+    ghost.group.rotation.set(0, a[4], 0);
+    ghost.group.visible = t < path[path.length - 1][0] + 1.5 && !counting();
+  }
+  // je eigen race opnemen voor een nieuw spook
+  if (!race.finishMs && !counting() && performance.now() - race.recAt > 100) {
+    race.recAt = performance.now();
+    race.rec.push([Math.round(t * 100) / 100, Math.round(me.x * 100) / 100, Math.round(me.y * 100) / 100, Math.round(me.z * 100) / 100,
+      Math.round(Math.atan2(-fwd.x, -fwd.z) * 100) / 100]);
+  }
+}
+// Na een val: terug naar het laatste checkpoint dat de server heeft gezien (of de start)
+function raceRespawn() {
+  const gates = raceGates();
+  const g = race.cp > 0 ? gates[race.cp - 1] : null;
+  const to = g ? { x: g.x, y: g.y, z: g.z } : race.start;
+  Object.assign(me, { x: to.x, y: to.y, z: to.z, vx: 0, vy: 0, vz: 0 });
+  camY = me.y + EYE_HEIGHT;
+  socket.emit('raceRespawn');
+  big('Terug naar het checkpoint', 'bad');
+  sfx('bad');
+}
+// voortgang van iedereen in de race, voor je plek en het scorebord
+function raceOrder(s) {
+  const x = s.x;
+  if (!x || !x.rc) return [];
+  const gates = raceGates();
+  const pos = new Map(s.p.map((p) => [p[0], p]));
+  return x.rc.map(([id, cp, ms, place]) => {
+    const g = gates[cp];
+    const p = pos.get(id);
+    const left = g && p ? Math.hypot(p[1] - g.x, p[3] - g.z) : 0;
+    return { id, cp, ms, place, score: ms ? 1e7 - ms : cp * 1000 - left };
+  }).sort((a, b) => b.score - a.score);
+}
+function onRaceState(s) {
+  const x = s.x;
+  if (!x || !x.rc) return;
+  race.total = x.gt;
+  race.last = !!x.lc;
+  race.rows = raceOrder(s);
+  const mine = x.rc.find((r) => r[0] === socket.id);
+  if (mine) {
+    race.cp = mine[1];
+    race.finishMs = mine[2];
+    race.place = mine[3];
+  }
+}
+// na je finish: is dit je snelste race op deze baan, dan wordt het je nieuwe spook
+function saveGhost(ms) {
+  const best = load(ghostKey(), null);
+  if (best && best.ms <= ms) return false;
+  try {
+    localStorage.setItem(ghostKey(), JSON.stringify({ ms, path: race.rec.concat([[ms / 1000, me.x, me.y, me.z, 0]]) }));
+  } catch (e) { /* vol */ }
+  return true;
+}
+
 const chairRings = [];
 const chairRingMat = new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.6, depthWrite: false });
 const chairRingGeo = new THREE.TorusGeometry(0.62, 0.06, 6, 24);
 function updateModeWorld(dt, time) {
   const x = lastState && lastState.x;
-  if (lavaGroup && x) {
-    const warm = x.lv > 0 ? 1 - x.lv / 15 : 1;
-    lavaMat.opacity = x.lv > 0 ? warm * 0.4 : 0.72 + Math.sin(time * 3) * 0.12;
-    lavaMat.color.setHex(x.lv > 0 ? 0xff7a3a : 0xff3a10);
-    // borrelende bubbels
-    if (x.lv <= 0 && Math.random() < dt * 8 && lavaGroup.children.length) {
-      const pl = lavaGroup.children[Math.floor(Math.random() * lavaGroup.children.length)];
-      const w = pl.geometry.parameters.width, d = pl.geometry.parameters.height;
-      puff(pl.position.x + (Math.random() - 0.5) * w, pl.position.y + 0.1, pl.position.z + (Math.random() - 0.5) * d, 0xffa53a, 3);
-    }
-  }
-  if (mode === 'lava') updateLavaWorld(x, dt, time);
+  updateServe(dt, time);
   const marked = mode === 'stoelen' && x && x.ch ? x.ch : [];
   while (chairRings.length < marked.length) {
     const ring = new THREE.Mesh(chairRingGeo, chairRingMat);
@@ -2920,118 +3177,6 @@ function updateModeWorld(dt, time) {
   chairRingMat.color.setHex(x && x.mu === 0 ? 0xe23b2e : 0xffd34d);
   chairRingMat.opacity = x && x.mu === 0 ? 0.6 + Math.sin(time * 12) * 0.3 : 0.6;
 }
-// ---------- Lava: gouden eiland, smeltende plekken, lavaballen en vlotten ----------
-const lavaFx = { group: null, island: null, melts: [], shadows: new Map(), rafts: new Map(), gone: 0, raftKey: '' };
-function lavaSpot(id) {
-  if (!id) return null;
-  const i = Number(id.slice(1));
-  if (id[0] === 't') {
-    const p = props[i];
-    return p && { x: p.outer.position.x, z: p.outer.position.z, top: p.y + M.PROP.table.h, r: 0.85, prop: p };
-  }
-  const c = crateAll[i];
-  return c && { x: c[0], z: c[2], top: c[1] + c[4], r: c[3] * 0.72 };
-}
-function clearLavaFx() {
-  if (lavaFx.group) scene.remove(lavaFx.group);
-  lavaFx.group = lavaFx.island = null;
-  lavaFx.melts = [];
-  lavaFx.shadows.clear();
-  lavaFx.rafts.clear();
-  lavaFx.gone = 0;
-  lavaFx.raftKey = '';
-  raftList = [];
-}
-function updateLavaWorld(x, dt, time) {
-  if (!x) return;
-  if (!lavaFx.group) {
-    lavaFx.group = new THREE.Group();
-    scene.add(lavaFx.group);
-    // gouden eiland: ring en een lichtbundel naar boven
-    const island = new THREE.Group();
-    island.add(new THREE.Mesh(new THREE.TorusGeometry(1, 0.09, 8, 32), new THREE.MeshBasicMaterial({ color: 0xffd34d })));
-    island.children[0].rotation.x = -Math.PI / 2;
-    const beamMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 10, 20, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
-    beamMesh.position.y = 5;
-    island.add(beamMesh);
-    lavaFx.group.add(island);
-    lavaFx.island = island;
-  }
-  const isl = lavaSpot(x.is);
-  lavaFx.island.visible = !!isl && x.lv <= 0;
-  if (isl) {
-    lavaFx.island.position.set(isl.x, isl.top + 0.06, isl.z);
-    lavaFx.island.scale.setScalar(isl.r + Math.sin(time * 5) * 0.05);
-    lavaFx.island.children[0].rotation.z = time;
-  }
-  // smeltende plekken gloeien rood en trillen
-  while (lavaFx.melts.length < (x.mt || []).length) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.08, 20), new THREE.MeshBasicMaterial({ color: 0xff3a10, transparent: true, opacity: 0.6, depthWrite: false }));
-    lavaFx.group.add(m);
-    lavaFx.melts.push(m);
-  }
-  lavaFx.melts.forEach((m, i) => {
-    const sp = lavaSpot((x.mt || [])[i]);
-    m.visible = !!sp;
-    if (!sp) return;
-    m.position.set(sp.x, sp.top + 0.05, sp.z);
-    m.scale.set(sp.r, 1, sp.r);
-    m.material.opacity = 0.45 + Math.sin(time * 18) * 0.25;
-    if (sp.prop) sp.prop.outer.position.x = sp.prop.x + Math.sin(time * 40) * 0.04;
-  });
-  // weggesmolten kisten verdwijnen
-  if ((x.gn || []).length !== lavaFx.gone) {
-    lavaFx.gone = x.gn.length;
-    setCrates(null, x.gn);
-  }
-  // lavaballen: een schaduw die groeit, daarna de knal
-  const live = new Set();
-  for (const [id, bx, by, bz, ms] of x.bl || []) {
-    live.add(id);
-    let sh = lavaFx.shadows.get(id);
-    if (!sh) {
-      sh = new THREE.Mesh(new THREE.CircleGeometry(2.3, 24), new THREE.MeshBasicMaterial({ color: 0x8a1a00, transparent: true, opacity: 0.5, depthWrite: false }));
-      sh.rotation.x = -Math.PI / 2;
-      lavaFx.group.add(sh);
-      lavaFx.shadows.set(id, sh);
-    }
-    const g = M.groundAt(bx, bz, by + 0.3);
-    sh.position.set(bx, g + 0.05, bz);
-    const k = 1 - Math.min(1, ms / 1600);
-    sh.scale.setScalar(0.3 + k * 0.7);
-    sh.material.opacity = 0.3 + k * 0.45 + Math.sin(time * 20) * 0.1 * k;
-  }
-  for (const [id, sh] of lavaFx.shadows) {
-    if (live.has(id)) continue;
-    lavaFx.group.remove(sh);
-    lavaFx.shadows.delete(id);
-  }
-  // vlotten
-  const key = (x.rf || []).map((r) => r[0]).join(',');
-  if (key !== lavaFx.raftKey) {
-    lavaFx.raftKey = key;
-    raftList = x.rf || [];
-    refreshDynamic();
-    for (const [id, m] of lavaFx.rafts) {
-      if (raftList.some((r) => r[0] === id)) continue;
-      puff(m.position.x, m.position.y, m.position.z, 0xf2f0ea, 5);
-      lavaFx.group.remove(m);
-      lavaFx.rafts.delete(id);
-    }
-    for (const [id, rx, ry, rz] of raftList) {
-      if (lavaFx.rafts.has(id)) continue;
-      const m = new THREE.Group();
-      mesh(cylGeo, mat(0xf2f0ea), m, 0, 0.12, 0).scale.set(0.8, 0.22, 0.8);
-      mesh(cylGeo, mat(0xd9d5cb), m, 0, 0.24, 0).scale.set(0.5, 0.04, 0.5);
-      m.position.set(rx, ry, rz);
-      lavaFx.group.add(m);
-      lavaFx.rafts.set(id, m);
-    }
-  }
-  for (const m of lavaFx.rafts.values()) m.rotation.y += dt * 0.6;
-}
-
 function clearChairRings() {
   for (const ring of chairRings) scene.remove(ring);
   chairRings.length = 0;
@@ -3059,10 +3204,20 @@ function modeHud(s) {
   const x = s.x;
   let text = '', alert = false;
   if (x && mode === 'broodjes') text = `${BROODJE_TYPES[x.bt].name}: ${BROODJE_TYPES[x.bt].tip} · wissel over ${x.bn} s`;
-  if (x && mode === 'lava') {
-    alert = x.lv <= 0;
-    text = x.lv > 0 ? `De vloer wordt lava over ${x.lv} s. Klim op een tafel, kist, trap of bank!`
-      : `Gouden eiland = 3 punten per seconde · verplaatst over ${x.isn} s · blijf niet stilstaan!`;
+  if (x && mode === 'dienst') {
+    const carry = serve.carry.map((k) => FOOD[k]).join(' + ');
+    text = `${carry ? `Je draagt: ${carry} · breng het naar de tafel die het wil` : 'Haal eten bij een post in de keuken'} · ${serve.open} ${serve.open === 1 ? 'bestelling' : 'bestellingen'} open`;
+  }
+  if (x && mode === 'race' && x.rc) {
+    const R = M.RACE;
+    const per = R.gates.length;
+    const lap = Math.min(R.laps, Math.floor(race.cp / per) + 1);
+    const at = race.rows.findIndex((r) => r.id === socket.id);
+    const where = at >= 0 ? `${at + 1}e van ${race.rows.length}` : '';
+    if (race.finishMs) text = `Binnen als ${race.place + 1}e in ${Catalog.raceTime(race.finishMs)}${race.last ? ' · wacht op de rest' : ''}`;
+    else text = [R.laps > 1 ? `Ronde ${lap}/${R.laps}` : '', `Checkpoint ${race.cp % per}/${per}`, where].filter(Boolean).join(' · ');
+    alert = race.last && !race.finishMs;
+    if (alert) text += ` · nog ${Math.ceil(s.t)} s!`;
   }
   if (x && mode === 'prophunt') {
     text = myTeam === 0 ? `Je bent een ${DISGUISE_NAMES[myDisguise] || 'verstopper'}${propLock ? ' (vastgezet)' : ''} · ${keyLabel(keyOf('dismount'))} = andere vermomming · ${keyLabel(keyOf('throw'))} = vastzetten · ${keyLabel(keyOf('banana'))} = geluidje (+3) · nog ${x.hl} verstoppers`
@@ -3342,7 +3497,7 @@ const screens = ['menu', 'lobby', 'hud', 'gameover'];
 function show(id) {
   if (id !== 'lobby' && warm) leaveWarm();
   // een update van de lobby terwijl je al in de lobby bent, mag de Kluis niet dichtgooien
-  const already = !$(id).classList.contains('hidden');
+  const already = !!id && !$(id).classList.contains('hidden');
   if (id !== 'menu' && PAGES && !(id === 'lobby' && already)) closePages();
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
   if (id === 'lobby') {
@@ -3865,7 +4020,7 @@ function renderProfile() {
   }));
   const lines = [['Potjes gespeeld', 'games'], ['Gewonnen', 'wins'], ['Langste winstreeks', 'winStreak'], ['Rake worpen', 'hits'], ['Tackles', 'tackles'],
     ['Seconden met het broodje', 'holdSeconds'], ['Langst ongeraakt vastgehouden (s)', 'bestHold'], ['Broodjes gepakt', 'pickups'], ['Happen', 'bites'],
-    ['Klappen', 'slaps'], ['Vallen gezet', 'traps'], ['Verstoppers gevonden', 'finds'], ['Seconden op de lava overleefd', 'lavaSeconds'],
+    ['Klappen', 'slaps'], ['Vallen gezet', 'traps'], ['Verstoppers gevonden', 'finds'], ['Races uitgereden', 'raceFinishes'], ['Races gewonnen', 'raceWins'],
     ['Premies gepakt', 'bounties'], ['Sprongen', 'jumps'], ['Tafels omgegooid', 'tables'], ['Emotes gedaan', 'emotes'], ['Stempels gezet', 'sprays']];
   $('stat-list').replaceChildren(...lines.map(([label, key]) => {
     const li = document.createElement('li');
@@ -4157,10 +4312,10 @@ document.querySelectorAll('[data-quality]').forEach((b) => b.addEventListener('c
   });
 applySettings();
 
-// Kluis, Winkel, Pass, Opdrachten en Carrière zijn aparte pagina's onder de bovenbalk (zoals Fortnite)
-var PAGES = ['locker', 'shop', 'pass', 'challenges', 'account'];
+// Nieuws, Kluis, Winkel, Pass, Opdrachten en Carrière zijn aparte pagina's onder de bovenbalk (zoals Fortnite)
+var PAGES = ['news', 'locker', 'shop', 'pass', 'challenges', 'account'];
 // volgorde van de tabbladen: nieuwe pagina's schuiven van rechts of links binnen, alsof je swipet
-const NAV_ORDER = ['play', 'locker', 'shop', 'pass', 'challenges', 'account'];
+const NAV_ORDER = ['play', 'news', 'locker', 'shop', 'pass', 'challenges', 'account'];
 let currentPage = 'play';
 function slideTo(id) {
   const from = NAV_ORDER.indexOf(currentPage), to = NAV_ORDER.indexOf(id);
@@ -4243,6 +4398,7 @@ document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('
   if (btn.dataset.open === 'locker') renderLocker();
   if (btn.dataset.open === 'shop') renderShop();
   if (btn.dataset.open === 'board') renderBoard();
+  if (btn.dataset.open === 'news') renderNews();
   if (btn.dataset.open === 'draw') openDraw();
   if (btn.dataset.open === 'pass') { passPage = -1; renderPass(); }
   if (btn.dataset.open === 'emotes') renderEmotes();
@@ -4303,7 +4459,7 @@ $('btn-ranked').addEventListener('click', () => {
 });
 let practiceMode = 'klassiek';
 function renderPracticeModes() {
-  $('practice-modes').replaceChildren(...['klassiek', 'broodjes', 'voedsel', 'lava', 'prophunt', 'stoelen', 'trefbal'].map((id) => {
+  $('practice-modes').replaceChildren(...['klassiek', 'broodjes', 'race', 'dienst', 'prophunt', 'stoelen', 'trefbal'].map((id) => {
     const chip = document.createElement('button');
     chip.className = 'chip' + (practiceMode === id ? ' active' : '');
     chip.textContent = MODE_INFO[id].name;
@@ -4370,10 +4526,9 @@ function stopPlaying() {
   biteLock = 0;
   myTeam = 0;
   setMyDisguise(0);
-  clearLava();
-  clearLavaFx();
+  clearRace();
+  clearServe();
   clearChairRings();
-  if (crateList.length) setCrates([]);
   if (itemPickups.length !== M.ITEM_SPAWNS.length) setItemSpots(null);
   decoy.visible = decoyBeacon.visible = false;
   decoy.userData.live = false;
@@ -4486,13 +4641,13 @@ socket.on('lobby', (info) => {
     btn.classList.toggle('active', Number(btn.dataset.rounds) === info.rounds);
     btn.disabled = info.hostId !== socket.id || !!info.weekly;
   });
-  $('rounds-desc').textContent = info.party ? 'Pauzefeest: vier minispellen (lava, trefbal, stoelendans en de finale). Punten per plek.'
+  $('rounds-desc').textContent = info.party ? 'Pauzefeest: vier minispellen (race, trefbal, stoelendans en de finale). Punten per plek.'
     : info.rounds > 1 ? 'Toernooi: drie rondes, map en modus wisselen per ronde.' : 'De map wordt voor elk potje geloot.';
   const custom = !Catalog.isDefaultRules(info.opts.rules);
   // korte samenvatting van de host-instellingen op de knop
   const o = info.opts;
   $('host-summary').textContent = [`${o.duration / 60} min`, o.events ? 'events aan' : 'events uit', o.extras ? 'alle spullen' : 'klassieke spullen',
-    `bots ${['makkelijk', 'normaal', 'moeilijk'][o.botLevel]}`].concat(custom ? ['eigen regels'] : []).join(' · ');
+    `bots ${['makkelijk', 'normaal', 'moeilijk'][o.botLevel]}`].concat(info.mode === 'race' || info.mode === 'dienst' ? [o.hinder ? 'hinderen mag' : 'niet hinderen'] : [], custom ? ['eigen regels'] : []).join(' · ');
   $('host-note').textContent = info.hostId === socket.id ? '' : 'Alleen de host kan dit veranderen.';
   $('btn-rules').querySelector('span').textContent = custom ? `Eigen spelregels · ${info.rulesCode}` : 'Eigen spelregels';
   $('btn-rules').classList.toggle('active', custom);
@@ -4559,11 +4714,11 @@ socket.on('mapPick', (data) => {
   const other = ids.find((id) => id !== data.map);
   for (let i = 0; i < 30 && ids.length === 2; i++) cards.push((i - target) % 2 === 0 ? data.map : other);
   for (let i = 0; i < 30 && ids.length !== 2; i++) {
-    // nooit twee keer dezelfde kaart naast elkaar
+    // nooit twee keer dezelfde kaart naast elkaar (behalve als er maar één kaart is, zoals de schoolkeuken)
     const options = ids.filter((id) => id !== cards[i - 1] && (i !== target - 1 || id !== data.map));
-    cards.push(i === target ? data.map : options[Math.floor(Math.random() * options.length)]);
+    cards.push(i === target || !options.length ? data.map : options[Math.floor(Math.random() * options.length)]);
   }
-  if (ids.length !== 2 && cards[target + 1] === data.map) cards[target + 1] = ids.find((id) => id !== data.map && id !== cards[target + 2]);
+  if (ids.length > 2 && cards[target + 1] === data.map) cards[target + 1] = ids.find((id) => id !== data.map && id !== cards[target + 2]);
   const strip = $('roulette-strip');
   strip.innerHTML = cards.map((id) => `<div class="map-card m-${id}">${mapPreview[id] ? `<img src="${mapPreview[id]}" alt="">` : icon(M.maps[id].icon)}<b>${M.maps[id].name}</b></div>`).join('');
   $('roulette-sub').textContent = (data.rounds > 1 ? `Ronde ${data.round} van ${data.rounds} · ` : '') + MODE_INFO[data.mode].name;
@@ -4601,7 +4756,6 @@ socket.on('gameStart', (data) => {
   mode = data.mode;
   teams = data.teams;
   myTeam = teams[socket.id] || 0;
-  setCrates(data.lavaBlocks);
   setItemSpots(data.itemSpots);
   applyRules(data.rules);
   lastState = null;
@@ -4609,8 +4763,12 @@ socket.on('gameStart', (data) => {
   myItem = myGadget = myFlags = 0;
   stunned = false;
   playing = true;
-  if (mode === 'lava') buildLava();
   Object.assign(me, { x: data.spawn.x, y: data.spawn.y, z: data.spawn.z, vx: 0, vy: 0, vz: 0, onGround: true });
+  if (mode === 'race') {
+    buildRace();
+    race.start = { x: me.x, y: me.y, z: me.z };
+  }
+  if (mode === 'dienst') buildServe();
   camY = me.y + EYE_HEIGHT;
   dashLeft = 0;
   dashReadyAt = 0;
@@ -4676,7 +4834,7 @@ function enterWarm() {
   loadMap(data.map);
   warm = true;
   playing = true;
-  mode = 'voedsel';
+  mode = 'warm';
   teams = {};
   myTeam = 0;
   applyRules(null);
@@ -4876,6 +5034,7 @@ function onState(s, replay) {
   }
   if (tablesMoved) refreshDynamic();
   darkTarget = s.e === 'donker' ? 1 : 0;
+  if (mode === 'race') onRaceState(s);
   if (replay) return;
 
   const secs = Math.ceil(s.t);
@@ -4884,8 +5043,10 @@ function onState(s, replay) {
     announce('NOG 10 SECONDEN!', '#ff5a4a');
   }
   checkComeback(s);
-  $('timer').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${s.d ? ' ×2' : ''}`;
-  $('timer').classList.toggle('low', secs <= 15);
+  // race: de klok laat je eigen tijd zien, op honderdsten
+  if (mode === 'race' && !spectating) $('timer').textContent = Catalog.raceTime(race.finishMs || Math.max(1, raceClock() * 1000));
+  else $('timer').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${s.d ? ' ×2' : ''}`;
+  $('timer').classList.toggle('low', secs <= 15 && (mode !== 'race' || (race.last && !race.finishMs)));
   $('holding').classList.toggle('hidden', holderId !== socket.id);
   document.body.classList.toggle('holding', holderId === socket.id);
   modeHud(s);
@@ -4922,10 +5083,17 @@ function onState(s, replay) {
   $('buff-vehicle').classList.toggle('hidden', !myVehicle);
 
   if (scoreTick++ % 4 === 0) {
-    const rows = s.p.slice().sort((a, b) => b[5] - a[5]).map((p) => {
+    // race: op volgorde van de baan, met je tijd of je checkpoint
+    const order = mode === 'race' ? race.rows.map((r) => r.id) : null;
+    const raceTag = (id) => {
+      const r = race.rows.find((x) => x.id === id);
+      return !r ? '' : r.ms ? Catalog.raceTime(r.ms) : `CP ${r.cp}/${race.total}`;
+    };
+    const sorted = order ? s.p.slice().sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])) : s.p.slice().sort((a, b) => b[5] - a[5]);
+    const rows = sorted.map((p) => {
       const name = (roster.get(p[0]) || { name: '?' }).name;
       const tag = mode === 'prophunt' ? (p[12] === 0 ? ' · verstopt' : ' · zoekt') : '';
-      const li = row(colorOf(p[0]), name + tag, badge(p[5], 'pts'));
+      const li = row(colorOf(p[0]), name + tag, badge(order ? raceTag(p[0]) : p[5], 'pts'));
       if (p[0] === socket.id) li.classList.add('me');
       if (p[0] === holderId) li.classList.add('holder');
       if (p[6] & 256) li.classList.add('out');
@@ -4951,7 +5119,7 @@ function onState(s, replay) {
 }
 // comeback: wie een halve minuut geleden nog laatste stond en nu eerste staat
 function checkComeback(s) {
-  if (s.p.length < 3 || mode === 'stoelen' || mode === 'prophunt') return;
+  if (s.p.length < 3 || mode === 'stoelen' || mode === 'prophunt' || mode === 'race') return;
   const order = s.p.slice().sort((a, b) => b[5] - a[5]);
   const now = performance.now();
   const hist = announced.leaders;
@@ -4967,20 +5135,24 @@ function checkComeback(s) {
 }
 let tabHeld = false;
 function renderTabBoard(s) {
-  const rows = s.p.slice().sort((a, b) => b[5] - a[5]).map((p, i) => {
+  const order = mode === 'race' ? race.rows.map((r) => r.id) : null;
+  const sorted = order ? s.p.slice().sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])) : s.p.slice().sort((a, b) => b[5] - a[5]);
+  const rows = sorted.map((p, i) => {
     const info = roster.get(p[0]) || { name: '?' };
     const tr = document.createElement('tr');
     if (p[0] === socket.id) tr.className = 'me';
     const state = [p[0] === holderId ? 'broodje' : '', p[6] & 128 ? 'premie' : '', p[6] & 256 ? 'eruit' : '', p[6] & 2 ? 'knock-out' : '',
       mode === 'prophunt' ? (p[12] === 0 ? 'verstopt' : 'zoekt') : ''].filter(Boolean).join(' · ');
-    tr.innerHTML = `<td>${i + 1}</td><td><i class="dot" style="background:${hex(colorOf(p[0]))}"></i><span></span></td><td></td><td></td><td>${p[5]}</td>`;
+    const r = order && race.rows.find((x) => x.id === p[0]);
+    const score = r ? (r.ms ? Catalog.raceTime(r.ms) : `CP ${r.cp}/${race.total}`) : p[5];
+    tr.innerHTML = `<td>${i + 1}</td><td><i class="dot" style="background:${hex(colorOf(p[0]))}"></i><span></span></td><td></td><td></td><td>${score}</td>`;
     tr.children[1].querySelector('span').textContent = info.name + (info.bot ? ' (bot)' : '');
     tr.children[2].textContent = info.bot ? '' : `lvl ${info.lvl || 1}`;
     tr.children[3].textContent = state;
     return tr;
   });
   $('tab-rows').replaceChildren(...rows);
-  $('tab-title').textContent = `${MODE_INFO[mode].name} · ${M.name}`;
+  $('tab-title').textContent = `${(MODE_INFO[mode] || { name: 'Wachtruimte' }).name} · ${M.name}`;
 }
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Tab' || !playing) return;
@@ -5237,7 +5409,7 @@ socket.on('event', (e) => {
       sfx('slap', posOf(e.victim));
       if (e.by === socket.id) hitmarker(false);
       if (e.victim === socket.id) { toast(`${nameOf(e.by)} geeft je een klap!`); hurt(0.35); }
-      if (mode === 'lava' || mode === 'stoelen') killfeed(e.by, 'hand', e.victim);
+      if (mode === 'race' || mode === 'stoelen' || mode === 'dienst') killfeed(e.by, 'hand', e.victim);
     }
   } else if (e.type === 'block') {
     toast(`${nameOf(e.by)} kaatst af op het saucijzenbroodje van ${victimName(e.victim)}!`);
@@ -5264,13 +5436,6 @@ socket.on('event', (e) => {
     killfeed(e.by, 'skull', e.victim);
     toast(`Wraak! ${nameOf(e.by)} pakt rivaal ${victimName(e.victim)} +5`, 3000);
     if (e.by === socket.id) big('Wraak! +5', 'good');
-  } else if (e.type === 'burn') {
-    killfeed(null, 'fire', e.id);
-    if (mine) { big(e.why === 'heet' ? 'Hete voeten! −3' : 'Verbrand! −3', 'bad'); hurt(0.8); }
-    sfx('burn', posOf(e.id));
-    const r = remotes.get(e.id);
-    const at = r ? r.group.position : me;
-    puff(at.x, at.y + 0.5, at.z, 0xff4a1a, 12);
   } else if (e.type === 'found') {
     killfeed(e.by, 'eye', e.victim);
     toast(`${nameOf(e.by)} ${e.by === socket.id ? 'vindt' : 'vindt'} ${victimName(e.victim)}!`);
@@ -5291,21 +5456,66 @@ socket.on('event', (e) => {
     if (e.id === socket.id) toast('Geluidje! +3 punten, maar de zoekers weten nu waar je bent');
   } else if (e.type === 'chairOut') {
     if (!mine) toast(`${nameOf(e.id)} heeft geen stoel en ligt eruit`);
-  } else if (e.type === 'island') {
-    toast('Het gouden eiland is verplaatst!');
-    sfx('power');
-  } else if (e.type === 'melt') {
-    toast('Er smelten plekken weg! Spring eraf');
+  } else if (e.type === 'checkpoint') {
+    if (mine) {
+      const per = M.RACE.gates.length;
+      if (e.cp % per === 0 && e.lap > 0) {
+        announce(e.lap === M.RACE.laps - 1 ? 'LAATSTE RONDE!' : `RONDE ${e.lap + 1}!`, '#7fe3ff');
+      } else {
+        big('Checkpoint!', 'good');
+      }
+      sfx('good');
+    }
+  } else if (e.type === 'finish') {
+    const time = Catalog.raceTime(e.ms);
+    killfeed(e.id, 'flag', null);
+    if (mine) {
+      race.finishMs = e.ms;
+      announce(e.place === 0 ? 'WINNAAR!' : `${e.place + 1}E PLEK!`, e.place === 0 ? '#ffd34d' : '#7fe3ff');
+      const best = load(ghostKey(), null);
+      const record = saveGhost(e.ms);
+      banner(`Binnen in ${time}${record && best ? ' · nieuwe beste tijd op deze baan!' : ''}`, 4500);
+      sfx('fanfare');
+      confetti(me.x, me.y + 1.5, me.z);
+    } else {
+      toast(`${nameOf(e.id)} is binnen als ${e.place + 1}e (${time})`, 3000);
+    }
+  } else if (e.type === 'take') {
+    if (mine) {
+      sfx('item');
+      toast(`Je pakt ${FOOD[e.kind]}`);
+    }
+  } else if (e.type === 'serve') {
+    if (mine) {
+      big(`${FOOD[e.kind]} bezorgd! +${e.points}`, 'good');
+      sfx('coin');
+    }
+  } else if (e.type === 'served') {
+    const t = M.SERVE && M.SERVE.tables[e.table];
+    if (t) confetti(t.x, 1.5, t.z);
+    if (mine) {
+      sfx('unlock');
+      toast(`Bestelling van tafel ${t ? t.n : ''} helemaal af! +${e.points}`);
+    } else {
+      killfeed(e.id, 'check', null);
+    }
+  } else if (e.type === 'angry') {
+    const t = M.SERVE && M.SERVE.tables[e.table];
+    toast(`De klant aan tafel ${t ? t.n : ''} wacht te lang en loopt boos weg`);
+    if (t) puff(t.x, 1.6, t.z + 1.3, 0xe23b2e, 8);
+  } else if (e.type === 'spill') {
+    killfeed(e.by, 'hand', e.id);
+    for (let i = 0; i < 3; i++) puff(e.x, e.y + 1, e.z, [0xf4c430, 0xe23b2e, 0xffffff][i], 5);
+    if (mine) { big('Eten gevallen!', 'bad'); sfx('crash'); }
+    else if (e.by === socket.id) toast(`${nameOf(e.id)} laat het eten vallen!`);
+  } else if (e.type === 'dump') {
+    if (mine) toast('Weggegooid');
+  } else if (e.type === 'order') {
+    sfx('tick');
+  } else if (e.type === 'lastCall') {
+    if (!race.finishMs) announce(`NOG ${e.seconds} SECONDEN!`, '#ff5a4a');
+    banner(`De eerste is binnen: nog ${e.seconds} seconden om de finish te halen`, 4000);
     sfx('siren');
-  } else if (e.type === 'sink') {
-    const sp = lavaSpot(e.id);
-    if (sp) puff(sp.x, sp.top, sp.z, 0xff4a1a, 14);
-    sfx('burn');
-  } else if (e.type === 'lavaball') {
-    for (let i = 0; i < 4; i++) puff(e.x, e.y + 0.3 + i * 0.4, e.z, [0xff4a1a, 0xffa53a, 0xf4c430, 0x55565c][i], 8);
-    sfx('crash', e);
-    const d = Math.hypot(me.x - e.x, me.z - e.z);
-    if (d < 8) shake(0.5 * (1 - d / 8));
   } else if (e.type === 'mark') {
     addMarker(e);
   } else if (e.type === 'admin') {
@@ -5366,12 +5576,14 @@ function handleGameOver(data) {
     text = `${winner.name} wint!`;
   }
   $('over-title').textContent = !data.final ? `Tussenstand · ronde ${data.round} van ${data.rounds}`
-    : data.party ? 'Eindstand pauzefeest' : multi ? 'Eindstand toernooi' : 'Tijd is om!';
+    : data.party ? 'Eindstand pauzefeest' : multi ? 'Eindstand toernooi'
+      : data.mode === 'race' ? 'Uitslag van de race' : data.mode === 'dienst' ? 'De keuken gaat dicht!' : 'Tijd is om!';
   $('winner').textContent = text;
 
   // scorebord met de cijfers van dit potje; per modus de getallen die ertoe doen
   const extra = {
-    lava: [['Verbrand', (p) => p.burns], ['Veilig', (p) => `${p.lava} s`], ['Klappen', (p) => p.slaps]],
+    race: [['Tijd', (p) => (p.time ? Catalog.raceTime(p.time) : 'niet binnen')], ['Checkpoints', (p) => p.cp], ['Klappen', (p) => p.slaps]],
+    dienst: [['Geserveerd', (p) => p.served], ['Bestellingen af', (p) => p.orders], ['Laten vallen', (p) => p.spills]],
     prophunt: [['Gevonden', (p) => p.finds], ['Rol', (p) => (p.team === 0 ? 'verstopt' : p.found ? 'gevonden' : 'zoeker')], ['Klappen', (p) => p.slaps]],
     stoelen: [['Stoelen', (p) => p.chairs], ['Klappen', (p) => p.slaps], ['Raak', (p) => p.hits]],
     trefbal: [['Raak', (p) => p.hits], ['Gegooid', (p) => p.throws], ['Geraakt', (p) => p.knocked]]
@@ -5575,7 +5787,7 @@ $('btn-again').addEventListener('click', () => {
   }
 });
 
-// een duw van de server: klap, tackle, val of lava
+// een duw van de server: klap, tackle of val
 socket.on('push', (d) => {
   if (!playing || spectating || eliminated) return;
   me.vx += d.x;
@@ -5599,13 +5811,13 @@ socket.on('spectate', (data) => {
   mode = data.mode;
   teams = data.teams;
   applyRules(data.rules);
-  setCrates(data.lavaBlocks);
   setItemSpots(data.itemSpots);
   lastState = null;
   holderId = null;
   playing = true;
   spectating = true;
-  if (mode === 'lava') buildLava();
+  if (mode === 'race') buildRace();
+  if (mode === 'dienst') buildServe();
   for (const [i, x, y, z, tip, dir] of data.props) {
     Object.assign(props[i], { x, y, z, tip, dir, tipAnim: tip });
     props[i].outer.position.set(x, y, z);
@@ -5831,7 +6043,28 @@ $('btn-draw-save').addEventListener('click', () => {
 });
 
 // ---------- Ranglijst van de week ----------
+let boardRace = null;
+async function renderBoardRace() {
+  boardRace = boardRace || M.RACE_IDS[0];
+  $('board-race-maps').replaceChildren(...M.RACE_IDS.map((id) => {
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (id === boardRace ? ' active' : '');
+    chip.textContent = M.maps[id].name;
+    chip.addEventListener('click', () => { boardRace = id; renderBoardRace(); });
+    return chip;
+  }));
+  try {
+    const data = raceTimes || await fetchRaceTimes();
+    const times = (data.maps && data.maps[boardRace]) || { week: [], all: [] };
+    $('board-race-week').replaceChildren(timeList(times.week));
+    $('board-race-all').replaceChildren(timeList(times.all));
+  } catch (e) {
+    $('board-race-week').textContent = 'Racetijden konden niet geladen worden.';
+  }
+}
 async function renderBoard() {
+  raceTimes = null;
+  renderBoardRace();
   $('board-list').replaceChildren();
   $('board-week').textContent = 'Laden…';
   try {
@@ -5846,6 +6079,79 @@ async function renderBoard() {
     $('board-week').textContent = 'Ranglijst kon niet geladen worden.';
   }
 }
+
+// ---------- Nieuws: uitgelicht en updates ----------
+// De updates staan in news.js, berichten van de beheerder komen van de server.
+let newsPosts = [];
+const NEWS_ICONS = { Nieuws: 'news', Evenement: 'party', Toernooi: 'trophy', Belangrijk: 'bolt' };
+const newsSeen = new Set(load('kr-newsseen', { list: [] }).list || []);
+function newsItems() {
+  const posts = newsPosts.map((p) => ({
+    id: 'p-' + p.id, date: String(p.created_at || '').slice(0, 10), tag: p.tag || 'Nieuws', icon: NEWS_ICONS[p.tag] || 'news', title: p.title, intro: p.body, items: []
+  }));
+  return posts.concat(window.NEWS || []).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+const newsFresh = () => newsItems().some((n) => !newsSeen.has(n.id));
+async function fetchNews() {
+  try {
+    newsPosts = (await (await fetch('/api/news')).json()).posts || [];
+  } catch (e) { /* geen verbinding: alleen de updates */ }
+  refreshDots();
+}
+function newsEl(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function renderNews() {
+  const weekly = Catalog.weeklyFor();
+  const story = Catalog.storyFor();
+  const deal = Catalog.dealFor();
+  const days = Catalog.seasonDaysLeft();
+  const navTo = (page) => () => document.querySelector(`.top-nav [data-open="${page}"]`).click();
+  const spots = [
+    ['star', `Seizoen ${SEASON}`, Catalog.THEMES[Catalog.THEME], `Nog ${days} ${days === 1 ? 'dag' : 'dagen'} voor de battlepass`, '#7a4fd0', '#3f2a85', navTo('pass')],
+    ['party', 'Modus van de week', weekly.name, weekly.open ? 'Nu te spelen, alleen dit weekend!' : `Open vanaf vrijdag (nog ${weekly.daysUntil} ${weekly.daysUntil === 1 ? 'dag' : 'dagen'})`,
+      '#f26a1b', '#b0284e', () => $('btn-weekly').click()],
+    ['book', 'Weekverhaal', story.story.title, 'Vijf hoofdstukken, één skin die nooit terugkomt', '#2f8f6e', '#1d4d5a', () => document.querySelector('.story-card').click()],
+    ['cart', `Aanbieding: ${deal.kind}`, deal.name, `${Catalog.salePrice(deal.price)} munten in plaats van ${deal.price}`, '#2f6fde', '#1d2f6b', navTo('shop')]
+  ];
+  $('news-spot').replaceChildren(...spots.map(([ico, small, title, sub, c1, c2, go]) => {
+    const b = newsEl('button', 'spot');
+    b.style.setProperty('--c1', c1);
+    b.style.setProperty('--c2', c2);
+    b.innerHTML = icon(ico);
+    b.append(newsEl('small', '', small), newsEl('b', '', title), newsEl('span', '', sub));
+    b.addEventListener('click', go);
+    return b;
+  }));
+  const items = newsItems();
+  $('news-list').replaceChildren(...items.map((n) => {
+    const card = newsEl('article', 'news-item' + (newsSeen.has(n.id) ? '' : ' fresh'));
+    const ico = newsEl('div', 'news-ico');
+    ico.innerHTML = icon(n.icon || 'news');
+    const body = newsEl('div');
+    const meta = newsEl('div', 'news-meta');
+    meta.append(newsEl('span', 'news-tag t-' + String(n.tag).toLowerCase(), n.tag));
+    if (!newsSeen.has(n.id)) meta.append(newsEl('span', 'news-new', 'Nieuw'));
+    meta.append(newsEl('span', '', new Date(n.date + 'T12:00:00').toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })));
+    body.append(meta, newsEl('h4', '', n.title));
+    if (n.intro) body.append(newsEl('p', '', n.intro));
+    if (n.items && n.items.length) {
+      const ul = newsEl('ul');
+      ul.append(...n.items.map((t) => newsEl('li', '', t)));
+      body.append(ul);
+    }
+    card.append(ico, body);
+    return card;
+  }));
+  // alles wat je nu ziet, telt als gelezen (de "Nieuw"-labels blijven tot je de pagina weer opent)
+  items.forEach((n) => newsSeen.add(n.id));
+  save('kr-newsseen', { list: [...newsSeen].slice(-200) });
+  refreshDots();
+}
+fetchNews();
 
 // ---------- Je poppetje in het hoofdmenu ----------
 const preview = {
@@ -6039,15 +6345,16 @@ function renderMastery() {
 let recordMap = 'kantine';
 async function renderRecords(map) {
   recordMap = map;
-  $('record-maps').replaceChildren(...M.MAP_IDS.map((id) => {
+  $('record-maps').replaceChildren(...M.MAP_IDS.concat(M.SERVE_IDS, M.RACE_IDS).map((id) => {
     const chip = document.createElement('button');
-    chip.className = 'chip' + (id === map ? ' active' : '');
-    chip.textContent = M.maps[id].name;
+    chip.className = 'chip' + (id === map ? ' active' : '') + (M.maps[id].RACE ? ' race-chip' : '');
+    chip.textContent = M.maps[id].RACE ? `Race: ${M.maps[id].name}` : M.maps[id].name;
     chip.addEventListener('click', () => renderRecords(id));
     return chip;
   }));
-  const mine = progress.records[map] || {};
   const body = $('record-body');
+  if (M.maps[map].RACE) return renderRaceRecords(map, body);
+  const mine = progress.records[map] || {};
   body.innerHTML = '<p class="shop-title">Jouw records in één potje</p><ul class="list mine record-mine"></ul><p class="shop-title">Beste van iedereen</p><div class="record-top">Laden…</div>';
   body.querySelector('.mine').replaceChildren(...RECORDS.map((r) =>
     row(mine[r.key] ? 0xf26a1b : 0xc9c3b6, r.title, badge(mine[r.key] ? recordLabel(r.key, mine[r.key]) : 'nog geen', 'pts'))));
@@ -6070,6 +6377,44 @@ async function renderRecords(map) {
     }
   } catch (e) {
     body.querySelector('.record-top').textContent = 'Records konden niet geladen worden.';
+  }
+}
+// racetijden: je eigen beste tijd en de snelste van deze week en van altijd
+let raceTimes = null;
+async function fetchRaceTimes() {
+  raceTimes = await (await fetch('/api/race')).json();
+  return raceTimes;
+}
+function timeList(rows) {
+  const ol = document.createElement('ol');
+  ol.className = 'list';
+  ol.replaceChildren(...(rows && rows.length ? rows.map((r, i) => row([0xf5c542, 0xbfc5cc, 0xc98d5e][i] || 0x55565c, `${i + 1}. ${r.name}`, badge(Catalog.raceTime(r.ms), 'pts')))
+    : [Object.assign(document.createElement('li'), { textContent: 'Nog niemand' })]));
+  return ol;
+}
+async function renderRaceRecords(map, body) {
+  const best = progress.raceBest[map];
+  const ghost = load(`kr-ghost-${map}`, null);
+  body.innerHTML = '<p class="shop-title">Jouw beste tijd</p><ul class="list mine record-mine"></ul><div class="record-top">Laden…</div>';
+  body.querySelector('.mine').replaceChildren(
+    row(best ? 0xf26a1b : 0xc9c3b6, M.maps[map].name, badge(best ? Catalog.raceTime(best) : 'nog geen', 'pts')),
+    row(ghost ? 0x7fe3ff : 0xc9c3b6, 'Je spook op dit apparaat', badge(ghost ? Catalog.raceTime(ghost.ms) : 'nog geen', 'pts')));
+  try {
+    const data = await fetchRaceTimes();
+    if (recordMap !== map) return;
+    const top = body.querySelector('.record-top');
+    top.replaceChildren();
+    const times = (data.maps && data.maps[map]) || { week: [], all: [] };
+    for (const [title, rows] of [[`Snelste van week ${String(data.week).split('-W')[1]}`, times.week], ['Snelste ooit', times.all]]) {
+      const col = document.createElement('div');
+      col.className = 'record-card';
+      col.innerHTML = `<b>${title}</b>`;
+      col.append(timeList(rows));
+      top.append(col);
+    }
+    if (!account) top.append(Object.assign(document.createElement('p'), { className: 'hint', textContent: 'Log in om je tijden op de ranglijst te zetten.' }));
+  } catch (e) {
+    body.querySelector('.record-top').textContent = 'Racetijden konden niet geladen worden.';
   }
 }
 function renderRivals() {
@@ -6203,8 +6548,9 @@ function paperStories(data) {
     if (p.tackles >= 3) add(p.tackles * 3, p, `${p.name} tackelt ${p.tackles} keer: niemand is veilig`);
     if (p.bites >= 2) add(p.bites * 3, p, `${p.name} neemt ${p.bites} happen van het broodje`);
     if (p.eaten) add(8 + p.eaten * 3, p, `${p.name} eet het broodje helemaal op`);
-    if (p.burns >= 2) add(p.burns * 3, p, `${p.name} valt ${p.burns} keer in de lava`);
-    if (p.lava >= 30) add(p.lava / 5, p, `${p.name} houdt het ${p.lava} seconden vol boven de lava`);
+    if (p.time && data.mode === 'race') add(p === players[0] ? 16 : 6, p, `${p.name} haalt de finish in ${Catalog.raceTime(p.time)}`);
+    if (p.served >= 5) add(p.served * 1.5, p, `${p.name} serveert ${p.served} gerechten in de schoolkeuken`);
+    if (p.spills >= 3) add(p.spills * 3, p, `${p.name} laat ${p.spills} keer het eten vallen`);
     if (p.finds >= 2) add(p.finds * 4, p, `Speurneus ${p.name} vindt ${p.finds} verstoppers`);
     if (data.mode === 'prophunt' && p.team === 0 && !p.found) add(14, p, `${p.name} blijft het hele potje onvindbaar`);
     if (p.tables >= 3) add(p.tables * 2, p, `Sloopwerk: ${p.name} gooit ${p.tables} tafels om`);
@@ -6599,6 +6945,7 @@ function refreshDots() {
   document.querySelectorAll('[data-open="locker"]').forEach((b) => b.classList.toggle('dot-new', lockerFresh));
   const shopDay = String(Catalog.shopFor().day);
   document.querySelectorAll('[data-open="shop"]').forEach((b) => b.classList.toggle('dot-new', localStorage.getItem('kr-shopday') !== shopDay));
+  document.querySelectorAll('[data-open="news"]').forEach((b) => b.classList.toggle('dot-new', newsFresh()));
   const tiers = ACHIEVEMENTS.reduce((a, x) => a + (progress.ach[x.id] || 0), 0);
   document.querySelectorAll('[data-open="account"]').forEach((b) => b.classList.toggle('dot-new', Number(localStorage.getItem('kr-achseen') || 0) < tiers));
 }
@@ -6622,7 +6969,8 @@ const AWARDS = [
   ['Lappenpop', (p) => p.knocked, (v) => `${v} keer gevlogen`],
   ['Klapper', (p) => p.slaps, (v) => `${v} klappen`],
   ['Speurneus', (p) => p.finds, (v) => `${v} gevonden`],
-  ['Lavaloper', (p) => p.lava, (v) => `${v} s veilig`],
+  ['Ober van de dag', (p) => p.served || 0, (v) => `${v} gerechten geserveerd`],
+  ['Snelheidsduivel', (p) => (p.time ? 600000 - p.time : 0), (v) => `binnen in ${Catalog.raceTime(600000 - v)}`],
   ['Smulpaap', (p) => p.bites, (v) => `${v} happen`]
 ];
 function renderAwards(data) {
@@ -6842,17 +7190,17 @@ const TIPS = [
   'Neem een hap met B: 5 punten, maar je moet een seconde stilstaan.',
   'Houd Tab ingedrukt voor het grote scorebord.',
   'Zonder voorwerp in je hand geeft klikken een klap.',
-  'Bij De vloer is lava geeft het gouden eiland 3 punten per seconde.',
+  'In een race zie je je spook: de snelste race die je ooit op die baan reed.',
   'Met de middelste muisknop zet je een markering voor je teamgenoten.',
   'Houd Y ingedrukt voor het emote-wiel.',
-  'Gooi een bord op de lava: het drijft vijf seconden als vlot.',
+  'De blauwe trampolines in een race lanceren je over muren en gaten.',
   'Speel elke dag voor je inlogreeks: dag 7 en 30 geven iets unieks.',
   'Maak een groep met vrienden, dan komen jullie altijd in hetzelfde potje.'
 ];
 $('load-tip').textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
 const mapPreview = {};
 async function bootLoading() {
-  const ids = M.MAP_IDS;
+  const ids = M.ALL_IDS;
   const shot = document.createElement('canvas');
   shot.width = 320;
   shot.height = 180;
@@ -7070,6 +7418,7 @@ function frame() {
   if (playing) {
     const watching = spectating || eliminated;
     if (!watching) pollPad(dt);
+    updateRace(dt);
     if (!watching) updateLocal(dt);
     updateRemotes(dt);
     if (watching) updateSpectate(time);

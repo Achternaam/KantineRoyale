@@ -85,6 +85,7 @@
         </svg></div>
       <nav class="top-nav">
         <button class="nav on" data-nav="play"><i data-ico="play"></i>Spelen</button>
+        <button class="nav" data-open="news"><i data-ico="news"></i>Nieuws</button>
         <button class="nav" data-open="locker"><i data-ico="shirt"></i>Kluis</button>
         <button class="nav" data-open="shop"><i data-ico="cart"></i>Winkel</button>
         <button class="nav" data-open="pass"><i data-ico="star"></i>Pass</button>
@@ -253,12 +254,12 @@
         <button class="mode-tile" data-mode="klassiek"><i data-ico="broodje"></i><b>Klassiek</b><small>Houd het broodje vast</small></button>
         <button class="mode-tile" data-mode="teams"><i data-ico="flag"></i><b>Teams</b><small>Oranje tegen Paars</small></button>
         <button class="mode-tile" data-mode="duo"><i data-ico="friends"></i><b>Duo's</b><small>Met z'n tweeën</small></button>
-        <button class="mode-tile" data-mode="voedsel"><i data-ico="pizza"></i><b>Voedselgevecht</b><small>Elke worp een punt</small></button>
         <button class="mode-tile" data-mode="broodjes"><i data-ico="star"></i><b>Broodjesbar</b><small>Wisselende broodjes</small></button>
         <button class="mode-tile" data-mode="prophunt"><i data-ico="eye"></i><b>Verstoppertje</b><small>Vermom je als stoel</small></button>
-        <button class="mode-tile" data-mode="lava"><i data-ico="fire"></i><b>Vloer is lava</b><small>Spring van plek naar plek</small></button>
+        <button class="mode-tile" data-mode="race"><i data-ico="bolt"></i><b>Race</b><small>Als eerste over de finish</small></button>
         <button class="mode-tile" data-mode="stoelen"><i data-ico="chair"></i><b>Stoelendans</b><small>Als de muziek stopt…</small></button>
         <button class="mode-tile" data-mode="trefbal"><i data-ico="target"></i><b>Trefbal</b><small>Alleen ballen</small></button>
+        <button class="mode-tile" data-mode="dienst"><i data-ico="pizza"></i><b>Kantinedienst</b><small>Serveer de klanten</small></button>
       </div>
       <p class="hint">Alleen de host kiest de modus.</p>
     </div>
@@ -532,6 +533,16 @@
     </div>
   </section>
 
+  <section id="news" class="screen page hidden">
+    <div class="card news-page">
+      <small class="page-kicker">Nieuws</small>
+      <h2 class="page-title">Wat is er nieuw?</h2>
+      <div id="news-spot" class="news-spot"></div>
+      <h3 class="news-head">Updates en berichten</h3>
+      <div id="news-list" class="news-list"></div>
+    </div>
+  </section>
+
   <section id="settings" class="screen modal hidden">
     <div class="card panel wide">
       <header class="panel-head"><i data-ico="gear"></i><span>Settings</span><button class="x" data-close><i data-ico="close"></i></button></header>
@@ -641,7 +652,7 @@
           <p id="pass-season" class="pass-season"></p>
           <button id="btn-pass-prestige" class="btn primary hidden"><i data-ico="star"></i>Battlepass opnieuw beginnen voor een ster</button>
           <div id="pass-grid"></div>
-          <p class="hint">Je krijgt XP door potjes te spelen en dagelijkse challenges te halen. Elke 100 XP is een trede.</p>
+          <p class="hint">Je krijgt XP door potjes te spelen en dagelijkse challenges te halen. Elke 200 XP is een trede.</p>
         </div>
         <aside id="pass-show"></aside>
       </div>
@@ -682,7 +693,7 @@
         <ul class="welcome-list">
           <li><i data-ico="broodje"></i><span><b>Pak het frikandelbroodje</b> en houd het zo lang mogelijk vast.</span></li>
           <li><i data-ico="bolt"></i><span><b>Dash, gooi en klap</b> om het van anderen af te pakken.</span></li>
-          <li><i data-ico="party"></i><span><b>Negen modi</b>: van de vloer is lava tot verstoppertje en stoelendans.</span></li>
+          <li><i data-ico="party"></i><span><b>Negen modi</b>: van races en kantinedienst tot verstoppertje en stoelendans.</span></li>
           <li><i data-ico="star"></i><span><b>Verdien munten en XP</b> voor skins, emotes en je schoolloopbaan.</span></li>
         </ul>
         <button id="btn-welcome-next" class="btn primary big">Verder</button>
@@ -756,6 +767,10 @@
           <button class="btn small mode" data-opt="extras" data-val="true">Alles</button>
           <button class="btn small mode" data-opt="extras" data-val="false">Klassiek</button>
         </div>
+        <div class="opt-row"><span>Hinderen (race, kantinedienst)</span>
+          <button class="btn small mode" data-opt="hinder" data-val="true">Mag</button>
+          <button class="btn small mode" data-opt="hinder" data-val="false">Alleen racen</button>
+        </div>
         <div class="opt-row"><span>Bots</span>
           <button class="btn small mode" data-opt="botLevel" data-val="0">Makkelijk</button>
           <button class="btn small mode" data-opt="botLevel" data-val="1">Normaal</button>
@@ -809,6 +824,12 @@
       <p class="shop-title">Ranked</p>
       <p id="ranked-empty" class="hint">Nog niemand heeft ranked gespeeld.</p>
       <ol id="ranked-list" class="list"></ol>
+      <p class="shop-title">Racetijden</p>
+      <div id="board-race-maps" class="chips"></div>
+      <div class="race-board">
+        <div><p class="hint">Snelste deze week</p><div id="board-race-week"></div></div>
+        <div><p class="hint">Snelste ooit</p><div id="board-race-all"></div></div>
+      </div>
     </div>
   </section>
 
@@ -832,6 +853,7 @@
   <script src="js/mapdata.js"></script>
   <script src="js/catalog.js"></script>
   <script src="js/economy.js"></script>
+  <script src="js/news.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -9,11 +9,14 @@
     acc: { hat: 'skin', face: 'geen', back: 'rugzak' },
     fx: { trail: 'geen', sound: 'standaard' },
     careerXp: 0, prestige: 0, passPrestige: 0, winRun: 0,
-    mastery: {}, ach: {}, records: {}, rivals: {}, inbox: [], origin: {},
+    mastery: {}, ach: {}, records: {}, raceBest: {}, rivals: {}, inbox: [], origin: {},
     streak: { last: '', days: 0, best: 0 },
     story: { key: '', step: 0, value: 0 },
-    rankPeak: { season: 0, index: -1 }
+    rankPeak: { season: 0, index: -1 }, econ: 0
   };
+  // Versie van de XP-regels. Bij versie 2 is levelen veel trager geworden: oude voortgang wordt omgerekend.
+  const ECON = 2;
+  const ECON_FACTOR = 0.3;
   const passCache = {};
   const passFor = (theme) => passCache[theme] || (passCache[theme] = Catalog.buildPass(theme));
   const themeOf = (season) => (season - 1) % Catalog.THEMES.length;
@@ -28,10 +31,38 @@
     p.inbox = Array.isArray(p.inbox) ? p.inbox.slice() : [];
     p.loadout = Array.isArray(p.loadout) ? p.loadout.slice(0, 3) : [1, 2, 3];
     for (const key of ['acc', 'fx', 'streak', 'story', 'rankPeak']) p[key] = Object.assign({}, BASE[key], obj(saved[key]));
-    for (const key of ['mastery', 'ach', 'records', 'rivals', 'origin']) p[key] = JSON.parse(JSON.stringify(obj(saved[key])));
+    for (const key of ['mastery', 'ach', 'records', 'raceBest', 'rivals', 'origin']) p[key] = JSON.parse(JSON.stringify(obj(saved[key])));
     for (const key of ['coins', 'xp', 'bpTier', 'careerXp', 'prestige', 'passPrestige', 'winRun']) p[key] = Math.max(0, Math.floor(Number(p[key]) || 0));
     rollSeason(p);
+    if (p.econ !== ECON) migrate(p);
+    if (p.title && !Catalog.TITLES.some((t) => t.id === p.title)) p.title = ''; // titel die niet meer bestaat (zoals Lavaloper)
     return p;
+  }
+
+  // Oude voortgang omrekenen naar de nieuwe, tragere XP-regels. Wat je in de battlepass
+  // boven je nieuwe trede had gehaald, geef je terug (munten gaan er ook weer af).
+  function migrate(p) {
+    if (p.econ < 2) {
+      p.careerXp = Math.round(p.careerXp * ECON_FACTOR);
+      p.xp = Math.round(p.xp * ECON_FACTOR);
+      const pass = passFor(themeOf(p.season));
+      const tier = Math.min(pass.length, Math.floor(p.xp / Catalog.XP_PER_TIER));
+      for (let t = tier; t < p.bpTier; t++) {
+        const reward = pass[t];
+        if (reward.coins) p.coins = Math.max(0, p.coins - reward.coins);
+        else if (p.origin[reward.id] === p.season) {
+          p.owned = p.owned.filter((id) => id !== reward.id);
+          delete p.origin[reward.id];
+        }
+      }
+      p.bpTier = Math.min(p.bpTier, tier);
+      // wat je niet meer hebt, kun je ook niet meer dragen
+      if (p.skin !== 'leerling' && !skinOpen(p, Catalog.skinById(p.skin))) p.skin = 'leerling';
+      if (p.cls !== 'allrounder' && !p.owned.includes('class:' + p.cls)) p.cls = 'allrounder';
+      if (/^e\d+$/.test(p.stamp) && !p.owned.includes('stamp:' + p.stamp)) p.stamp = 'naam';
+      p.loadout = p.loadout.map((n) => (n > 4 && !p.owned.includes('emote:' + n) ? 0 : n));
+    }
+    p.econ = ECON;
   }
 
   // Nieuw seizoen: de battlepass begint opnieuw, alles wat je had blijf je houden.
@@ -190,6 +221,14 @@
     }
     p.records[map] = mine;
   }
+  // racetijden: lager is beter
+  function addRaceTime(p, map, ms, gained) {
+    if (!map || !(ms > 0)) return;
+    const best = p.raceBest[map];
+    if (best && best <= ms) return;
+    if (best) gained.records.push({ map, key: 'race', value: ms });
+    p.raceBest[map] = ms;
+  }
 
   // rivalen: wie pakt jou het vaakst, wie pak jij, en de tussenstand in potjes tegen elkaar
   function addRivals(p, rivals) {
@@ -242,7 +281,7 @@
     const gained = newGained();
     const win = result.won ? 1 : 0;
     const coins = Math.round((10 + Math.floor(result.score / 5) + win * 20) * result.factor);
-    const xp = Math.round((25 + Math.min(120, Math.floor(result.score / 2)) + win * 40) * result.factor * (result.weekly ? 1.5 : 1));
+    const xp = Math.round((15 + Math.min(60, Math.floor(result.score / 4)) + win * 25) * result.factor * (result.weekly ? 1.5 : 1));
     giveCoins(p, coins, gained);
     if (result.extraCoins > 0) {
       giveCoins(p, result.extraCoins, gained);
@@ -260,6 +299,7 @@
     if (result.cls) addMastery(p, 'cls:' + result.cls, xp, gained);
     if (result.map) addMastery(p, 'map:' + result.map, xp, gained);
     addRecords(p, result.map, result.records, gained);
+    addRaceTime(p, result.map, result.raceTime, gained);
     addRivals(p, result.rivals);
     checkAchievements(p, stats, gained);
     return { progress: p, stats, daily, gained };
@@ -356,6 +396,6 @@
     return p;
   }
 
-  Object.assign(exports, { wallet, award, buy, gift, cosmetics, prestigePass, prestigeCareer, rankSeason, nemesisOf, skinOpen, RECORD_KEYS });
+  Object.assign(exports, { ECON, wallet, award, buy, gift, cosmetics, prestigePass, prestigeCareer, rankSeason, nemesisOf, skinOpen, RECORD_KEYS });
 })(typeof module !== 'undefined' ? module.exports : (window.Economy = {}),
   typeof module !== 'undefined' ? require('./catalog.js') : window.Catalog);

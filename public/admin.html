@@ -116,6 +116,7 @@
     <button data-tab="player" class="on">Speler beheren</button>
     <button data-tab="live">Live in het spel</button>
     <button data-tab="reports">Meldingen</button>
+    <button data-tab="news">Nieuws</button>
   </div>
 
   <!-- ===== Speler ===== -->
@@ -192,6 +193,22 @@
     <table>
       <thead><tr><th>Wanneer</th><th>Gemeld</th><th>Reden</th><th>Door</th></tr></thead>
       <tbody id="reports"></tbody>
+    </table>
+  </section>
+  <!-- ===== Nieuws ===== -->
+  <section id="tab-news" class="panel hidden">
+    <h2>Nieuwsbericht plaatsen</h2>
+    <p class="muted">Komt meteen in het tabblad Nieuws van iedere speler, met een stipje tot ze het gelezen hebben. Updates van het spel zelf staan in public/js/news.js.</p>
+    <div class="row">
+      <select id="news-tag"><option>Nieuws</option><option>Evenement</option><option>Toernooi</option><option>Belangrijk</option></select>
+      <input id="news-title" type="text" maxlength="80" placeholder="Titel" style="flex: 1">
+    </div>
+    <textarea id="news-body" maxlength="1200" placeholder="Wat wil je vertellen?"></textarea>
+    <div class="row"><button id="news-post" class="green">Plaatsen</button></div>
+    <h3 style="margin-top: 18px">Geplaatste berichten</h3>
+    <table>
+      <thead><tr><th>Wanneer</th><th>Soort</th><th>Bericht</th><th></th></tr></thead>
+      <tbody id="news-rows"></tbody>
     </table>
   </section>
   <p class="credit">Kantine Royale · gemaakt door <b>Justin van Uum</b></p>
@@ -333,7 +350,7 @@
   }));
   document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
-    ['live', 'player', 'reports'].forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+    ['live', 'player', 'reports', 'news'].forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
   }));
 
   // ---------- alle voorwerpen, met filters ----------
@@ -511,6 +528,34 @@
       });
       return tr;
     }));
+  }));
+  // ---------- nieuws ----------
+  function renderNews(posts) {
+    $('news-rows').replaceChildren(...posts.map((p) => {
+      const tr = document.createElement('tr');
+      tr.insertCell().textContent = new Date(p.created_at).toLocaleString('nl-NL');
+      tr.insertCell().textContent = p.tag;
+      tr.insertCell().append(el('b', { textContent: p.title }), el('div', { className: 'muted', textContent: p.body }));
+      tr.insertCell().append(el('button', {
+        className: 'small red', textContent: 'Weghalen', onclick: run(async () => {
+          if (!confirm(`"${p.title}" weghalen?`)) return;
+          renderNews((await call('/api/admin/news/delete', { id: p.id })).posts);
+          note('Bericht weggehaald.');
+        })
+      }));
+      return tr;
+    }));
+    if (!posts.length) $('news-rows').append(el('tr', {}, el('td', { colSpan: 4, className: 'muted', textContent: 'Nog geen berichten.' })));
+  }
+  document.querySelector('[data-tab="news"]').addEventListener('click', run(async () => {
+    renderNews((await (await fetch('/api/news')).json()).posts || []);
+  }));
+  $('news-post').addEventListener('click', run(async () => {
+    const { posts } = await call('/api/admin/news', { tag: $('news-tag').value, title: $('news-title').value, body: $('news-body').value });
+    $('news-title').value = '';
+    $('news-body').value = '';
+    renderNews(posts);
+    note('Bericht geplaatst.');
   }));
   if ($('key').value) $('check').click();
 </script>

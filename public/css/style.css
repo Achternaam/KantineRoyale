@@ -1203,6 +1203,9 @@ body.touch #buffs { bottom: 170px; }
 #vote-sub, .vote-left { margin: 0; font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; }
 .vote-left { color: #ffd34d; }
 .map-card.m-dak { background: linear-gradient(160deg, #8d9299, #3b3d44); }
+.map-card.m-rgym { background: linear-gradient(160deg, #f26a1b, #a3201c); }
+.map-card.m-rdak { background: linear-gradient(160deg, #7fc4ee, #1d2f6b); }
+.map-card.m-rtrap { background: linear-gradient(160deg, #ffd34d, #b0284e); }
 
 .opt-row { display: flex; align-items: center; gap: 6px; }
 .opt-row span { width: 62px; flex: none; font-size: 12px; font-weight: 800; color: var(--grey); }
@@ -1981,6 +1984,7 @@ body.paged .hub .topbar { animation: none; }
 .nav { flex: none; }
 @media (max-width: 1400px) { .nav { padding: 8px 9px; font-size: 12px; gap: 5px; } .nav .ico { width: 15px; height: 15px; } }
 @media (max-width: 1200px) { .nav .ico { display: none; } .top-right .streak-chip { display: none; } }
+@media (max-width: 1100px) { .nav { padding: 7px 7px; font-size: 11.5px; letter-spacing: 0.4px; } }
 @media (max-width: 1020px) { .top-nav { flex-wrap: wrap; } }
 
 /* ======================================================================
@@ -2171,3 +2175,39 @@ body.paged #lobby .top-right > :not(.lobby-back):not([data-open="locker"]):not([
   .go-right .rewards { max-height: 110px; }
   .go-card .btn { font-size: 14px; }
 }
+
+/* ---------- Nieuws ---------- */
+.news-page { max-width: 1280px !important; }
+.news-spot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 26px; }
+.spot { position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 150px; padding: 16px 18px; font: inherit; color: #fff; text-align: left;
+  background: linear-gradient(140deg, var(--c1), var(--c2)); border: 3px solid rgba(255, 255, 255, 0.2); border-radius: 18px; overflow: hidden; cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s; }
+.spot:hover { transform: translateY(-3px); border-color: #fff; }
+.spot > .ico { position: absolute; right: -10px; bottom: -14px; width: 110px; height: 110px; opacity: 0.22; }
+.spot small { font-size: 12px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; color: #ffd34d; }
+.spot b { font-size: 26px; font-weight: 900; font-style: italic; text-transform: uppercase; line-height: 1.05; }
+.spot span { margin-top: auto; font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, 0.85); }
+.news-head { margin: 0 0 12px; font-size: 22px; font-weight: 900; font-style: italic; text-transform: uppercase; color: #fff; }
+.news-list { display: flex; flex-direction: column; gap: 12px; }
+.news-item { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 16px 18px; color: #fff; background: rgba(20, 12, 60, 0.45); border-radius: 16px; }
+.news-item.fresh { box-shadow: inset 0 0 0 3px #ffd34d; }
+.news-ico { display: grid; place-items: center; width: 64px; height: 64px; background: rgba(120, 150, 255, 0.35); border-radius: 14px; }
+.news-ico .ico { width: 34px; height: 34px; color: #ffd34d; }
+.news-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: rgba(255, 255, 255, 0.7); }
+.news-tag { padding: 2px 9px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: var(--ink); background: #bfe0ff; border-radius: 6px; }
+.news-tag.t-belangrijk { background: #ff8a7a; }
+.news-tag.t-evenement, .news-tag.t-toernooi { background: #ffd34d; }
+.news-new { padding: 2px 9px; font-size: 11px; font-weight: 900; text-transform: uppercase; color: var(--ink); background: #7fe39a; border-radius: 6px; }
+.news-item h4 { margin: 6px 0 4px; font-size: 22px; font-weight: 900; font-style: italic; text-transform: uppercase; }
+.news-item p { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; color: rgba(255, 255, 255, 0.88); white-space: pre-line; }
+.news-item ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; font-weight: 600; line-height: 1.5; color: rgba(255, 255, 255, 0.85); }
+@media (max-width: 1000px) { .news-spot { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .news-item { grid-template-columns: 1fr; }
+  .news-ico { display: none; }
+}
+
+/* racetijden in de ranglijst */
+.race-board { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 700px) { .race-board { grid-template-columns: 1fr; } }
+.chip.race-chip { border-style: dashed; }

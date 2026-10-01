@@ -85,15 +85,9 @@
     const deco = (x, z, w, d, h, color, y, glass) => box(x, z, w, d, h, color, { y, solid: false, glass });
 
     const config = build({ box, cyl, table, prop, tree, plant, deco, panels, solids, DECO });
-    // grote vlakke vlakken zijn "vloer": die worden lava in De vloer is lava
-    for (const s of solids) {
-      if (s.r !== undefined) continue;
-      const w = s.maxX - s.minX, d = s.maxZ - s.minZ;
-      if (w >= 3 && d >= 3 && w * d >= 40) s.floor = true;
-    }
     return Object.assign({
       id, name, icon, boxes, cyls, props, plants, trees, panels, solids,
-      GROUND: 0, CEILING: null, ceilings: [], lamps: [], LIFTS: [], OUTSIDE_Z: null, VEHICLES: []
+      GROUND: 0, CEILING: null, ceilings: [], lamps: [], LIFTS: [], OUTSIDE_Z: null, VEHICLES: [], VENDING: [], BASES: [], ZONE: { x: 0, z: 0, r: 8 }, RACE: null, SERVE: null
     }, config);
   }
 
@@ -561,26 +555,6 @@
     return best;
   }
 
-  // Staat iemand met zijn voeten op hoogte y op de vloer (en dus in de lava)?
-  // Tafels, trappen, banken en podia zijn geen vloer. Waar helemaal niets ligt, is het ook lava.
-  function onFloor(x, z, y) {
-    let best = null, top = -50;
-    for (let l = 0; l < 2; l++) {
-      const list = l ? exports.dynamic : cur.solids;
-      for (let i = 0; i < list.length; i++) {
-        const c = list[i];
-        if (c.y1 > y + 0.06 || c.y1 <= top) continue;
-        if (c.r !== undefined) {
-          const dx = x - c.x, dz = z - c.z;
-          if (dx * dx + dz * dz > c.r * c.r) continue;
-        } else if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
-        top = c.y1;
-        best = c;
-      }
-    }
-    return !best || (!!best.floor && y - top < 0.3);
-  }
-
   // Duwt een cirkel (p.x, p.z, straal r) met voeten op hoogte y en lengte h uit alle obstakels.
   // Obstakels die lager zijn dan `step` tellen niet mee: daar stap je op. Geeft true bij een botsing.
   function resolve(p, r, y, h, step) {
@@ -689,20 +663,419 @@
     };
   }
 
+  // ======================= Racebanen =======================
+  // Een baan heeft checkpoints (dozen waar je doorheen moet, op volgorde), trampolines (pads),
+  // bewegende blokken (movers, zelfde stand op server en client want ze volgen de klok van het potje),
+  // een route voor de bots en een hoogte (KILL_Y) waaronder je terug moet naar je laatste checkpoint.
+  // Springen: 8 m/s omhoog, zwaartekracht 24 → 1,3 m hoog en zo'n 7 m ver op volle snelheid.
+  function raceKit(box) {
+    const pads = [], movers = [];
+    // trampoline: een blauw blok van 0,3 m hoog, wie erop stapt wordt gelanceerd
+    const pad = (x, z, y, w, d, power) => {
+      box(x, z, w, d, 0.3, 0x2f6fde, { y });
+      pads.push({ x, z, w, d, minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, top: y + 0.3, power });
+    };
+    // checkpoint: midden, breedte (x), diepte (z) en de hoogte van de vloer waar hij op staat
+    const gate = (x, z, w, d, y) => ({ x, z, w, d, y, minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, y0: y - 1.2, y1: y + 6 });
+    return { pads, movers, pad, gate };
+  }
+
+  // ---------- Gymparcours: drie rondjes door een grote gymzaal ----------
+  // Horden, een ballenbak met matten, trampolines over een muur en schuivende turnblokken.
+  function rgym({ box, deco }) {
+    const { pads, movers, pad, gate } = raceKit(box);
+    const BALLS = [C.red, C.yellow, C.blue, C.green, C.purple];
+    // vloer, met een gat voor de ballenbak in het oosten
+    box(-5, 0, 38, 32, 0.4, C.gymFloor, { y: -0.4 });
+    box(19, -10.25, 10, 11.5, 0.4, C.gymFloor, { y: -0.4 });
+    box(19, 10.25, 10, 11.5, 0.4, C.gymFloor, { y: -0.4 });
+    box(19, 0, 10, 9, 0.4, C.mat, { y: -3.4 });
+    for (let i = 0; i < 48; i++) deco(14.7 + (i % 8) * 1.2, -4 + Math.floor(i / 8) * 1.55, 0.55, 0.55, 0.55, BALLS[i % 5], -3 + ((i * 7) % 3) * 0.15);
+    // muren en een oranje band
+    box(-24.25, 0, 0.5, 33, 8, C.wall);
+    box(24.25, 0, 0.5, 33, 8, C.wall);
+    box(0, -16.25, 49, 0.5, 8, C.wall);
+    box(0, 16.25, 49, 0.5, 8, C.wall);
+    deco(0, -15.97, 48, 0.06, 1.3, C.orange, 0);
+    deco(0, 15.97, 48, 0.06, 1.3, C.orange, 0);
+    deco(-23.97, 0, 0.06, 32, 1.3, C.orange, 0);
+    deco(23.97, 0, 0.06, 32, 1.3, C.orange, 0);
+    // het middenblok: tribune en berging, te hoog om overheen te klimmen
+    box(0, 0, 28, 10, 4.6, C.wood);
+    deco(0, -5.03, 27, 0.06, 1.2, C.mat, 1.4);
+    deco(0, 5.03, 27, 0.06, 1.2, C.mat, 1.4);
+    for (let x = -12; x <= 12; x += 3) deco(x, 0, 1.6, 8, 0.6, C.purple, 4.6);
+    // zuid: drie horden
+    [-6, 0, 6].forEach((x) => {
+      box(x, 10.5, 0.3, 11, 0.8, C.red);
+      [5.4, 15.6].forEach((z) => deco(x, z, 0.5, 0.5, 1, C.white, 0));
+    });
+    // oost: de ballenbak, met matten en een evenwichtsbalk
+    box(19, 0, 0.5, 9, 0.3, C.wood, { y: -0.3 });
+    [[16.5, C.mat], [21.5, C.red]].forEach(([x, color]) => box(x, -0.25, 3, 3.5, 0.4, color, { y: -0.4 }));
+    // noord: bokken om omheen te slalommen, trampolines over de muur, of de trap van springkasten
+    [[10.5, -13.5], [10.5, -7.5], [8, -10.5]].forEach(([x, z]) => {
+      box(x, z, 0.7, 1.4, 1.1, C.wood);
+      deco(x, z, 0.76, 1.46, 0.08, C.counter, 1.1);
+    });
+    box(0, -10.5, 2, 11, 3.2, C.mat);
+    deco(0, -10.5, 2.06, 11.06, 0.1, C.yellow, 3.2);
+    box(1.6, -15, 1.2, 1.6, 3.2, C.wood);
+    box(2.6, -15, 0.8, 1.6, 2.4, C.wood);
+    box(3.4, -15, 0.8, 1.6, 1.6, C.wood);
+    box(4.2, -15, 0.8, 1.6, 0.8, C.wood);
+    pad(5, -12.5, 0, 2, 2, 14);
+    pad(5, -8.5, 0, 2, 2, 14);
+    // west: schuivende turnblokken
+    movers.push({ x: -19, z: -6, y: 0, w: 2.2, d: 1.6, h: 2.2, axis: 'x', amp: 3, period: 2.6, phase: 0, color: C.mat });
+    movers.push({ x: -19, z: -1, y: 0, w: 2.2, d: 1.6, h: 2.2, axis: 'x', amp: 3, period: 3.4, phase: 0.5, color: C.red });
+    // automaten en basketbalborden
+    box(-10, -15.6, 1.2, 0.8, 2, C.red);
+    box(12, 15.6, 1.2, 0.8, 2, C.blue);
+    [-1, 1].forEach((s) => {
+      deco(s * 23.8, 8, 0.1, 1.8, 1.1, C.white, 2.9);
+      deco(s * 23.4, 8, 0.6, 0.6, 0.05, C.orange, 3.05);
+    });
+    for (let z = -12; z <= -4; z += 1.2) deco(-23.92, z, 0.1, 0.9, 3, C.wood, 0.2);
+    return {
+      CEILING: 9,
+      ceilings: [{ x: 0, z: 0, w: 48, d: 32, y: 9 }],
+      FOOTPRINT: { minX: -28, maxX: 28, minZ: -20, maxZ: 20 },
+      CENTER: { x: 0, z: 0 },
+      VIEW: 44,
+      VENDING: [{ x: -10, y: 0, z: -14.6 }, { x: 12, y: 0, z: 14.6 }],
+      BOUNDS: { minX: -23.6, maxX: 23.6, minZ: -15.6, maxZ: 15.6, minY: -3, maxY: 9 },
+      BROODJE_SPAWN: { x: 10, y: 0, z: 10.5 },
+      SPAWNS: at([[-16, 6.5], [-16, 9], [-16, 11.5], [-16, 14], [-18.5, 6.5], [-18.5, 9], [-18.5, 11.5], [-18.5, 14]], 0),
+      ITEM_SPAWNS: at([[-3, 7.5], [3, 13.5], [19, -13], [14, -14.5], [-10, -7], [-21, -12], [-21, 10], [16, 13]], 0),
+      RACE: {
+        laps: 3, killY: -1.5, pads, movers,
+        gates: [gate(10, 10.5, 3, 11, 0), gate(19, -7, 10, 3, 0), gate(-6, -10.5, 3, 11, 0), gate(-19, 4, 10, 3, 0), gate(-12, 10.5, 3, 11, 0)],
+        // één rondje; de bots springen vanzelf over gaten, de 1 betekent: hier springen (horde)
+        route: [[-9, 0, 10.5], [-7, 0, 10.5, 1], [-1, 0, 10.5, 1], [5, 0, 10.5, 1], [12, 0, 10.5], [16.5, 0, 7], [16.5, 0, -0.5],
+          [16.5, 0, -6.5], [19, 0, -10.5], [12.5, 0, -10.5], [9.4, 0, -10.6], [8.6, 0, -12.4], [6.8, 0, -12.5], [5, 0.3, -12.5, 2], [-3, 0, -12.5],
+          [-8, 0, -10.5], [-19, 0, -10.5], [-19, 0, -5], [-19, 0, 4], [-15, 0, 9], [-12, 0, 10.5]]
+      }
+    };
+  }
+
+  // ---------- Dakrace: van dak naar dak, twaalf meter boven de straat ----------
+  function rdak({ box, cyl, deco }) {
+    const { pads, movers, pad, gate } = raceKit(box);
+    const GRAVEL = 0x7d8087, BRICK = 0xa5512f, SOLAR = 0x1d2f6b;
+    const STREET = -12;
+    const tints = [C.orange, 0xd9a78a, 0xb9c7d6, 0xe8dcc8, 0xc98d5e, 0xa7b8a0, 0xd8d2e8];
+    let n = 0;
+    // een gebouw met plat dak (helemaal massief), ramen aan de buitenkant
+    const roof = (x0, x1, z0, z1, top) => {
+      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, w = x1 - x0, d = z1 - z0;
+      box(cx, cz, w, d, top - STREET - 0.4, tints[n++ % tints.length], { y: STREET });
+      box(cx, cz, w, d, 0.4, GRAVEL, { y: top - 0.4 });
+      for (let y = STREET + 2; y < top - 2; y += 3.2) {
+        deco(cx, cz, w + 0.08, d - 1.5, 1.3, C.glass, y, true);
+        deco(cx, cz, w - 1.5, d + 0.08, 1.3, C.glass, y, true);
+      }
+    };
+    // een lage rand langs een dak, zodat je niet zomaar opzij valt
+    const edge = (x, z, w, d, top) => box(x, z, w, d, 1.1, C.steel, { y: top });
+    // A: start
+    roof(-8, 8, -72, -50, 0);
+    edge(0, -71.85, 16, 0.3, 0);
+    edge(-7.85, -61, 0.3, 22, 0);
+    edge(7.85, -61, 0.3, 22, 0);
+    deco(0, -51, 14, 0.6, 0.02, C.white, 0);
+    // B: airco's en zonnepanelen
+    roof(-6, 6, -47, -30, 0);
+    edge(-5.85, -38.5, 0.3, 17, 0);
+    edge(5.85, -38.5, 0.3, 17, 0);
+    box(0, -44.5, 8, 0.8, 0.5, SOLAR);
+    [[-3, -42], [3.2, -38], [-1, -34.5]].forEach(([x, z]) => {
+      box(x, z, 2.4, 1.6, 1.1, C.steel);
+      deco(x, z, 1.4, 1.4, 0.06, C.counterTop, 1.1);
+    });
+    // steigerplank of schoorstenen naar het volgende dak
+    box(0, -24, 1.2, 12, 0.3, C.wood, { y: -0.3 });
+    [-27, -23.5, -20].forEach((z) => cyl(4, z, 0.8, 12, BRICK, STREET));
+    // C: lager dak met een dakkapel
+    roof(-10, 10, -18, -2, -2);
+    edge(-9.85, -10, 0.3, 16, -2);
+    edge(0, -2.15, 20, 0.3, -2);
+    box(-2, -10, 6, 2, 1.2, BRICK, { y: -2 });
+    // D: trampolines naar het hoge dak
+    roof(13, 24, -10, 2, -1);
+    edge(18.5, -9.85, 11, 0.3, -1);
+    edge(18.5, 1.85, 11, 0.3, -1);
+    pad(17.5, -7, -1, 2, 2, 16);
+    pad(17.5, -2, -1, 2, 2, 16);
+    // E: groot dak met lichtkoepels
+    roof(24, 38, -10, 22, 3);
+    edge(37.85, 6, 0.3, 32, 3);
+    edge(31, -9.85, 14, 0.3, 3);
+    edge(24.15, 12, 0.3, 20, 3);
+    [[31, -3], [31, 5], [34, 14]].forEach(([x, z]) => box(x, z, 3, 3, 0.6, C.glass, { y: 3, glass: true }));
+    [[25.8, 8], [35.5, 0]].forEach(([x, z]) => box(x, z, 2.4, 1.6, 1.2, C.steel, { y: 3 }));
+    cyl(36.5, 20.5, 0.25, 7, C.metal, 3);
+    deco(36.5, 20.5, 1.6, 0.1, 0.1, C.red, 9.8);
+    // F: een stapel kratten
+    roof(22, 38, 25, 40, 1);
+    edge(37.85, 32.5, 0.3, 15, 1);
+    edge(30, 39.85, 16, 0.3, 1);
+    [[32, 29], [29, 35], [25, 28]].forEach(([x, z]) => box(x, z, 1.4, 1.4, 0.9, C.wood, { y: 1 }));
+    // G: buizen om overheen te springen
+    roof(0, 19, 28, 38, 1);
+    edge(9.5, 37.85, 19, 0.3, 1);
+    edge(9.5, 28.15, 19, 0.3, 1);
+    [13, 7.5].forEach((x) => box(x, 33, 0.4, 9.4, 0.7, C.steel, { y: 1 }));
+    // H: een hoger dak, daarna naar het zuiden
+    roof(-14, -3, 26, 40, 1.8);
+    edge(-13.85, 33, 0.3, 14, 1.8);
+    edge(-8.5, 39.85, 11, 0.3, 1.8);
+    edge(-3.15, 38, 0.3, 4, 1.8);
+    // I: schuivende ventilatorkasten, trampolines aan het eind
+    roof(-14, -3, 4, 23, 0.5);
+    edge(-13.85, 13.5, 0.3, 19, 0.5);
+    edge(-3.15, 13.5, 0.3, 19, 0.5);
+    movers.push({ x: -8.5, z: 17, y: 0.5, w: 2.4, d: 1.6, h: 1.8, axis: 'x', amp: 3.2, period: 2.4, phase: 0, color: C.steel });
+    movers.push({ x: -8.5, z: 11.5, y: 0.5, w: 2.4, d: 1.6, h: 1.8, axis: 'x', amp: 3.2, period: 3.1, phase: 0.4, color: C.steel });
+    pad(-11, 6, 0.5, 2, 2, 14);
+    pad(-6, 6, 0.5, 2, 2, 14);
+    // J: de finish
+    roof(-16, -2, -20, 1, 2);
+    edge(-15.85, -9.5, 0.3, 21, 2);
+    edge(-2.15, -9.5, 0.3, 21, 2);
+    edge(-9, -19.85, 14, 0.3, 2);
+    deco(-9, -14, 13, 0.6, 0.02, C.white, 2);
+    box(36.6, 4, 0.8, 1.2, 2, C.red, { y: 3 });
+    return {
+      GROUND: STREET,
+      FOOTPRINT: { minX: -20, maxX: 44, minZ: -78, maxZ: 46 },
+      CENTER: { x: 12, z: -16 },
+      VIEW: 70,
+      VENDING: [{ x: 35.6, y: 3, z: 4 }],
+      BOUNDS: { minX: -16, maxX: 38, minZ: -72, maxZ: 40, minY: STREET, maxY: 14 },
+      BROODJE_SPAWN: { x: 0, y: 0, z: -40 },
+      SPAWNS: at([[-6, -66], [-2, -66], [2, -66], [6, -66], [-6, -62], [-2, -62], [2, -62], [6, -62]], 0),
+      ITEM_SPAWNS: at([[0, -57], [-4, -36], [4, -13, -2], [15, -4, -1], [30, 12, 3], [30, 36, 1], [11, 31, 1], [-8, 36, 1.8], [-5, 14, 0.5], [-12, -6, 2]], 0),
+      RACE: {
+        laps: 1, killY: -3.5, pads, movers,
+        gates: [gate(0, -33, 12, 3, 0), gate(8, -10, 3, 16, -2), gate(31, 11.5, 14, 3, 3), gate(17, 33, 3, 9.4, 1), gate(-8.5, 20, 11, 3, 0.5), gate(-9, -14, 13.4, 3, 2)],
+        route: [[0, 0, -58], [0, 0, -46.5], [5, 0, -45], [5, 0, -33], [1.5, 0, -31], [0, 0, -30.4], [0, 0, -18.6], [0, -2, -16], [8, -2, -7], [14.5, -1, -6],
+          [17.5, -0.7, -7, 2], [28, 3, -6], [28, 3, 0], [28, 3, 20], [28, 1, 27], [23, 1, 33], [17, 1, 33], [14.2, 1, 33, 1], [8.7, 1, 33, 1], [1.5, 1, 33],
+          [-6, 1.8, 33], [-8.5, 1.8, 30], [-8.5, 0.5, 21], [-8.5, 0.5, 9], [-11, 0.8, 6, 2], [-9, 2, -2], [-9, 2, -14]]
+      }
+    };
+  }
+
+  // ---------- Trappenhuis: van de kelder naar het dak ----------
+  // Vier keer rond een open vide. Wie in het gat valt, begint bij zijn laatste checkpoint.
+  // Branddeuren schuiven heen en weer, en twee trampolines zijn een gevaarlijke kortere weg over de vide.
+  function rtrap({ box, cyl, deco }) {
+    const { pads, movers, pad, gate } = raceKit(box);
+    const STEP_A = 0x8d9299, STEP_B = 0xa9adb3, RAIL = C.glass;
+    const W = 9, V = 3; // buitenmuur en rand van de vide
+    const REVS = 6;
+    // kelder: vloer rond de vide, de vide zelf is een put
+    box(0, 6, 18, 6, 0.4, C.floorLow, { y: -0.4 });
+    box(0, -6, 18, 6, 0.4, C.floorLow, { y: -0.4 });
+    box(-6, 0, 6, 6, 0.4, C.floorLow, { y: -0.4 });
+    box(6, 0, 6, 6, 0.4, C.floorLow, { y: -0.4 });
+    box(0, 0, 6, 6, 0.4, C.counterTop, { y: -6.4 });
+    // buitenmuren, met kluisjes op elke verdieping
+    const top = REVS * 8 + 1.2;
+    box(-W - 0.25, 0, 0.5, 2 * W + 1, top + 6, C.white, { y: -6 });
+    box(W + 0.25, 0, 0.5, 2 * W + 1, top + 6, C.white, { y: -6 });
+    box(0, -W - 0.25, 2 * W, 0.5, top + 6, C.white, { y: -6 });
+    box(0, W + 0.25, 2 * W, 0.5, top + 6, C.white, { y: -6 });
+    for (let lvl = 0; lvl <= REVS * 8; lvl += 2) {
+      const side = (lvl / 2) % 4;
+      const colors = [C.blue, C.orange, C.steel];
+      for (let i = 0; i < 6; i++) {
+        const c = colors[(i + lvl) % 3];
+        if (side === 0) deco(-2.5 + i, W - 0.05, 0.9, 0.1, 1.7, c, lvl + 0.1);
+        if (side === 1) deco(W - 0.05, 2.5 - i, 0.1, 0.9, 1.7, c, lvl + 0.1);
+        if (side === 2) deco(2.5 - i, -W + 0.05, 0.9, 0.1, 1.7, c, lvl + 0.1);
+        if (side === 3) deco(-W + 0.05, -2.5 + i, 0.1, 0.9, 1.7, c, lvl + 0.1);
+      }
+      deco(side === 1 ? W - 0.06 : side === 3 ? -W + 0.06 : 0, side === 0 ? W - 0.06 : side === 2 ? -W + 0.06 : 0,
+        side % 2 ? 0.05 : 5, side % 2 ? 5 : 0.05, 0.25, [C.green, C.yellow, C.red, C.purple][side], lvl + 2.6);
+    }
+    // een trap van acht treden van 0,25 m, van (x0, z0) naar (x1, z1); de reling staat aan de kant van de vide
+    const flight = (L, dir, rails) => {
+      for (let i = 0; i < 8; i++) {
+        const t = L + 0.25 * (i + 1);
+        const c = i % 2 ? STEP_A : STEP_B;
+        const o = -V + 0.375 + i * 0.75;
+        if (dir === 0) box(o, 6, 0.75, 6, 0.3, c, { y: t - 0.3 });           // zuid, naar +x
+        if (dir === 1) box(6, -o, 6, 0.75, 0.3, c, { y: t - 0.3 });          // oost, naar -z
+        if (dir === 2) box(-o, -6, 0.75, 6, 0.3, c, { y: t - 0.3 });         // noord, naar -x
+        if (dir === 3) box(-6, o, 6, 0.75, 0.3, c, { y: t - 0.3 });          // west, naar +z
+        if (!rails(i)) continue;
+        if (dir === 0) box(o, V + 0.06, 0.75, 0.12, 1, RAIL, { y: t, glass: true });
+        if (dir === 1) box(V + 0.06, -o, 0.12, 0.75, 1, RAIL, { y: t, glass: true });
+        if (dir === 2) box(-o, -V - 0.06, 0.75, 0.12, 1, RAIL, { y: t, glass: true });
+        if (dir === 3) box(-V - 0.06, o, 0.12, 0.75, 1, RAIL, { y: t, glass: true });
+      }
+    };
+    const landing = (x, z, y) => box(x, z, 6, 6, 0.3, C.floor, { y: y - 0.3 });
+    const gates = [];
+    const route = [];
+    for (let r = 0; r < REVS; r++) {
+      const L = r * 8;
+      const shortcut = r === 1 || r === 3;
+      // bij een kortere weg staat er bij de laatste trede van de oosttrap en de eerste van de noordtrap geen reling
+      flight(L, 0, () => true);
+      landing(6, 6, L + 2);
+      flight(L + 2, 1, (i) => !(shortcut && i === 7));
+      landing(6, -6, L + 4);
+      flight(L + 4, 2, (i) => !(shortcut && i === 0));
+      landing(-6, -6, L + 6);
+      flight(L + 6, 3, () => true);
+      landing(-6, 6, L + 8);
+      if (shortcut) pad(4.4, -4.4, L + 4, 1.6, 1.6, 16);
+      // branddeur tussen de noordwesthoek en de westtrap
+      movers.push({ x: -6, z: -3.3, y: L + 6, w: 2.8, d: 0.3, h: 2.4, axis: 'x', amp: 1.6, period: 2.2 + r * 0.35, phase: r * 0.3, color: C.red });
+      // emmers met een dweil
+      cyl(7.6, 7.6, 0.35, 0.6, C.yellow, L + 2);
+      cyl(-7.4, -7.6, 0.35, 0.6, C.blue, L + 6);
+      gates.push(gate(6, -6, 6, 6, L + 4), gate(-6, 6, 6, 6, L + 8));
+      route.push([-6, L, 6], [-3.6, L, 6], [3.6, L + 2, 6], [6, L + 2, 4.2], [6, L + 2, 3.6], [6, L + 4, -3.6], [6, L + 4, -5.2], [3.6, L + 4, -6],
+        [-3.6, L + 6, -6], [-6, L + 6, -5], [-6, L + 6, -3.6], [-6, L + 8, 3.6]);
+    }
+    route.push([-6, REVS * 8, 6]);
+    // het dak: een rand en een deur naar buiten
+    deco(0, 0, 2 * W + 1, 2 * W + 1, 0.2, C.orange, top + 6 - 6.2);
+    for (let lvl = 3.5; lvl < REVS * 8; lvl += 4) [[-W + 0.06, 0], [W - 0.06, 0]].forEach(([x, z]) => deco(x, z, 0.06, 2.4, 0.5, 0xfff4c2, lvl));
+    return {
+      FOOTPRINT: { minX: -13, maxX: 13, minZ: -13, maxZ: 13 },
+      CENTER: { x: 0, z: 0 },
+      VIEW: 12,
+      VENDING: [],
+      BOUNDS: { minX: -8.6, maxX: 8.6, minZ: -8.6, maxZ: 8.6, minY: -6, maxY: REVS * 8 + 6 },
+      BROODJE_SPAWN: { x: 6, y: 2, z: 6 },
+      SPAWNS: at([[-8.2, 4.5], [-6.6, 4.5], [-5, 4.5], [-3.6, 4.5], [-8.2, 7.5], [-6.6, 7.5], [-5, 7.5], [-3.6, 7.5]], 0),
+      ITEM_SPAWNS: at([[6, 6, 2], [6, -6, 4], [-6, -6, 6], [6, 6, 18], [-6, -6, 22], [6, -6, 28], [6, 6, 34], [-6, -6, 46]], 0),
+      RACE: { laps: 1, killY: -2, pads, movers, gates, route }
+    };
+  }
+
+  // ======================= Kantinedienst: de schoolkeuken =======================
+  // Achterin de keuken met vijf posten (friet, pizza, frikandelbroodje, melk, cola), voorin acht tafels
+  // waar klanten bestellen. Twee openingen in de uitgiftebalie, en een prullenbak aan elke kant.
+  function keuken({ box, cyl, plant, deco }) {
+    const TILE = 0xd9d5cb, STEEL = C.steel;
+    box(0, 0, 36, 32, 0.4, C.floor, { y: -0.4 });
+    deco(0, -11, 35.6, 9.6, 0.02, TILE, 0);
+    for (let x = -17; x <= 17; x += 2) deco(x, -11, 0.05, 9.6, 0.025, 0xbfb9ab, 0);
+    box(-18.25, 0, 0.5, 33, 6, C.wall);
+    box(18.25, 0, 0.5, 33, 6, C.wall);
+    box(0, -16.25, 37, 0.5, 6, C.wall);
+    box(0, 16.25, 37, 0.5, 6, C.wall);
+    deco(0, 15.97, 36, 0.06, 1.2, C.orange, 0);
+    deco(-17.97, 4, 0.06, 24, 1.2, C.orange, 0);
+    deco(17.97, 4, 0.06, 24, 1.2, C.orange, 0);
+    // de vijf posten tegen de achterwand
+    const stations = [[5, -12, 'Friet'], [1, -6, 'Pizza'], [8, 0, 'Frikandelbroodje'], [4, 6, 'Melk'], [6, 12, 'Cola']]
+      .map(([kind, x, name]) => ({ kind, x, y: 0, z: -13.3, name }));
+    stations.forEach((s) => {
+      box(s.x, -14.9, 3.2, 1.6, 1, C.counter);
+      deco(s.x, -14.9, 3.3, 1.7, 0.08, C.counterTop, 1);
+    });
+    box(-12, -15.5, 2.4, 0.6, 0.5, STEEL, { y: 1.08 });                // frituur
+    deco(-12, -15.2, 2, 0.4, 0.06, C.yellow, 1.55);
+    box(-6, -15.5, 2.4, 0.8, 1.6, 0x26262b, { y: 1.08 });              // pizzaoven
+    deco(-6, -15.08, 1.6, 0.05, 0.5, C.orange, 1.5);
+    deco(0, -14.9, 2.6, 1.2, 0.6, C.glass, 1.08, true);                 // vitrine met broodjes
+    for (let i = 0; i < 4; i++) deco(-0.9 + i * 0.6, -14.9, 0.4, 0.18, 0.18, 0x8a4b26, 1.12);
+    box(6, -15.6, 2.4, 0.8, 2.6, 0xffffff, { y: 0 });                   // koelkast (staat achter de balie)
+    deco(6, -15.18, 0.06, 0.05, 1.2, STEEL, 1.2);
+    box(12, -15.6, 2, 0.8, 2.6, C.red, { y: 0 });                       // colakoeler
+    deco(12, -15.18, 1.4, 0.05, 1.6, 0x26262b, 0.6);
+    // menubord boven de balie
+    deco(0, -16.0, 20, 0.08, 1.2, 0x26262b, 3.2);
+    [-12, -6, 0, 6, 12].forEach((x, i) => deco(x, -15.95, 3, 0.05, 0.8, [C.yellow, C.orange, 0x8a4b26, C.blue, C.red][i], 3.4));
+    // kookeiland in het midden van de keuken
+    box(0, -10, 10, 1.4, 1, STEEL);
+    deco(0, -10, 10.1, 1.5, 0.06, C.counterTop, 1);
+    // uitgiftebalie met twee openingen
+    [[-15, 6], [0, 8], [15, 6]].forEach(([x, w]) => {
+      box(x, -6, w, 0.8, 1.1, C.orange);
+      deco(x, -6, w + 0.1, 0.9, 0.08, C.counterTop, 1.1);
+    });
+    // prullenbakken voor verkeerde bestellingen
+    const bins = [{ x: -16.6, z: -8.5 }, { x: 16.6, z: -8.5 }];
+    bins.forEach((b) => {
+      cyl(b.x, b.z, 0.45, 0.9, STEEL);
+      deco(b.x, b.z, 0.95, 0.95, 0.06, 0x3aa655, 0.9);
+    });
+    // acht tafels met banken
+    const tables = [];
+    [2, 10].forEach((z) => [-12, -4, 4, 12].forEach((x) => {
+      box(x, z, 2.6, 1.4, 0.8, C.white);
+      deco(x, z, 2.7, 1.5, 0.06, C.counterTop, 0.8);
+      box(x, z - 1.35, 2.6, 0.5, 0.45, C.wood);
+      box(x, z + 1.35, 2.6, 0.5, 0.45, C.wood);
+      tables.push({ x, y: 0, z, n: tables.length + 1 });
+    }));
+    [[-17, 15], [17, 15], [-17, -4.5], [17, -4.5]].forEach(([x, z]) => plant(x, z));
+    // posters en klokjes
+    [[-9, C.purple], [0, C.green], [9, C.yellow]].forEach(([x, c]) => deco(x, 15.94, 3, 0.06, 1.8, c, 1.8));
+    return {
+      CEILING: 6,
+      ceilings: [{ x: 0, z: 0, w: 36, d: 32, y: 6 }],
+      FOOTPRINT: { minX: -22, maxX: 22, minZ: -20, maxZ: 20 },
+      CENTER: { x: 0, z: 0 },
+      VIEW: 36,
+      BOUNDS: { minX: -17.6, maxX: 17.6, minZ: -15.6, maxZ: 15.6, minY: 0, maxY: 6 },
+      BROODJE_SPAWN: { x: 0, y: 0, z: -10 },
+      SPAWNS: at([[-14, 14], [-10, 14], [-6, 14], [-2, 14], [2, 14], [6, 14], [10, 14], [14, 14]], 0),
+      ITEM_SPAWNS: [],
+      SERVE: { stations, tables, bins }
+    };
+  }
+
   const maps = {};
   [
     makeMap('kantine', 'Kantine', 'pizza', kantine),
     makeMap('gym', 'Gymzaal', 'trophy', gym),
     makeMap('aula', 'Aula', 'note', aula),
     makeMap('plein', 'Schoolplein', 'flag', plein),
-    makeMap('dak', 'Het dak', 'up', dak)
+    makeMap('dak', 'Het dak', 'up', dak),
+    makeMap('rgym', 'Gymparcours', 'trophy', rgym),
+    makeMap('rdak', 'Dakrace', 'up', rdak),
+    makeMap('rtrap', 'Trappenhuis', 'flag', rtrap),
+    makeMap('keuken', 'Schoolkeuken', 'pizza', keuken)
   ].forEach((m) => { maps[m.id] = m; });
   let cur = maps.kantine;
 
   exports.COLORS = C;
   exports.STEP = STEP;
   exports.maps = maps;
-  exports.MAP_IDS = Object.keys(maps);
+  // gewone maps (voor alle modi met het broodje en de spullen), racebanen en de keuken van Kantinedienst
+  exports.ALL_IDS = Object.keys(maps);
+  exports.RACE_IDS = exports.ALL_IDS.filter((id) => maps[id].RACE);
+  exports.SERVE_IDS = exports.ALL_IDS.filter((id) => maps[id].SERVE);
+  exports.MAP_IDS = exports.ALL_IDS.filter((id) => !maps[id].RACE && !maps[id].SERVE);
+  // stand van een bewegend blok op tijd t (seconden sinds de start van het potje)
+  exports.moverAt = (m, t) => {
+    const off = Math.sin(((t / m.period) + m.phase) * Math.PI * 2) * m.amp;
+    const x = m.axis === 'x' ? m.x + off : m.x, z = m.axis === 'z' ? m.z + off : m.z;
+    return { x, z, minX: x - m.w / 2, maxX: x + m.w / 2, minZ: z - m.d / 2, maxZ: z + m.d / 2, y0: m.y, y1: m.y + m.h };
+  };
+  // de trampoline onder iemand (voeten op hoogte y), of niets
+  exports.padAt = (x, z, y) => {
+    const R = cur.RACE;
+    if (!R) return null;
+    return R.pads.find((p) => x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && Math.abs(y - p.top) < 0.12) || null;
+  };
+  // alle checkpoints van een race achter elkaar (bij drie rondes drie keer de hele rij)
+  exports.raceGates = (id) => {
+    const R = maps[id] && maps[id].RACE;
+    if (!R) return [];
+    const out = [];
+    for (let lap = 0; lap < R.laps; lap++) R.gates.forEach((g, i) => out.push(Object.assign({ lap, index: i }, g)));
+    return out;
+  };
+  exports.inGate = (g, x, y, z) => x >= g.minX && x <= g.maxX && z >= g.minZ && z <= g.maxZ && y >= g.y0 && y <= g.y1;
   // Extra obstakels die tijdens het spel veranderen (rechtopstaande tafels, hele glasplaten). Zelfde vorm als solids.
   exports.dynamic = [];
   exports.PROP = {
@@ -713,9 +1086,8 @@
   };
   exports.panelSolid = (p) => ({ minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2, y0: p.y, y1: p.y + p.h });
   exports.groundAt = groundAt;
-  exports.onFloor = onFloor;
   // welke maps geschikt zijn voor een modus: stoelendans en verstoppertje hebben genoeg meubels nodig
-  exports.mapsFor = (mode) => Object.keys(maps).filter((id) => {
+  exports.mapsFor = (mode) => (mode === 'race' ? exports.RACE_IDS : mode === 'dienst' ? exports.SERVE_IDS : exports.MAP_IDS).filter((id) => {
     const props = maps[id].props;
     if (mode === 'stoelen') return props.filter((p) => p.type === 'chair').length >= 10;
     if (mode === 'prophunt') return props.length >= 20;

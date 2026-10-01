@@ -1,4 +1,4 @@
--- Kantine Royale: tabellen voor accounts, ranglijst en meldingen.
+-- Kantine Royale: tabellen voor accounts, ranglijst, meldingen en nieuws.
 -- Plak dit in Supabase onder SQL Editor en klik op Run. Je kunt het veilig vaker draaien:
 -- bestaande gegevens blijven staan en ontbrekende kolommen worden toegevoegd.
 -- Alleen de gameserver (met de geheime sleutel) kan erbij: RLS staat aan zonder regels voor anderen.
@@ -37,11 +37,22 @@ create table if not exists public.reports (
   created_at timestamptz not null default now()
 );
 
+-- nieuwsberichten van de beheerder (de updates zelf staan in public/js/news.js)
+create table if not exists public.news (
+  id bigint generated always as identity primary key,
+  title text not null,
+  body text not null default '',
+  tag text not null default 'Nieuws',
+  created_at timestamptz not null default now()
+);
+
 alter table public.accounts enable row level security;
 alter table public.leaderboard enable row level security;
 alter table public.reports enable row level security;
+alter table public.news enable row level security;
 
 grant all on table public.accounts to service_role;
 grant all on table public.leaderboard to service_role;
 grant all on table public.reports to service_role;
+grant all on table public.news to service_role;
 grant usage, select on all sequences in schema public to service_role;

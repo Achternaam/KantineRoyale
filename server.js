@@ -17,7 +17,7 @@ const TEST_SECONDS = Number(process.env.GAME_SECONDS) || 0; // korte potjes om t
 const WEEKLY_OPEN = !!process.env.WEEKLY_OPEN;             // modus van de week ook doordeweeks (om te testen)
 const MAX_PLAYERS = 8;
 const MODES = Catalog.MODE_IDS;
-const NO_BROODJE = ['voedsel', 'trefbal', 'lava', 'prophunt', 'stoelen']; // modi zonder frikandelbroodje
+const NO_BROODJE = ['trefbal', 'race', 'prophunt', 'stoelen', 'dienst']; // modi zonder frikandelbroodje
 const TEAM_MODES = ['teams', 'duo', 'prophunt'];
 const DASH_COOLDOWN_MS = 2000;
 const DASH_ACTIVE_MS = 450;   // zolang telt een dash als tackle
@@ -73,7 +73,14 @@ const SLAP_COOLDOWN_MS = 650;
 const SLAP_RANGE = 2.3;
 // nieuwe modi
 const TYPE_MS = 40000;        // broodjesbar: zo lang blijft een soort broodje liggen
-const LAVA_WARMUP_MS = 15000; // zo lang duurt het voor de vloer echt lava is
+const RACE_LAST_MS = 30000;   // race: na de eerste finish nog dertig seconden voor de rest
+const RACE_POINTS = [100, 80, 65, 55, 45, 40, 35, 30];
+// Kantinedienst: elke klant heeft een eigen geduld; bezorgen geeft punten plus fooi als het snel gaat
+const SERVE_PATIENCE = [0, 34000, 46000];   // een of twee gerechten
+const SERVE_POINTS = 10;
+const SERVE_TIP = 6;                        // tot zoveel fooi, afhankelijk van hoe snel
+const SERVE_DONE = 5;                       // wie de bestelling afmaakt
+const SERVE_KINDS = [5, 1, 8, 4, 6];        // friet, pizza, frikandelbroodje, melk, cola
 const HIDE_MS = 20000;        // verstoppertje: de zoekers tellen tot twintig
 const CLAIM_MS = 4500;        // stoelendans: zo lang heb je om een stoel te vinden als de muziek stopt
 const BOUNTY_WINS = 3;        // wie drie potjes op rij wint, krijgt een premie op zijn hoofd
@@ -81,7 +88,7 @@ const BOUNTY_WINS = 3;        // wie drie potjes op rij wint, krijgt een premie 
 const TRAP_LIFE = [0, 60000, 15000, 40000, 40000];
 // pauzefeest: vier korte rondes, punten per plek
 const PARTY = [
-  { mode: 'lava', seconds: 90 }, { mode: 'trefbal', seconds: 75 }, { mode: 'stoelen', seconds: 150 }, { mode: 'klassiek', seconds: 90 }
+  { mode: 'race', seconds: 120 }, { mode: 'trefbal', seconds: 75 }, { mode: 'stoelen', seconds: 150 }, { mode: 'klassiek', seconds: 90 }
 ];
 const PARTY_POINTS = [10, 7, 5, 3, 2, 1, 1, 1];
 
@@ -118,6 +125,20 @@ app.get('/api/leaderboard', async (req, res) => {
     res.json({ week: weekKey(), top, ranked });
   } catch (e) {
     res.status(503).json({ week: weekKey(), top: [], ranked: [], error: 'Ranglijst is even niet bereikbaar.' });
+  }
+});
+// racetijden per baan: de snelste tien van deze week en van altijd
+app.get('/api/race', async (req, res) => {
+  try {
+    const out = {};
+    await Promise.all(MapData.RACE_IDS.map(async (map) => {
+      const [week, all] = await Promise.all([db.timeTop(`race:${map}:${weekKey()}`), db.timeTop(`race:${map}`)]);
+      const clean = (rows) => rows.map((r) => ({ name: r.name, ms: r.points }));
+      out[map] = { week: clean(week), all: clean(all) };
+    }));
+    res.json({ week: weekKey(), maps: out });
+  } catch (e) {
+    res.status(503).json({ error: 'Racetijden zijn even niet bereikbaar.' });
   }
 });
 // records per map, de beste vijf van iedereen per soort (alleen ingelogde spelers)
@@ -216,6 +237,11 @@ async function freshUnlocked(account) {
     notices.push(season.reward ? `Nieuw ranked-seizoen! Je krijgt de ${season.reward}.` : 'Er is een nieuw ranked-seizoen begonnen.');
   }
   const p = economy.wallet(account);
+  // nieuwe XP-regels: de omgerekende voortgang meteen opslaan en het de speler vertellen
+  if ((account.progress || {}).econ !== economy.ECON) {
+    if (account.progress && Object.keys(account.progress).length) notices.push('Levelen gaat nu trager: je level en battlepass zijn omgerekend naar de nieuwe regels.');
+    account = await db.updateAccount(account.id, { progress: p });
+  }
   // waarschuwingen die de speler nog niet heeft gezien
   const unseen = (Array.isArray(p.warnings) ? p.warnings : []).filter((w) => !w.seen);
   if (unseen.length) {
@@ -391,6 +417,35 @@ function isAdmin(req, res) {
 app.get('/api/admin/reports', (req, res) => {
   if (!isAdmin(req, res)) return;
   db.listReports().then((reports) => res.json({ reports })).catch(apiError(res));
+});
+// ---------- Nieuws: berichten van de beheerder (de updates zelf staan in public/js/news.js) ----------
+let newsCache = null;
+const loadNews = () => db.newsList().then((rows) => { newsCache = rows || []; return newsCache; })
+  .catch((e) => { console.error('Nieuws laden mislukt:', e.message); return newsCache || []; });
+app.get('/api/news', async (req, res) => {
+  res.json({ posts: newsCache || await loadNews() });
+});
+app.post('/api/admin/news', async (req, res) => {
+  if (!isAdmin(req, res)) return;
+  const title = String(req.body.title || '').trim().slice(0, 80);
+  const body = String(req.body.body || '').trim().slice(0, 1200);
+  const tag = ['Nieuws', 'Evenement', 'Toernooi', 'Belangrijk'].includes(req.body.tag) ? req.body.tag : 'Nieuws';
+  if (!title) return res.status(400).json({ error: 'Geef het bericht een titel.' });
+  try {
+    await db.newsAdd({ title, body, tag });
+    res.json({ posts: await loadNews() });
+  } catch (e) {
+    apiError(res)(e);
+  }
+});
+app.post('/api/admin/news/delete', async (req, res) => {
+  if (!isAdmin(req, res)) return;
+  try {
+    await db.newsDelete(String(req.body.id || ''));
+    res.json({ posts: await loadNews() });
+  } catch (e) {
+    apiError(res)(e);
+  }
 });
 app.post('/api/admin/ban', (req, res) => {
   if (!isAdmin(req, res)) return;
@@ -751,9 +806,10 @@ function freeColor(lobby) {
 function roundStats() {
   return {
     score: 0, pickups: 0, throws: 0, powerups: 0, emotes: 0, sprays: 0, tables: 0, cJumps: 0, cLifts: 0, hits: 0, tackles: 0, hold: 0,
-    bites: 0, eaten: 0, passes: 0, feints: 0, slaps: 0, traps: 0, trapHits: 0, knocked: 0, lavaSeconds: 0, burns: 0, finds: 0,
+    bites: 0, eaten: 0, passes: 0, feints: 0, slaps: 0, traps: 0, trapHits: 0, knocked: 0, finds: 0,
     chairs: 0, trefHits: 0, captures: 0, bounties: 0, bountyCoins: 0, revenges: 0, glass: 0, catches: 0, rides: 0, fireSafe: 0,
-    holdRun: 0, bestHold: 0, farHit: 0, rv: {}, found: false, out: false, outPlace: 0, heat: 0, heatX: 0, heatY: 0, heatZ: 0
+    holdRun: 0, bestHold: 0, farHit: 0, rv: {}, found: false, out: false, outPlace: 0,
+    cp: 0, finishMs: 0, racePlace: -1, raceOk: true, spawnAt: null, trail: [], carry: [], served: 0, ordersDone: 0, spills: 0, takeAt: 0
   };
 }
 
@@ -771,7 +827,7 @@ function newPlayer(socket, data, lobby) {
     blindUntil: 0, armor: false, ready: false, team: 0, x: 0, y: 0, z: 0, ry: 0, item: 0, gadget: 0, shield: false, boostUntil: 0,
     lastDash: 0, dashUntil: 0, dashX: 0, dashZ: 1, lastSpray: 0, lastSay: 0, streak: 0, ammo: 0, bounty: 0,
     noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0, biteUntil: 0, biteX: 0, biteZ: 0, lastBite: 0, lastFeint: 0, lastSlap: 0,
-    stickyUntil: 0, wetUntil: 0, frozenUntil: 0, lavaSafeUntil: 0, disguise: 0, lastDisguise: 0, greaseAt: 0
+    stickyUntil: 0, wetUntil: 0, frozenUntil: 0, disguise: 0, lastDisguise: 0, greaseAt: 0
   }, roundStats());
 }
 
@@ -1099,7 +1155,6 @@ function tickBroodje(lobby, now, dt) {
 function randomKind(lobby) {
   if (lobby.warm && !lobby.playing) return [1, 2, 3, 4, 5, 6][Math.floor(Math.random() * 6)];
   if (lobby.mode === 'trefbal') return 7;
-  if (lobby.mode === 'lava') return [2, 2, 2, 1, 3, 6][Math.floor(Math.random() * 6)]; // veel borden om vlotten van te maken
   const mask = lobby.opts.rules.items & (lobby.opts.extras ? 127 : 0b1000111); // de host kan melk, friet en blikje uitzetten
   const pool = ITEM_POOL.concat([7]).filter((k) => mask & (1 << (k - 1)));
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : 1;
@@ -1131,7 +1186,7 @@ function addPuddle(lobby, u) {
 }
 
 function tickItems(lobby, now) {
-  const respawn = lobby.mode === 'trefbal' ? 1500 : lobby.mode === 'voedsel' ? 2500 : ITEM_RESPAWN_MS;
+  const respawn = lobby.mode === 'trefbal' ? 1500 : lobby.warm && !lobby.playing ? 2500 : ITEM_RESPAWN_MS;
   lobby.items.forEach((item, i) => {
     if (item.availableAt > now) return;
     const s = lobby.itemSpots[i];
@@ -1276,7 +1331,6 @@ function tickProjectiles(lobby, now, dt) {
     // een pak melk laat een plas achter waar het neerkomt
     const die = () => {
       if (pr.kind === 4) addPuddle(lobby, { kind: 1, x: pr.x, y: pr.y, z: pr.z, until: now + PUDDLE_MS });
-      if (pr.kind === 2 && lobby.mode === 'lava' && lobby.playing) addRaft(lobby, pr.x, pr.y, pr.z);
       return false;
     };
     for (let s = 0; s < SUB; s++) {
@@ -1314,7 +1368,7 @@ function tickProjectiles(lobby, now, dt) {
           note(lobby, (lobby.broodje.holder === null && pr.kind !== 5 ? 4 : 3) + far / 4, 'hit', owner.id, p.id);
           claimAttack(lobby, owner, p, now);
         }
-        if (owner && lobby.playing && (lobby.mode === 'voedsel' || lobby.mode === 'trefbal')) owner.score += multiplier(lobby);
+        if (owner && lobby.playing && lobby.mode === 'trefbal') owner.score += multiplier(lobby);
         emit(lobby, { type: 'hit', by: pr.owner, victim: p.id, kind: pr.kind });
         // killstreak: drie rake worpen op rij geeft een pizzadoos met tien pizza's
         if (owner && lobby.mode !== 'trefbal' && ++owner.streak % STREAK_HITS === 0) {
@@ -1379,41 +1433,7 @@ function refreshDynamic(lobby) {
   lobby.dynamic = lobby.props
     .filter((o) => o.type === 'table' && !o.tip)
     .map((o) => ({ x: o.x, z: o.z, r: t.r, y0: o.y, y1: o.y + t.h }))
-    .concat(MapData.panels.filter((g, i) => !lobby.panels[i]).map(MapData.panelSolid))
-    .concat((lobby.lavaBlocks || []).filter((b, i) => !(lobby.lava && lobby.lava.gone.includes(i))).map(blockSolid))
-    .concat(lobby.lava ? lobby.lava.rafts.map((r) => ({ minX: r.x - 0.7, maxX: r.x + 0.7, minZ: r.z - 0.7, maxZ: r.z + 0.7, y0: r.y, y1: r.y + 0.25 })) : []);
-}
-const blockSolid = ([x, y, z, w, h]) => ({ minX: x - w / 2, maxX: x + w / 2, minZ: z - w / 2, maxZ: z + w / 2, y0: y, y1: y + h });
-
-// De vloer is lava: extra kratten op de vloer om op te springen (alleen in deze modus).
-// Lage kratten stap je zo op, hoge moet je op springen. Altijd dezelfde plekken per map.
-const lavaBlockCache = {};
-function lavaBlocks(mapId) {
-  if (lavaBlockCache[mapId]) return lavaBlockCache[mapId];
-  const M = MapData.use(mapId);
-  const saved = MapData.dynamic;
-  MapData.dynamic = [];
-  let seed = [...mapId].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) >>> 0;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const keepAway = M.SPAWNS.concat(M.VENDING, M.ITEM_SPAWNS, M.BASES, M.LIFTS, M.VEHICLES)
-    .concat(M.props.filter((p) => p.type === 'table'));
-  const blocks = [];
-  const floors = M.solids.filter((f) => f.floor && f.y1 >= M.BOUNDS.minY - 0.01 && f.y1 <= M.BOUNDS.maxY);
-  for (let tries = 0; tries < 900 && blocks.length < 26; tries++) {
-    const f = floors[Math.floor(rnd() * floors.length)];
-    const x = f.minX + 1 + rnd() * (f.maxX - f.minX - 2), z = f.minZ + 1 + rnd() * (f.maxZ - f.minZ - 2);
-    if (x < M.BOUNDS.minX + 1 || x > M.BOUNDS.maxX - 1 || z < M.BOUNDS.minZ + 1 || z > M.BOUNDS.maxZ - 1) continue;
-    const y = f.y1;
-    if (Math.abs(MapData.groundAt(x, z, y + 0.05) - y) > 0.01) continue;      // er ligt al iets
-    const probe = { x, z };
-    if (MapData.resolve(probe, 1.1, y, 3, 0)) continue;                      // geen ruimte (muur, plafond, meubel)
-    if (keepAway.some((k) => Math.hypot(k.x - x, k.z - z) < 2.2)) continue;
-    if (blocks.some((b) => Math.hypot(b[0] - x, b[2] - z) < 3.1)) continue;
-    blocks.push([Math.round(x * 100) / 100, y, Math.round(z * 100) / 100, 1.4, rnd() < 0.4 ? 0.4 : 0.8]);
-  }
-  MapData.dynamic = saved;
-  lavaBlockCache[mapId] = blocks;
-  return blocks;
+    .concat(MapData.panels.filter((g, i) => !lobby.panels[i]).map(MapData.panelSolid));
 }
 
 function tipProp(o, dirX, dirZ, speed) {
@@ -1466,18 +1486,6 @@ function tickProps(lobby, now, dt) {
       o.vz = nz * push;
       if (dashing && !o.tip) tipProp(o, nx, nz, push);
       o.dirty = true;
-    }
-  }
-
-  // bij De vloer is lava worden omgegooide tafels na twaalf seconden weer rechtgezet
-  if (lobby.mode === 'lava') {
-    for (const o of lobby.props) {
-      if (o.type === 'table' && o.tip && !o.sunk && now - o.tippedAt > 12000 && Math.abs(o.vx) + Math.abs(o.vz) < 0.2) {
-        o.tip = 0;
-        o.dir = 0;
-        o.dirty = true;
-        tablesChanged = true;
-      }
     }
   }
 
@@ -1545,21 +1553,6 @@ function tickBrand(lobby, now, dt) {
   }
 }
 
-// ---------- De vloer is lava ----------
-// Een veilige plek om na het verbranden weer te beginnen: bovenop een rechtopstaande tafel waar niemand staat.
-function safeSpot(lobby) {
-  const tables = lobby.lava ? lavaSpots(lobby).map((s) => ({ x: s.x, z: s.z, y: s.top - MapData.PROP.table.h }))
-    : lobby.props.filter((o) => o.type === 'table' && !o.tip);
-  const others = [...lobby.players.values()];
-  const free = tables.map((t) => ({ t, near: Math.min(99, ...others.map((p) => Math.hypot(p.x - t.x, p.z - t.z))) }))
-    .sort((a, b) => b.near - a.near);
-  if (free.length) {
-    const pick = free[Math.floor(Math.random() * Math.min(3, free.length))].t;
-    return { x: pick.x, y: pick.y + MapData.PROP.table.h, z: pick.z };
-  }
-  const s = MapData.SPAWNS[Math.floor(Math.random() * MapData.SPAWNS.length)];
-  return { x: s.x, y: s.y, z: s.z };
-}
 function teleport(lobby, p, spot) {
   Object.assign(p, spot);
   if (p.isBot) {
@@ -1568,114 +1561,139 @@ function teleport(lobby, p, spot) {
     io.to(p.id).emit('teleport', spot);
   }
 }
-// De veilige plekken: rechtopstaande tafels ('t' + nummer) en kisten ('c' + nummer) die nog niet zijn weggesmolten.
-function lavaSpots(lobby) {
-  const spots = [];
-  lobby.props.forEach((o, i) => {
-    if (o.type === 'table' && !o.tip && !o.sunk) spots.push({ id: 't' + i, x: o.x, z: o.z, top: o.y + MapData.PROP.table.h, r: MapData.PROP.table.r });
-  });
-  lobby.lavaBlocks.forEach((b, i) => {
-    if (!lobby.lava.gone.includes(i)) spots.push({ id: 'c' + i, x: b[0], z: b[2], top: b[1] + b[4], half: b[3] / 2 });
-  });
-  return spots;
-}
-const onSpot = (p, s) => Math.abs(p.y - s.top) < 0.15 &&
-  (s.half ? Math.abs(p.x - s.x) <= s.half + 0.2 && Math.abs(p.z - s.z) <= s.half + 0.2 : Math.hypot(p.x - s.x, p.z - s.z) <= s.r + 0.2);
-
-function burn(lobby, p, now, why) {
-  p.burns++;
-  p.score = Math.max(0, p.score - 3);
-  p.lavaSafeUntil = now + 2500;
-  p.heat = 0;
-  stun(lobby, p, 0, 0, now, 900, 0, 7);
-  teleport(lobby, p, safeSpot(lobby));
-  emit(lobby, { type: 'burn', id: p.id, why });
-}
-
-function tickLava(lobby, now, dt) {
-  if (now < lobby.lavaAt) return;
-  const L = lobby.lava;
-  const spots = lavaSpots(lobby);
-  // 2. het gouden eiland springt elke vijftien seconden naar een andere plek
-  if (now >= L.islandAt || !spots.some((s) => s.id === L.island)) {
-    const options = spots.filter((s) => s.id !== L.island && !L.melting[s.id]);
-    const pick = options[Math.floor(Math.random() * options.length)];
-    L.island = pick ? pick.id : null;
-    L.islandAt = now + 15000;
-    if (pick) emit(lobby, { type: 'island' });
-  }
-  const island = spots.find((s) => s.id === L.island);
-  // 1. smeltende plekken: een paar tafels en kisten gloeien rood en zakken daarna weg
-  if (now >= L.meltAt && spots.length > Math.max(4, lobby.players.size + 1)) {
-    L.meltAt = now + 12000 + Math.random() * 3000;
-    const count = Math.min(3, spots.length - Math.max(4, lobby.players.size + 1));
-    spots.filter((s) => s.id !== L.island && !L.melting[s.id]).sort(() => Math.random() - 0.5).slice(0, count)
-      .forEach((s) => { L.melting[s.id] = now + 3000; });
-    emit(lobby, { type: 'melt' });
-  }
-  for (const [id, at] of Object.entries(L.melting)) {
-    if (now < at) continue;
-    delete L.melting[id];
-    const i = Number(id.slice(1));
-    if (id[0] === 't') {
-      const o = lobby.props[i];
-      Object.assign(o, { sunk: true, tip: 1, y: o.y - 1.6, vx: 0, vz: 0, dirty: true });
-    } else {
-      L.gone.push(i);
-    }
-    refreshDynamic(lobby);
-    MapData.dynamic = lobby.dynamic;
-    emit(lobby, { type: 'sink', id });
-  }
-  // 4. lavaballen: een schaduw waarschuwt, anderhalve seconde later knalt er een vuurbal uit de vloer
-  if (now >= L.ballAt) {
-    L.ballAt = now + 3500 + Math.random() * 3000;
-    const targets = [...lobby.players.values()].filter((p) => !p.out && p.lavaSafeUntil < now);
-    const t = targets[Math.floor(Math.random() * targets.length)];
-    if (t) L.balls.push({ id: nextId++, x: t.x + (Math.random() - 0.5) * 1.5, y: t.y, z: t.z + (Math.random() - 0.5) * 1.5, at: now + 1600 });
-  }
-  L.balls = L.balls.filter((ball) => {
-    if (now < ball.at) return true;
-    for (const p of lobby.players.values()) {
-      const d = Math.hypot(p.x - ball.x, p.z - ball.z);
-      if (d > 2.3 || Math.abs(p.y - ball.y) > 2 || p.lavaSafeUntil > now) continue;
-      stun(lobby, p, p.x - ball.x, p.z - ball.z, now, 700, 10, 8);
-    }
-    emit(lobby, { type: 'lavaball', x: ball.x, y: ball.y, z: ball.z });
-    return false;
-  });
-  // 5. vlotten (borden die op de lava drijven) verdwijnen na vijf seconden
-  const before = L.rafts.length;
-  L.rafts = L.rafts.filter((r) => r.until > now);
-  if (L.rafts.length !== before) refreshDynamic(lobby);
-  MapData.dynamic = lobby.dynamic;
-
+// ---------- Race ----------
+// De server telt de checkpoints zelf, op volgorde, en meet de tijd vanaf het startschot.
+function tickRace(lobby, now) {
+  const R = lobby.race;
+  const killY = MapData.RACE.killY;
   for (const p of lobby.players.values()) {
-    if (p.lavaSafeUntil > now) continue;
-    if (MapData.onFloor(p.x, p.z, p.y)) {
-      burn(lobby, p, now, 'lava');
+    // bots die vallen beginnen bij hun laatste checkpoint; echte spelers doen dat zelf
+    if (p.isBot && p.y < killY) raceRespawn(lobby, p);
+    if (p.finishMs) continue;
+    if (!p.isBot) checkPace(p, now);
+    const g = R.gates[p.cp];
+    if (!g || !MapData.inGate(g, p.x, p.y, p.z)) continue;
+    p.cp++;
+    p.spawnAt = { x: g.x, y: g.y, z: g.z };
+    if (p.cp < R.gates.length) {
+      p.score = p.cp * 2;
+      emit(lobby, { type: 'checkpoint', id: p.id, cp: p.cp, lap: R.gates[p.cp].lap });
       continue;
     }
-    // punten: 1 per seconde, 3 op het gouden eiland
-    const gold = island && onSpot(p, island);
-    p.score += dt * (gold ? 3 : 1);
-    p.lavaSeconds += dt;
-    // 3. hete voeten: wie zes seconden op dezelfde plek blijft staan, verbrandt alsnog
-    if (Math.hypot(p.x - p.heatX, p.z - p.heatZ) > 0.9 || Math.abs(p.y - p.heatY) > 0.3) {
-      Object.assign(p, { heat: 0, heatX: p.x, heatY: p.y, heatZ: p.z });
-    } else if ((p.heat += dt) > 6) {
-      burn(lobby, p, now, 'heet');
+    p.finishMs = now - lobby.goAt;
+    p.racePlace = R.finished++;
+    p.score = RACE_POINTS[p.racePlace] || 25;
+    emit(lobby, { type: 'finish', id: p.id, place: p.racePlace, ms: p.finishMs });
+    if (!R.lastCall) {
+      // de eerste is binnen: de rest heeft nog dertig seconden
+      R.lastCall = true;
+      if (lobby.endsAt > now + RACE_LAST_MS) {
+        lobby.endsAt = now + RACE_LAST_MS;
+        emit(lobby, { type: 'lastCall', seconds: RACE_LAST_MS / 1000 });
+      }
     }
   }
+  // iedereen binnen (of alle echte spelers): nog even nagenieten
+  const all = [...lobby.players.values()];
+  const people = all.filter((p) => !p.isBot);
+  if (all.every((p) => p.finishMs) || (people.length && people.every((p) => p.finishMs))) lobby.endsAt = Math.min(lobby.endsAt, now + 3500);
 }
-// een bord dat op de lava landt, blijft vijf seconden drijven als vlot
-function addRaft(lobby, x, y, z) {
-  const floor = MapData.groundAt(x, z, y + 0.5);
-  if (!MapData.onFloor(x, z, floor)) return;
-  lobby.lava.rafts.push({ id: nextId++, x, y: floor, z, until: Date.now() + 5000 });
-  if (lobby.lava.rafts.length > 8) lobby.lava.rafts.shift();
-  refreshDynamic(lobby);
-  MapData.dynamic = lobby.dynamic;
+// terug naar het laatste checkpoint (of de start)
+function raceRespawn(lobby, p) {
+  const s = p.spawnAt || MapData.SPAWNS[0];
+  teleport(lobby, p, { x: s.x, y: s.y, z: s.z });
+  if (p.isBot && p.bot) p.bot.respawned = true;
+}
+// Valsspelen: wie in twee seconden verder komt dan kan (rennen, dashen, energiedrank), krijgt geen tijd op de ranglijst.
+// Na terugzetten naar een checkpoint moet je ook echt daar staan.
+function checkPace(p, now) {
+  if (p.respawned) {
+    // wachten tot de nieuwe plek binnen is (die komt vlak na het bericht), dan pas controleren
+    const s = p.spawnAt;
+    const there = !s || Math.hypot(p.x - s.x, p.z - s.z) <= 6;
+    if (!there && now - p.respawnAt < 1000) return;
+    if (!there) p.raceOk = false;
+    p.respawned = false;
+    p.trail = [];
+  }
+  p.trail.push([now, p.x, p.z]);
+  while (p.trail.length && now - p.trail[0][0] > 2000) p.trail.shift();
+  const [, x0, z0] = p.trail[0];
+  if (Math.hypot(p.x - x0, p.z - z0) > 55) p.raceOk = false;
+}
+// racetijden: per baan de beste tijd ooit en de beste van deze week (alleen ingelogde spelers)
+function saveRaceTime(lobby, p) {
+  const key = `race:${lobby.map}`;
+  for (const k of [key, `${key}:${weekKey()}`]) db.timeSet(k, p.name, p.finishMs).catch((e) => console.error('Racetijd opslaan mislukt:', e.message));
+}
+
+// ---------- Kantinedienst ----------
+// Klanten aan tafels bestellen een of twee gerechten. Ophalen bij de post in de keuken (je draagt er hooguit twee),
+// bezorgen aan de goede tafel. Iedereen speelt voor zichzelf: wie het eerst brengt, krijgt de punten.
+function tickServe(lobby, now) {
+  const S = lobby.serve;
+  const D = MapData.SERVE;
+  const bonus = multiplier(lobby);
+  // nieuwe bestellingen: meer spelers en de laatste minuut betekenen meer klanten
+  const max = Math.min(D.tables.length, 3 + lobby.players.size);
+  if (now >= S.nextAt && S.orders.length < max) {
+    const free = D.tables.map((t, i) => i).filter((i) => !S.orders.some((o) => o.table === i));
+    const table = free[Math.floor(Math.random() * free.length)];
+    const count = Math.random() < 0.35 ? 2 : 1;
+    const items = [];
+    while (items.length < count) items.push(SERVE_KINDS[Math.floor(Math.random() * SERVE_KINDS.length)]);
+    S.orders.push({ id: nextId++, table, items, done: items.map(() => 0), born: now, until: now + SERVE_PATIENCE[count] });
+    S.nextAt = now + (lobby.double ? 1400 : 2600) + Math.random() * 2200;
+    emit(lobby, { type: 'order', table });
+  }
+  // geduld op: de klant loopt boos weg
+  S.orders = S.orders.filter((o) => {
+    if (o.until > now) return true;
+    emit(lobby, { type: 'angry', table: o.table });
+    return false;
+  });
+  for (const p of lobby.players.values()) {
+    if (p.stunnedUntil > now) continue;
+    // ophalen bij een post
+    if (p.carry.length < 2 && now >= p.takeAt) {
+      const st = D.stations.find((s) => Math.hypot(p.x - s.x, p.z - s.z) < 1.5 && Math.abs(p.y - s.y) < 1);
+      if (st) {
+        p.carry.push(st.kind);
+        p.takeAt = now + 900;
+        emit(lobby, { type: 'take', id: p.id, kind: st.kind });
+      }
+    }
+    // weggooien
+    if (p.carry.length && D.bins.some((b) => Math.hypot(p.x - b.x, p.z - b.z) < 1.4)) {
+      p.carry = [];
+      emit(lobby, { type: 'dump', id: p.id });
+    }
+    if (!p.carry.length) continue;
+    // bezorgen aan een tafel die iets wil wat je draagt
+    for (const o of S.orders) {
+      const t = D.tables[o.table];
+      if (Math.abs(p.x - t.x) > 2.5 || Math.abs(p.z - t.z) > 2.3) continue;
+      for (let i = 0; i < o.items.length && p.carry.length; i++) {
+        if (o.done[i]) continue;
+        const k = p.carry.indexOf(o.items[i]);
+        if (k < 0) continue;
+        p.carry.splice(k, 1);
+        o.done[i] = 1;
+        const share = Math.max(0, (o.until - now) / (o.until - o.born));
+        const points = Math.round((SERVE_POINTS + SERVE_TIP * share) * bonus);
+        p.score += points;
+        p.served++;
+        emit(lobby, { type: 'serve', id: p.id, table: o.table, kind: o.items[i], points });
+      }
+      if (o.done.every(Boolean)) {
+        o.complete = true;
+        p.score += SERVE_DONE * bonus;
+        p.ordersDone++;
+        emit(lobby, { type: 'served', id: p.id, table: o.table, points: SERVE_DONE * bonus });
+      }
+    }
+    S.orders = S.orders.filter((o) => !o.complete);
+  }
 }
 
 // ---------- Verstoppertje ----------
@@ -1792,8 +1810,7 @@ function startWarm(lobby) {
   lobby.warmMap = WARM_MAP;
   MapData.use(WARM_MAP);
   resetProps(lobby);
-  lobby.lava = null;
-  lobby.lavaBlocks = [];
+  lobby.race = null;
   lobby.itemSpots = MapData.ITEM_SPAWNS;
   lobby.items = lobby.itemSpots.map(() => ({ kind: randomKind(lobby), availableAt: 0 }));
   lobby.vending = MapData.VENDING.map(() => 0);
@@ -1853,7 +1870,7 @@ function pickMap(lobby) {
     lobby.mode = PARTY[lobby.round - 1].mode;
   } else if (lobby.rounds > 1) {
     // in een toernooi wisselt ook de spelmodus per ronde
-    const modes = lobby.players.size >= 4 ? ['klassiek', 'voedsel', 'teams'] : ['klassiek', 'voedsel', 'klassiek'];
+    const modes = lobby.players.size >= 4 ? ['klassiek', 'trefbal', 'teams'] : ['klassiek', 'trefbal', 'klassiek'];
     lobby.mode = modes[(lobby.round - 1) % modes.length];
   }
   const fits = MapData.mapsFor(lobby.mode);
@@ -1907,7 +1924,7 @@ function beginRound(lobby) {
       team, x: s.x, y: s.y, z: s.z, ry: 0, item: 0, gadget: 0, shield: false, boostUntil: 0, streak: 0, ammo: 0,
       blindUntil: 0, armor: false, vehicle: 0, noMountUntil: 0, velX: 0, velZ: 0, lastX: s.x, lastZ: s.z,
       lastDash: 0, dashUntil: 0, noPickupUntil: 0, stunnedUntil: 0, stunImmuneUntil: 0, biteUntil: 0, lastBite: 0, lastFeint: 0,
-      lastSlap: 0, stickyUntil: 0, wetUntil: 0, lavaSafeUntil: 0, greaseAt: 0,
+      lastSlap: 0, stickyUntil: 0, wetUntil: 0, greaseAt: 0, spawnAt: { x: s.x, y: s.y, z: s.z },
       disguise: lobby.mode === 'prophunt' && team === 0 ? 1 + Math.floor(Math.random() * 4) : 0,
       frozenUntil: lobby.mode === 'prophunt' && team === 1 ? now + HIDE_MS : 0,
       // premie: wie drie potjes op rij won, heeft een prijs op zijn hoofd
@@ -1926,20 +1943,15 @@ function beginRound(lobby) {
   lobby.decoy = null;
   resetBroodje(lobby);
   resetProps(lobby);
-  // lava: de spullen liggen op de tafels en kratten in plaats van op de vloer
-  lobby.lavaBlocks = lobby.mode === 'lava' ? lavaBlocks(lobby.map) : [];
-  lobby.lava = lobby.mode === 'lava'
-    ? { island: null, islandAt: 0, melting: {}, gone: [], meltAt: now + GO_MS + LAVA_WARMUP_MS + 10000, ballAt: now + GO_MS + LAVA_WARMUP_MS + 5000, balls: [], rafts: [] }
-    : null;
+  // race: checkpoints op volgorde; zonder hinderen liggen er geen spullen en doen de automaten niets
+  const hinder = !['race', 'dienst'].includes(lobby.mode) || lobby.opts.hinder;
+  lobby.race = lobby.mode === 'race' ? { gates: MapData.raceGates(lobby.map), finished: 0, lastCall: false } : null;
+  lobby.serve = lobby.mode === 'dienst' ? { orders: [], nextAt: now + GO_MS + 1200 } : null;
   MapData.use(lobby.map);
   refreshDynamic(lobby);
-  lobby.itemSpots = lobby.mode === 'lava'
-    ? lobby.props.filter((o) => o.type === 'table').map((o) => ({ x: o.x, y: o.y + MapData.PROP.table.h, z: o.z }))
-      .concat(lobby.lavaBlocks.filter((b, i) => i % 2 === 0).map((b) => ({ x: b[0], y: b[1] + b[4], z: b[2] })))
-      .sort(() => Math.random() - 0.5).slice(0, 16)
-    : MapData.ITEM_SPAWNS;
+  lobby.itemSpots = hinder ? MapData.ITEM_SPAWNS : [];
   lobby.items = lobby.itemSpots.map(() => ({ kind: randomKind(lobby), availableAt: 0 }));
-  lobby.vending = MapData.VENDING.map(() => 0);
+  lobby.vending = hinder ? MapData.VENDING.map(() => 0) : [];
   lobby.projectiles = [];
   lobby.traps = [];
   lobby.puddles = [];
@@ -1947,7 +1959,6 @@ function beginRound(lobby) {
   lobby.vehicles = MapData.VEHICLES.map(() => ({ rider: null, availableAt: 0 }));
   lobby.highlight = { score: 0 };
   lobby.remaining = duration;
-  lobby.lavaAt = lobby.goAt + LAVA_WARMUP_MS;
   lobby.hideUntil = lobby.goAt + HIDE_MS;
   lobby.chairs = null;
   if (lobby.mode === 'stoelen') markChairs(lobby, lobby.goAt);
@@ -1963,8 +1974,8 @@ function beginRound(lobby) {
     { at: duration / 3, type: 'dubbel' }, { at: duration * 0.2, type: pick() }
   ];
   // in de nieuwe modi (en als de host events uitzet) alleen de dubbele punten aan het eind
-  if (!lobby.opts.events || ['lava', 'prophunt'].includes(lobby.mode)) lobby.schedule = [{ at: duration / 3, type: 'dubbel' }];
-  if (lobby.mode === 'stoelen') lobby.schedule = [];
+  if (!lobby.opts.events || ['prophunt', 'dienst'].includes(lobby.mode)) lobby.schedule = [{ at: duration / 3, type: 'dubbel' }];
+  if (lobby.mode === 'stoelen' || lobby.mode === 'race') lobby.schedule = [];
   lobby.playing = true;
   lobby.autoStartAt = null;
   lobby.endsAt = lobby.goAt + duration * 1000;
@@ -1976,7 +1987,7 @@ function beginRound(lobby) {
     io.to(p.id).emit('gameStart', {
       duration, mode: lobby.mode, teams, map: lobby.map, round: lobby.round, rounds: lobby.rounds, party: lobby.party,
       rules: lobby.opts.rules, weekly: lobby.weekly, bounty: p.bounty, spawn: { x: p.x, y: p.y, z: p.z },
-      lavaBlocks: lobby.lavaBlocks, itemSpots: lobby.mode === 'lava' ? lobby.itemSpots : null, countdown: GO_MS / 1000
+      itemSpots: ['race', 'dienst'].includes(lobby.mode) ? lobby.itemSpots : null, hinder: !!hinder, countdown: GO_MS / 1000
     });
   }
 }
@@ -1994,9 +2005,9 @@ function rankingEntry(lobby, p) {
     id: p.id, name: p.name, color: p.color, skin: p.skin, acc: p.acc, team: p.team, isBot: !!p.isBot, cls: p.cls,
     score: Math.floor(p.score), total: lobby.totals.get(p.id),
     hits: p.hits, tackles: p.tackles, hold: Math.round(p.hold), throws: p.throws, bites: p.bites, eaten: p.eaten, passes: p.passes,
-    feints: p.feints, slaps: p.slaps, traps: p.traps, trapHits: p.trapHits, knocked: p.knocked, burns: p.burns, finds: p.finds,
+    feints: p.feints, slaps: p.slaps, traps: p.traps, trapHits: p.trapHits, knocked: p.knocked, finds: p.finds,
     tables: p.tables, glass: p.glass, catches: p.catches, bounties: p.bounties, revenges: p.revenges, chairs: p.chairs,
-    lava: Math.round(p.lavaSeconds), bestHold: Math.round(p.bestHold), far: Math.round(p.farHit * 10) / 10, found: p.found, pickups: p.pickups
+    time: p.finishMs, cp: p.cp, served: p.served, orders: p.ordersDone, spills: p.spills, bestHold: Math.round(p.bestHold), far: Math.round(p.farHit * 10) / 10, found: p.found, pickups: p.pickups
   };
 }
 
@@ -2063,7 +2074,8 @@ function endGame(lobby) {
     const result = resultFor(lobby, p, { final, won: winners.has(p.id), place, players: ranking.length });
     if (p.username) awardPlayer(p, result);
     else io.to(p.id).emit('result', result);
-    if (p.username && !lobby.practice) saveRecords(lobby, p);
+    if (p.username && !lobby.practice && lobby.mode !== 'race') saveRecords(lobby, p);
+    if (p.username && lobby.mode === 'race' && p.finishMs && p.raceOk) saveRaceTime(lobby, p);
   });
   // wie meekeek doet vanaf nu mee
   for (const [id, p] of lobby.waiting) lobby.players.set(id, p);
@@ -2109,8 +2121,10 @@ function closeMvp(lobby) {
 // Alles wat de server in dit potje van een speler heeft gezien, voor munten, XP en prestaties.
 function resultFor(lobby, p, { final, won, place, players }) {
   const mode = lobby.mode;
+  // een race duurt korter dan een gewoon potje: dan ook minder munten en XP (anders level je met races te snel)
+  const short = mode === 'race' ? Math.min(1, Math.max(0.4, (Date.now() - lobby.goAt) / 75000)) : 1;
   return {
-    score: Math.floor(p.score), won, final, players, place, factor: lobby.practice ? 0.5 : 1,
+    score: Math.floor(p.score), won, final, players, place, factor: (lobby.practice ? 0.5 : 1) * short,
     weekly: !!lobby.weekly, ranked: lobby.ranked, rp: p.rp, map: lobby.map, cls: p.cls, mode,
     extraCoins: p.bountyCoins + p.revenges * 10,
     deltas: {
@@ -2118,14 +2132,16 @@ function resultFor(lobby, p, { final, won, place, players }) {
       hits: p.hits, tackles: p.tackles, holdSeconds: Math.round(p.hold), pickups: p.pickups, throws: p.throws, powerups: p.powerups,
       emotes: p.emotes, sprays: p.sprays, tables: p.tables, jumps: p.cJumps, lifts: p.cLifts, bites: p.bites, eaten: p.eaten,
       passes: p.passes, feints: p.feints, slaps: p.slaps, traps: p.traps, trapHits: p.trapHits, knocked: p.knocked,
-      lavaSeconds: Math.round(p.lavaSeconds), finds: p.finds, hideWins: mode === 'prophunt' && p.team === 0 && !p.found ? 1 : 0,
+      raceFinishes: p.finishMs ? 1 : 0, raceWins: mode === 'race' && p.racePlace === 0 && players > 1 ? 1 : 0, finds: p.finds,
+      served: p.served, ordersDone: p.ordersDone, hideWins: mode === 'prophunt' && p.team === 0 && !p.found ? 1 : 0,
       chairs: p.chairs, trefHits: p.trefHits, captures: p.captures, glass: p.glass, catches: p.catches, rides: p.rides,
       fireSafe: p.fireSafe, bounties: p.bounties, revenges: p.revenges,
       duoWins: mode === 'duo' && won ? 1 : 0, partyWins: lobby.party && final && won ? 1 : 0,
       rankedGames: lobby.ranked && final ? 1 : 0, weeklyGames: lobby.weekly && final ? 1 : 0
     },
     maxes: { bestScore: lobby.practice ? 0 : Math.floor(p.score), bestHold: Math.floor(p.bestHold), farHit: Math.floor(p.farHit), mostHits: p.hits },
-    records: lobby.practice ? null : recordValues(p),
+    records: lobby.practice || mode === 'race' ? null : recordValues(p),
+    raceTime: mode === 'race' && p.raceOk ? p.finishMs : 0,
     rivals: p.rv
   };
 }
@@ -2133,7 +2149,7 @@ function resultFor(lobby, p, { final, won, place, players }) {
 // wat iemand in één potje heeft neergezet, voor de records
 const recordValues = (p) => ({
   score: Math.floor(p.score), hold: Math.floor(p.bestHold), far: Math.round(p.farHit * 10) / 10, hits: p.hits, tackles: p.tackles, slaps: p.slaps,
-  pickups: p.pickups, bites: p.bites, catches: p.catches, lava: Math.floor(p.lavaSeconds), traps: p.trapHits, finds: p.finds, tables: p.tables,
+  pickups: p.pickups, bites: p.bites, catches: p.catches, traps: p.trapHits, finds: p.finds, tables: p.tables,
   jumps: p.cJumps, passes: p.passes
 });
 function saveRecords(lobby, p) {
@@ -2201,13 +2217,16 @@ const r2 = (n) => Math.round(n * 100) / 100;
 // extra informatie per modus voor de HUD
 function modeState(lobby, now) {
   if (lobby.mode === 'broodjes') return { bt: lobby.btype, bn: Math.max(0, Math.ceil((lobby.typeAt - now) / 1000)) };
-  if (lobby.mode === 'lava') {
-    const L = lobby.lava;
+  if (lobby.mode === 'dienst' && lobby.serve) {
+    // bestellingen: [id, tafel, gerechten, al bezorgd, nog ms, totaal ms]; en wat iedereen draagt
     return {
-      lv: Math.ceil((lobby.lavaAt - now) / 1000), is: L.island, isn: Math.max(0, Math.ceil((L.islandAt - now) / 1000)),
-      mt: Object.keys(L.melting), gn: L.gone, bl: L.balls.map((b) => [b.id, r2(b.x), r2(b.y), r2(b.z), Math.max(0, b.at - now)]),
-      rf: L.rafts.map((r) => [r.id, r2(r.x), r2(r.y), r2(r.z)])
+      od: lobby.serve.orders.map((o) => [o.id, o.table, o.items, o.done, Math.max(0, o.until - now), o.until - o.born]),
+      cr: [...lobby.players.values()].filter((p) => p.carry.length).map((p) => [p.id, p.carry])
     };
+  }
+  if (lobby.mode === 'race' && lobby.race) {
+    // per speler: checkpoint, finishtijd en plek
+    return { rc: [...lobby.players.values()].map((p) => [p.id, p.cp, p.finishMs, p.racePlace]), gt: lobby.race.gates.length, lc: lobby.race.lastCall ? 1 : 0 };
   }
   if (lobby.mode === 'prophunt') {
     return { hd: Math.max(0, Math.ceil((lobby.hideUntil - now) / 1000)), hl: [...lobby.players.values()].filter((p) => p.team === 0).length };
@@ -2225,6 +2244,8 @@ function tick(lobby, now) {
   lobby.lastTick = now;
   MapData.use(lobby.map);
   MapData.dynamic = lobby.dynamic;
+  // race: de bewegende blokken staan waar de klok van het potje ze zet
+  if (MapData.RACE) MapData.dynamic = lobby.dynamic.concat(MapData.RACE.movers.map((m) => MapData.moverAt(m, (now - lobby.goAt) / 1000)));
   const remaining = Math.max(0, (lobby.endsAt - now) / 1000);
   lobby.remaining = remaining;
   // snelheid van iedereen bijhouden, zodat bots kunnen mikken op waar iemand heen loopt
@@ -2255,7 +2276,8 @@ function tick(lobby, now) {
 
   tickEvents(lobby, now, remaining);
   if (!NO_BROODJE.includes(lobby.mode)) tickBroodje(lobby, now, dt);
-  if (lobby.mode === 'lava') tickLava(lobby, now, dt);
+  if (lobby.mode === 'race') tickRace(lobby, now);
+  if (lobby.mode === 'dienst') tickServe(lobby, now);
   if (lobby.mode === 'prophunt') tickHide(lobby, now, dt);
   if (lobby.mode === 'stoelen') tickChairs(lobby, now);
   tickItems(lobby, now);
@@ -2285,7 +2307,7 @@ function sendState(lobby, now, remaining, channel = 'state') {
       p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.ry), Math.floor(p.score),
       (p.dashUntil > now ? 1 : 0) | (p.stunnedUntil > now ? 2 : 0) | (p.boostUntil > now ? 4 : 0) | (p.shield ? 8 : 0) | (p.blindUntil > now ? 16 : 0) |
       (p.biteUntil > now ? 32 : 0) | (p.stickyUntil > now ? 64 : 0) | (p.bounty > 0 ? 128 : 0) | (p.out ? 256 : 0) | (p.frozenUntil > now ? 512 : 0) |
-      (p.wetUntil > now ? 1024 : 0) | (p.heat > 3 ? 2048 : 0) | (p.heat > 4.8 ? 4096 : 0),
+      (p.wetUntil > now ? 1024 : 0) | (p.finishMs ? 2048 : 0),
       p.item, p.gadget, p.ammo, p.vehicle, p.disguise, p.team
     ]),
     b: NO_BROODJE.includes(lobby.mode) || channel !== 'state' ? null
@@ -2405,7 +2427,7 @@ function throwItem(lobby, p, x, y, z) {
 // Klap: een duw voor wie vlak voor je staat. Bij verstoppertje vindt een zoeker zo een verstopper.
 function slap(lobby, p, dirX, dirZ) {
   const now = Date.now();
-  if (now - p.lastSlap < SLAP_COOLDOWN_MS) return;
+  if (now - p.lastSlap < SLAP_COOLDOWN_MS || (lobby.playing && (lobby.race || lobby.serve) && !lobby.opts.hinder)) return;
   p.lastSlap = now;
   p.slaps++;
   const len = Math.hypot(dirX, dirZ) || 1;
@@ -2422,6 +2444,12 @@ function slap(lobby, p, dirX, dirZ) {
     if (p.team === 1 && target.team === 0 && now >= lobby.hideUntil) find(lobby, p, target, now);
   } else if (target && !sameTeam(lobby, p, target)) {
     knock(lobby, target, fx, fz, 9, 4);
+    // Kantinedienst: wie een klap krijgt, laat zijn eten vallen
+    if (lobby.serve && lobby.playing && target.carry.length) {
+      target.carry = [];
+      target.spills++;
+      emit(lobby, { type: 'spill', id: target.id, by: p.id, x: target.x, y: target.y, z: target.z });
+    }
   } else if (!target) {
     // geen speler: dan krijgt een stoel of prullenbak de klap
     for (const o of lobby.props) {
@@ -2466,7 +2494,7 @@ function feint(lobby, p, x, z) {
   emit(lobby, { type: 'feint', id: p.id });
 }
 const botApi = {
-  sameTeam, inZone, throwItem, slap, bite, feint, NO_BROODJE, lavaSpots, onSpot,
+  sameTeam, inZone, throwItem, slap, bite, feint, raceRespawn, NO_BROODJE,
   speedOf: (lobby) => rule(lobby, 'speed'), gravOf: (lobby) => rule(lobby, 'grav')
 };
 
@@ -2562,10 +2590,10 @@ io.on('connection', (socket) => {
     const code = makeCode();
     const lobby = {
       public: isPublic, ranked: !!ranked, practice: false, vote: null, weekly: weekly ? weekly.key : null, party: false,
-      opts: { duration: 180, events: true, extras: true, botLevel: 1, rules: weekly ? weekly.rules : Catalog.defaultRules() },
+      opts: { duration: 180, events: true, extras: true, hinder: true, botLevel: 1, rules: weekly ? weekly.rules : Catalog.defaultRules() },
       autoStartAt: null, busy: false, vehicles: [], highlight: { score: 0 }, remaining: 0,
       map: 'kantine', lastMap: null, usedMaps: [], rounds: 1, round: 1, totals: new Map(), baseMode: weekly ? weekly.mode : 'klassiek',
-      puddles: [], traps: [], zone: false, lavaBlocks: [], itemSpots: [], lava: null, decoy: null, btype: 0, typeAt: 0, lavaAt: 0, hideUntil: 0, chairs: null,
+      puddles: [], traps: [], zone: false, itemSpots: [], race: null, decoy: null, btype: 0, typeAt: 0, hideUntil: 0, chairs: null,
       code, hostId: socket.id, players: new Map(), waiting: new Map(), playing: false, mode: weekly ? weekly.mode : 'klassiek', endsAt: 0, lastTick: 0,
       broodje: null, items: [], vending: [], projectiles: [], props: [], panels: [], dynamic: [],
       event: { type: '', until: 0 }, double: false, schedule: []
@@ -2629,6 +2657,7 @@ io.on('connection', (socket) => {
     if ([120, 180, 300].includes(opts.duration)) lobby.opts.duration = opts.duration;
     if (typeof opts.events === 'boolean') lobby.opts.events = opts.events;
     if (typeof opts.extras === 'boolean') lobby.opts.extras = opts.extras;
+    if (typeof opts.hinder === 'boolean') lobby.opts.hinder = opts.hinder;
     if ([0, 1, 2].includes(opts.botLevel)) lobby.opts.botLevel = opts.botLevel;
     sendLobby(lobby);
   });
@@ -2706,7 +2735,7 @@ io.on('connection', (socket) => {
       pullParty(socket);
       socket.emit('spectate', {
         mode: lobby.mode, teams, map: lobby.map, rules: lobby.opts.rules,
-        lavaBlocks: lobby.lavaBlocks, itemSpots: lobby.mode === 'lava' ? lobby.itemSpots : null,
+        itemSpots: ['race', 'dienst'].includes(lobby.mode) ? lobby.itemSpots : null,
         props: lobby.props.map((o, i) => [i, r2(o.x), r2(o.y), r2(o.z), o.tip, r2(o.dir)]),
         panels: lobby.panels
       });
@@ -2817,6 +2846,12 @@ io.on('connection', (socket) => {
     a.p.y = Math.max(B.minY - 2, Math.min(B.maxY + 4, m.y));
     a.p.z = Math.max(B.minZ, Math.min(B.maxZ, m.z));
     a.p.ry = m.ry;
+  });
+
+  // race: na een val zet de speler zichzelf terug bij zijn laatste checkpoint
+  socket.on('raceRespawn', () => {
+    const a = activePlayer(true);
+    if (a && a.lobby.mode === 'race') Object.assign(a.p, { respawned: true, respawnAt: Date.now() });
   });
 
   socket.on('dash', (d) => {
